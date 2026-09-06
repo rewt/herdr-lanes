@@ -16,6 +16,13 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import process from "node:process";
 
+// Unix readers such as `head` routinely close a pipeline before the producer
+// is finished. Treat that as successful early consumption, not a crash.
+process.stdout.on("error", (error) => {
+  if (error.code === "EPIPE") process.exit(0);
+  throw error;
+});
+
 // The repository is whichever checkout the command runs in (any worktree of it).
 const REPO = (() => {
   try {
@@ -575,5 +582,5 @@ switch (command) {
         `  promote <topic>  validate then fast-forward ${MAIN} (clean + rebased + green only)\n` +
         "  close <topic>    remove worktree; delete merged branch or archive-tag unmerged\n",
     );
-    process.exit(command === undefined ? 0 : 1);
+    process.exit(1);
 }

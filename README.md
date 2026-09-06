@@ -126,6 +126,16 @@ Worktrees live under `~/.herdr/worktrees/<repo-basename>/lane-<topic>`
 - [herdr](https://herdr.dev) 0.8 or later for workspaces and `dispatch`; optional
   for everything else.
 
+## Testing
+
+```sh
+npm test
+```
+
+The suite is dependency-free and offline. It creates temporary git repositories
+and gives the lane subprocesses a PATH without herdr; the optional herdr cwd guard
+test is skipped when the `herdr` executable is absent.
+
 ## Install
 
 ```sh

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Concurrent R&D lanes for AI coding agents: one topic, one branch, one git worktree, one visible herdr session; promotion is rebase + green validation + fast-forward only.",
   "type": "module",
+  "scripts": { "test": "node --test" },
   "bin": { "lane": "./lane.mjs" },
   "engines": { "node": ">=20" },
   "license": "MIT",
