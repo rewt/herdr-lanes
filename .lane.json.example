@@ -1,0 +1,15 @@
+{
+  "main": "main",
+  "validate": "pnpm validate:all",
+  "prepare": [
+    { "unless": "node_modules", "run": "pnpm install --ignore-scripts --prefer-offline" },
+    { "unless": "packages/core/dist", "run": "pnpm --filter ./packages/core build" }
+  ],
+  "dispatch": {
+    "comment": "Operator-owned tier mapping. --arg REPLACES args, so repeat every model flag when you pass one.",
+    "kind": "codex",
+    "env": ["GH_CONFIG_DIR=/home/me/.config/gh-personal"],
+    "args": ["-m", "gpt-5.6-sol", "-c", "model_reasoning_effort=high"]
+  },
+  "seams_doc": "docs/rd-seam-inventory.md"
+}
