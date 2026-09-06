@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// herdr-lanes — concurrent R&D lanes for AI coding agents: a thin layer over
-// git worktrees, herdr-aware. One topic, one lane/<topic> branch, one worktree.
+// herdr-lanes — isolated task lanes for coding agents: a thin layer over git
+// worktrees with optional Herdr workspaces and sessions.
 //
 // Lifecycle: open -> (dispatch) -> work -> promote -> close.
 //

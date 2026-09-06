@@ -1,7 +1,7 @@
 {
   "name": "herdr-lanes",
   "version": "0.1.0",
-  "description": "Concurrent R&D lanes for AI coding agents: one topic, one branch, one git worktree, one visible herdr session; promotion is rebase + green validation + fast-forward only.",
+  "description": "Git worktree lanes for coding agents with Herdr workspaces and validated fast-forward promotion.",
   "type": "module",
   "scripts": { "test": "node --test" },
   "bin": { "lane": "./lane.mjs" },

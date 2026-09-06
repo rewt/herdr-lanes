@@ -1,39 +1,35 @@
 # HANDOFF
 
-Living log for sessions working in this repository. Newest entry last.
+Living log for agents maintaining this repository. Newest entry last.
 
-## 2026-09-06 — extraction
+## 2026-09-06 — initial public release
 
-- Extracted from the private research repository (see `docs/ORIGIN.md`), generalized
-  behind `.lane.json`, README and MIT license written, first commit `cb74843`.
-- Smoke-tested read-only against the origin repository: `status`, `rebase-check`
-  (exit 1 on a real conflict) and `verify-agent <name> /wrong/path` (exit 1) behave.
-- Publication (GitHub repo creation + first push) is the next session's first task; it
-  was not done by the extracting session.
-- Known gaps: no tests yet; `status` piped into `head` dies with EPIPE (cosmetic; the
-  original behaves the same); the private repository still runs its own copy and will
-  switch to this one via `.lane.json` once this repo has tests.
+- Published https://github.com/rewt/herdr-lanes as an MIT-licensed, dependency-free
+  Node.js CLI with `.lane.json` configuration.
+- Added offline lifecycle coverage for open, status, promote, close, rebase-check,
+  prepare, usage exits, EPIPE handling, and the optional Herdr cwd guard.
+- Before the CLI fixes, the normal suite passed 13/15: no-command usage exited 0 and
+  `status | head` raised EPIPE. Both now exit correctly. Existing behavior assertions
+  were exercised with the suite's deliberate negative-control mode.
+- Verified with Node.js 20.19.4 and git 2.54.0: 15/15 tests passed with Herdr present;
+  with Herdr absent, 14 passed and the Herdr-dependent test skipped.
+- Commits: `cbe3a29` (tests and CLI fixes), `bf19edb` (release handoff).
 
-## 2026-09-06 — publication and offline tests
+## 2026-09-06 — agent-first operational documentation
 
-- Published the repository at https://github.com/rewt/herdr-lanes, verified it is
-  public, set the `herdr`, `git-worktree`, `ai-agents`, and `coding-agents` topics,
-  and verified GitHub's README API returns `README.md`.
-- Added the dependency-free `node --test` suite in `test/lane.test.mjs`. It covers
-  open input guards, status distance/dirtiness/shared files, every promotion guard
-  and the clean rebase/fast-forward path, both close outcomes and its dirty guard,
-  rebase-check exit codes, prepare/unless behavior, usage exits, EPIPE, and the
-  optional herdr cwd mismatch control.
-- Before changing `lane.mjs`, the normal suite passed 13/15: the no-command usage
-  assertion failed because it exited 0, and `status | head` failed with an unhandled
-  EPIPE. The already-implemented behavior assertions were each also observed failing
-  under `LANE_TEST_NEGATIVE_CONTROL=1`, which deliberately fails at the end of every
-  exercised test.
-- Deliberate behavior changes from the extracted copy: a missing command now prints
-  usage and exits 1, and an EPIPE on stdout exits quietly. Added `npm test` and the
-  testing contract to the README. Commit: `cbe3a29`.
-- Verified on Node 20.19.4 and git 2.54.0: `npm test` passes 15/15 with the installed
-  herdr CLI; with herdr removed from PATH, 14 pass and the herdr-dependent test skips.
-  All lifecycle tests ran offline in temporary git repositories.
-- Did not exercise live herdr workspace creation or dispatch, did not test other Node
-  or git versions, and did not visually inspect the README in a browser.
+- Replaced the README narrative with installation, target-repository configuration,
+  Herdr bootstrap, end-to-end lane operation, command syntax, status interpretation,
+  promotion checks, recovery actions, and development verification.
+- Reworked `AGENTS.md` into portable repository instructions with a file map, product
+  invariants, offline-test rules, a repeatable work procedure, and a handoff format.
+  Added `CLAUDE.md` instruction discovery and `docs/BRIEF_TEMPLATE.md` for dispatch.
+- Generalized `.lane.json.example`, `package.json`, and the `lane.mjs` description.
+  Removed the obsolete origin document and stale next-session prompt, and condensed
+  earlier handoff notes to public maintenance facts.
+- No runtime behavior changed. `npm test` passed 15/15 with Herdr 0.8.2 available;
+  with Herdr removed from PATH, 14 passed and one Herdr-dependent test skipped.
+- Checked the documented Herdr commands against Herdr 0.8.2 CLI help and the official
+  agent setup guide. A current-tree text scan found no former domain or source-context
+  references; the copyright holder remains in `LICENSE`.
+- Did not run a live end-to-end dispatch, test a non-Node target repository, test on
+  Windows, or rewrite existing git history.
