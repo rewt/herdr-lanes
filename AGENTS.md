@@ -21,7 +21,8 @@ user request defines the work; the handoff provides state and prior verification
 - `.lane.json.example`: portable target-repository configuration.
 - `contrib/promote-safely.sh`: serialized wrapper for unattended promotion.
 - `docs/BRIEF_TEMPLATE.md`: reusable input for `lane dispatch`.
-- `README.md`: public installation, configuration, command, and recovery reference.
+- `docs/REFERENCE.md`: detailed configuration, command, and recovery reference.
+- `README.md`: public quick start for using lanes with agents in Herdr.
 - `HANDOFF.md`: chronological maintenance and verification record.
 
 ## Product contract
@@ -34,20 +35,12 @@ user request defines the work; the handoff provides state and prior verification
 - Keep the tool a thin layer over git and Herdr. Do not add a job system, leases,
   remote policy gates, or hidden background coordination.
 
-## User workflow the documentation must preserve
+## Documentation priority
 
-An unfamiliar user or agent must be able to determine, in order:
-
-1. how to install `lane` and Herdr;
-2. how to configure validation, preparation, and the agent kind;
-3. how to start the canonical checkout's parent Herdr workspace;
-4. how `open` creates an isolated branch, worktree, and optional workspace;
-5. how `dispatch` verifies cwd before sending a brief;
-6. how multiple implementation lanes run concurrently and report overlap;
-7. why promotion is serialized and exactly which checks it performs;
-8. how to close, archive, and resume a lane.
-
-Keep that path short, command-led, and free of project-specific assumptions.
+The README must lead with one copyable path: install, configure a target repository,
+start its Herdr workspace, dispatch concurrent lanes, then promote and close them.
+Keep that landing page short and command-led. Put configuration fields, safeguards,
+status definitions, and recovery details in `docs/REFERENCE.md`.
 
 ## Change rules
 

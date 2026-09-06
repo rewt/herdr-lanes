@@ -47,3 +47,18 @@ Living log for agents maintaining this repository. Newest entry last.
   workspace setup, concurrency, and promotion discoverable.
 - No runtime behavior changed. Baseline `npm test` passed 15/15 before the edit.
 - Did not run live workspace creation or dispatch during this documentation-only slice.
+
+## 2026-09-06 — quick-start landing page
+
+- Reduced the README from 210 to 100 lines. Its opening workflow now shows exactly how
+  to install the script, copy configuration into a target repository, provide agent
+  instructions, start Herdr, dispatch two concurrent lanes, inspect them, and promote
+  and close one lane.
+- Kept the public explanation focused on lane use: agents implement concurrently in
+  isolated worktrees; the operator promotes lanes one at a time into local main.
+- Moved configuration fields, dispatch safeguards, status definitions, failure
+  recovery, archive behavior, and unattended promotion to `docs/REFERENCE.md`.
+- Updated `AGENTS.md` so future documentation work preserves a short, command-led
+  README and keeps technical detail in the reference.
+- No runtime behavior changed. Baseline and final `npm test` runs passed 15/15.
+- Did not run live workspace creation or dispatch during this documentation-only slice.
