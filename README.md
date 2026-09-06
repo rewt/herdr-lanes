@@ -1,57 +1,29 @@
 # herdr-lanes
 
-A dependency-free Node.js CLI for running coding-agent tasks in isolated git
-worktrees. One lane maps a task topic to:
+Run coding agents concurrently in isolated git worktrees, then promote completed
+work through one validation gate.
 
 ```text
-topic -> lane/<topic> branch -> git worktree -> optional Herdr workspace and agent
+task -> lane/<topic> branch -> worktree -> optional Herdr workspace + agent
 ```
 
-Herdr is optional for branch and worktree operations. It is required for
-`dispatch`, which starts an interactive coding agent in the lane worktree.
+The operator manages lanes from the canonical checkout. Each agent works and commits
+only in its lane worktree. `lane promote` updates local main and never pushes.
 
-Promotion has one fixed contract:
+## Setup
 
-```text
-clean worktree -> clean rebase onto current main -> green validation -> fast-forward
-```
+Requirements: Node.js 20+, git 2.38+, and [Herdr](https://herdr.dev) 0.8+ for agent
+dispatch. `lane.mjs` itself has no package dependencies.
 
-`promote` never pushes.
-
-## Requirements
-
-- Node.js 20 or later
-- git 2.38 or later (`git merge-tree --write-tree` is used for conflict checks)
-- [Herdr](https://herdr.dev/docs/) 0.8 or later for workspaces and agent dispatch
-- A supported coding-agent CLI installed for `dispatch`
-
-The lane CLI itself uses only Node.js built-ins.
-
-## Install the lane CLI
-
-Clone the repository and expose `lane.mjs` on PATH:
+Install the CLI:
 
 ```sh
 git clone https://github.com/rewt/herdr-lanes.git
-cd herdr-lanes
 mkdir -p ~/.local/bin
-ln -s "$PWD/lane.mjs" ~/.local/bin/lane
-lane status
+ln -s "$PWD/herdr-lanes/lane.mjs" ~/.local/bin/lane
 ```
 
-Alternatively, call it by absolute path from the repository you want to manage:
-
-```sh
-node /path/to/herdr-lanes/lane.mjs status
-```
-
-Every lane command must run from a checkout of the target repository. The script
-resolves that repository's canonical checkout even when invoked from a linked
-worktree.
-
-## Configure a target repository
-
-Add `.lane.json` at the target repository root. Every key is optional:
+In the repository that will use lanes, add `.lane.json`:
 
 ```json
 {
@@ -66,85 +38,41 @@ Add `.lane.json` at the target repository root. Every key is optional:
 }
 ```
 
-Change `validate` and `prepare` for the target project's toolchain. Remove
-`prepare` when the project needs no generated or ignored files before validation.
-Use [.lane.json.example](.lane.json.example) as a copyable example.
+Change the commands and agent kind for the project. Every key is optional; see
+[.lane.json.example](.lane.json.example).
 
-| Key | Type | Purpose | Default |
-| --- | --- | --- | --- |
-| `main` | string | Local integration branch | `main` |
-| `validate` | shell command | Required promotion check | `npm test` |
-| `prepare` | array of `{unless, run}` | Build or install steps for fresh worktrees | none |
-| `dispatch.kind` | string | Herdr-supported agent kind | `claude` |
-| `dispatch.model` | string | Model passed as `--model` | none |
-| `dispatch.env` | string array | Environment entries passed to the Herdr tab | none |
-| `dispatch.args` | string array | Raw arguments passed to the agent CLI | none |
-| `seams_doc` | string | Optional project task-map path printed by `seams` | none |
-
-Environment overrides:
-
-| Variable | Effect |
-| --- | --- |
-| `LANE_CONFIG` | Use a config file outside `<repo>/.lane.json` |
-| `LANE_VALIDATE` | Replace the configured validation command for one run |
-| `LANE_WORKTREE_ROOT` | Replace `~/.herdr/worktrees/<repo-name>` |
-
-Do not place secrets in `.lane.json`. Use the invoking environment or a local
-configuration file selected with `LANE_CONFIG` for sensitive values.
-
-## Add repository instructions for agents
-
-Each target repository should define its own build, test, safety, and delivery
-rules in `AGENTS.md`. Codex reads that file directly. For Claude Code, add a
-one-line `CLAUDE.md`:
-
-```text
-@AGENTS.md
-```
-
-Other agent kinds should be explicitly told to read `AGENTS.md` in the task brief.
-Start briefs from [docs/BRIEF_TEMPLATE.md](docs/BRIEF_TEMPLATE.md). A brief should
-name the outcome, in-scope files, constraints, acceptance checks, and required
-handoff.
-
-## Start the Herdr workspace
+Add project rules to `AGENTS.md`. For Claude Code, add `CLAUDE.md` containing
+`@AGENTS.md`. Tell other agents to read `AGENTS.md` in the brief. A reusable brief is
+available at [docs/BRIEF_TEMPLATE.md](docs/BRIEF_TEMPLATE.md).
 
 Install Herdr using its [installation guide](https://herdr.dev/docs/install/), then
-open the target repository in Herdr:
+start the parent workspace from a normal terminal:
 
 ```sh
 cd /path/to/target-repository
 herdr
 ```
 
-Running `herdr` attaches to its persistent server and creates a workspace for the
-current repository. Run it from a normal terminal. If `HERDR_ENV=1` is already set,
-you are inside a Herdr pane and must not start a nested Herdr client.
-
-Useful checks from another terminal or an existing Herdr pane:
+If `HERDR_ENV=1` is set, you are already inside Herdr; do not start a nested client.
+Verify the parent workspace with:
 
 ```sh
-herdr --version
 herdr status server
 herdr workspace list
 ```
 
-If the server is running but the canonical checkout has no workspace, create one:
+If the repository is not listed:
 
 ```sh
 herdr workspace create --cwd /path/to/target-repository --label target-repository --focus
 ```
 
-The canonical checkout workspace is the parent used when `lane open` creates or
-repairs a lane workspace.
+Herdr is optional for git operations. Without it, `open` uses `git worktree` and
+`dispatch` is unavailable.
 
-Without Herdr, `open`, `status`, `prepare`, `rebase-check`, `promote`, `close`, and
-`seams` still operate through git. `open` reports that it used the git fallback;
-`dispatch` exits with an error until Herdr is available.
+## Create and manage a lane
 
-## Run one lane end to end
-
-From the clean canonical checkout of the target repository:
+From the clean canonical checkout:
 
 ```sh
 lane open update-api
@@ -152,67 +80,18 @@ lane dispatch update-api --kind codex @/absolute/path/to/update-api-brief.md
 lane status
 ```
 
-The agent runs in `lane/update-api` at:
+`open` creates:
 
-```text
-~/.herdr/worktrees/<repo-name>/lane-update-api
-```
+- `lane/update-api` from configured main;
+- `~/.herdr/worktrees/<repo>/lane-update-api`;
+- a Herdr workspace for that worktree when Herdr is running.
 
-When the lane's changes are committed and ready:
+`dispatch` creates a tab, starts the agent, verifies its cwd is the lane worktree, and
+only then sends the brief. It prints commands for watching and attaching to the agent.
+List supported agent kinds with `herdr agent start --help`.
 
-```sh
-lane rebase-check update-api
-lane promote update-api
-lane close update-api
-```
-
-`promote` validates and updates local `main`. Review and push remain separate
-operator actions.
-
-## Command reference
-
-| Command | Operation |
-| --- | --- |
-| `lane open <topic> [base-ref]` | Create `lane/<topic>` and its worktree; request a Herdr workspace when available |
-| `lane dispatch <topic> [options] [@brief-file \| prompt]` | Start and prompt an agent in the lane's Herdr workspace |
-| `lane status` | Show open lanes, main distance, dirty state, rebase state, and shared files |
-| `lane prepare <topic>` | Run configured prepare steps whose `unless` paths do not exist |
-| `lane rebase-check <topic> [--against <ref>]` | Dry-run the rebase and return `0` when clean or `1` on conflict |
-| `lane promote <topic>` | Rebase if needed, validate, and fast-forward local main |
-| `lane close <topic>` | Remove the worktree and delete or archive the branch |
-| `lane seams [pattern]` | List unmerged branches and `archive/*` tags available as resume bases |
-| `lane verify-agent <name> <path>` | Return `0` only when Herdr reports the expected agent cwd |
-
-Topics must be 2–61 characters of lowercase letters, digits, and hyphens, beginning
-with a letter or digit.
-
-### Dispatch options
-
-```sh
-lane dispatch <topic> \
-  [--kind <agent-kind>] \
-  [--model <model>] \
-  [--env KEY=VALUE ...] \
-  [--arg <raw-agent-argument> ...] \
-  [@brief-file | prompt text]
-```
-
-- `--kind`, `--model`, and `--env` extend or override `.lane.json` values.
-- Supplying any `--arg` replaces `dispatch.args`; repeat every required raw flag.
-- `@brief-file` is read before dispatch. Use an absolute path when the brief is not
-  inside the current checkout.
-- Agent names are unique per attempt and capped for Herdr compatibility.
-- The brief is sent only after Herdr confirms the agent is in the lane worktree.
-
-Supported kinds are reported by:
-
-```sh
-herdr agent start --help
-```
-
-## Read `lane status`
-
-Example:
+The agent implements, tests, and commits in the lane worktree. The operator uses the
+canonical checkout to inspect all lanes:
 
 ```text
 main 10ca91f
@@ -220,65 +99,101 @@ lane/update-api  +2/-1 vs main  /worktrees/lane-update-api  DIRTY  rebase: clean
 shared files: lane/update-api × lane/update-docs: src/client.js
 ```
 
-- `+N` is the number of commits unique to the lane.
-- `-M` is the number of main commits missing from the lane.
-- `DIRTY` means the lane worktree has uncommitted changes.
-- `rebase: clean` means the dry-run rebase onto current main succeeds.
-- `rebase: CONFLICT <files>` blocks promotion until resolved.
-- `shared files` identifies overlapping changes between open lanes.
+- `+N`: commits unique to the lane
+- `-N`: main commits missing from the lane
+- `DIRTY`: uncommitted changes
+- `rebase: clean`: safe to replay onto current main
+- `rebase: CONFLICT`: manual conflict resolution required
+- `shared files`: overlapping changes between lanes
 
-## Promotion checks
+Close a finished lane with `lane close update-api`. A merged branch is deleted. An
+unmerged branch is first preserved as `archive/lane/update-api`.
 
-`lane promote <topic>` performs these steps in order:
-
-1. Require a clean lane worktree.
-2. Require a clean canonical checkout.
-3. If main moved, dry-run the rebase with `git merge-tree`.
-4. Refuse and list files when the dry run conflicts.
-5. Rebase the lane onto main when the dry run is clean.
-6. Run applicable `prepare` steps in the lane worktree.
-7. Run `validate` in the lane worktree.
-8. Refuse if main moved during validation.
-9. Fast-forward local main with `git merge --ff-only`.
-
-No merge commit is created and no remote is updated.
-
-## Close and resume unfinished work
-
-`lane close <topic>` requires a clean worktree.
-
-- If main contains the lane commit, the lane branch is deleted.
-- If the lane is unmerged, its commit is tagged as `archive/lane/<topic>` before the
-  branch is deleted.
-
-List resumable branches and tags, then open a new lane from one:
+Resume unfinished work with:
 
 ```sh
 lane seams
-lane open resumed-task archive/lane/old-task
+lane open resumed-task archive/lane/update-api
 ```
 
-## Failure recovery
+## Concurrency model
 
-| Output | Action |
-| --- | --- |
-| `herdr workspace: none` | Start Herdr in the canonical checkout; retry `dispatch` |
-| `lane worktree is not clean` | Commit or stash the lane changes |
-| `canonical main checkout is not clean` | Commit or stash the canonical checkout changes |
-| `validation failed ... nothing merged` | Fix the lane and rerun `promote` |
-| `does not rebase cleanly; conflicts in:` | Rebase manually in the lane worktree and resolve the listed files |
-| `main moved during validation` | Rerun `promote`; it rechecks the new main |
-| `agent ... not the lane worktree` | Inspect the Herdr pane/workspace; the brief was not sent |
-
-For automated promotion, `contrib/promote-safely.sh` serializes promotions and emits
-one `OUTCOME:` line with the real exit status:
+Open one lane per independent task:
 
 ```sh
-contrib/promote-safely.sh /path/to/target-repository update-api /tmp/update-api-promote.log
+lane open backend-change
+lane open docs-change
+lane dispatch backend-change --kind codex @/briefs/backend.md
+lane dispatch docs-change --kind claude @/briefs/docs.md
+lane status
 ```
 
-Do not run two promotions in the same canonical checkout concurrently. Prepare and
-validation steps can modify shared ignored files.
+Implementation is concurrent; promotion is serialized:
+
+- Each lane has its own branch, worktree, dependencies, build output, and agent.
+- Scope lanes to different files when possible.
+- If `status` reports `shared files`, coordinate those lanes or run them sequentially.
+- Promote only one lane at a time because all promotions update the same local main.
+- After one promotion moves main, other lanes become behind. Their promotion rebases
+  automatically when clean and stops with a file list when conflicts exist.
+
+For unattended promotion, use the serialized wrapper:
+
+```sh
+contrib/promote-safely.sh /path/to/repo backend-change /tmp/backend-promote.log
+```
+
+## Promotion process
+
+Commit the lane, then run from the clean canonical checkout:
+
+```sh
+lane rebase-check update-api
+lane promote update-api
+```
+
+Promotion performs exactly these steps:
+
+1. Require clean lane and canonical worktrees.
+2. Dry-run the lane rebase onto current main.
+3. Refuse and list files if the rebase conflicts.
+4. Rebase automatically when clean.
+5. Run missing `prepare` steps and `validate` in the lane worktree.
+6. Refuse if main moved during validation.
+7. Fast-forward local main without a merge commit or push.
+
+If validation fails, main is unchanged. If another promotion moved main, rerun
+`promote`; it checks and rebases against the new head.
+
+After success, review and push main through the project's normal workflow, then run:
+
+```sh
+lane close update-api
+```
+
+## Command reference
+
+| Command | Purpose |
+| --- | --- |
+| `lane open <topic> [base-ref]` | Create the lane branch, worktree, and optional workspace |
+| `lane dispatch <topic> [options] [@brief \| prompt]` | Start and prompt an agent |
+| `lane status` | Show commit distance, dirtiness, rebase state, and overlap |
+| `lane prepare <topic>` | Run setup steps whose `unless` path is absent |
+| `lane rebase-check <topic> [--against <ref>]` | Test rebase compatibility |
+| `lane promote <topic>` | Rebase, validate, and fast-forward local main |
+| `lane close <topic>` | Remove the worktree and delete or archive the branch |
+| `lane seams [pattern]` | List resumable branches and archive tags |
+| `lane verify-agent <name> <path>` | Verify an agent's Herdr cwd |
+
+Topics are 2–61 lowercase letters, digits, or hyphens and begin with a letter or
+digit.
+
+Dispatch options are `--kind`, `--model`, repeated `--env KEY=VALUE`, and repeated
+`--arg <raw-agent-argument>`. Any `--arg` replaces configured `dispatch.args`.
+
+Configuration keys are `main`, `validate`, `prepare`, `dispatch`, and `seams_doc`.
+Overrides are `LANE_CONFIG`, `LANE_VALIDATE`, and `LANE_WORKTREE_ROOT`. Do not store
+secrets in tracked configuration.
 
 ## Develop this repository
 
@@ -286,12 +201,9 @@ validation steps can modify shared ignored files.
 npm test
 ```
 
-The test suite is offline and dependency-free. It creates temporary git repositories
-and removes Herdr from PATH for lifecycle tests. Herdr-dependent coverage skips when
-the executable is absent.
-
-Repository maintenance rules are in [AGENTS.md](AGENTS.md). Current verification and
-handoff notes are in [HANDOFF.md](HANDOFF.md).
+Tests are offline and use temporary git repositories. Herdr-only coverage skips when
+Herdr is absent. Maintenance rules are in [AGENTS.md](AGENTS.md); current verification
+is in [HANDOFF.md](HANDOFF.md).
 
 ## License
 

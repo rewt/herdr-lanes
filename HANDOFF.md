@@ -33,3 +33,17 @@ Living log for agents maintaining this repository. Newest entry last.
   references; the copyright holder remains in `LICENSE`.
 - Did not run a live end-to-end dispatch, test a non-Node target repository, test on
   Windows, or rewrite existing git history.
+
+## 2026-09-06 — concise workspace and concurrency workflow
+
+- Condensed the README from 296 to 210 lines and made it a linear setup and operating
+  guide: install, configure, start the canonical Herdr workspace, open and dispatch a
+  lane, run implementation lanes concurrently, promote serially, then close or resume.
+- Made the operator/agent boundary explicit: operators manage lanes from the canonical
+  checkout; agents work and commit only inside their lane worktrees.
+- Documented status fields, overlap handling, per-worktree preparation, the effect of
+  one promotion on other lanes, and the exact seven-step promotion gate.
+- Added the required user workflow to `AGENTS.md` so future documentation changes keep
+  workspace setup, concurrency, and promotion discoverable.
+- No runtime behavior changed. Baseline `npm test` passed 15/15 before the edit.
+- Did not run live workspace creation or dispatch during this documentation-only slice.

@@ -34,6 +34,21 @@ user request defines the work; the handoff provides state and prior verification
 - Keep the tool a thin layer over git and Herdr. Do not add a job system, leases,
   remote policy gates, or hidden background coordination.
 
+## User workflow the documentation must preserve
+
+An unfamiliar user or agent must be able to determine, in order:
+
+1. how to install `lane` and Herdr;
+2. how to configure validation, preparation, and the agent kind;
+3. how to start the canonical checkout's parent Herdr workspace;
+4. how `open` creates an isolated branch, worktree, and optional workspace;
+5. how `dispatch` verifies cwd before sending a brief;
+6. how multiple implementation lanes run concurrently and report overlap;
+7. why promotion is serialized and exactly which checks it performs;
+8. how to close, archive, and resume a lane.
+
+Keep that path short, command-led, and free of project-specific assumptions.
+
 ## Change rules
 
 - Treat every tracked file as public. Do not add credentials, personal paths,
