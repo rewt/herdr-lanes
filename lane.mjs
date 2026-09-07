@@ -617,7 +617,7 @@ switch (command) {
         `  open <topic> [base]  cut lane/<topic> into a herdr worktree; base defaults to\n` +
         `                       ${MAIN} — pass a kept branch or archive/* tag to resume it\n` +
         "  seams [pattern]  list kept unfinished work (branches + archive tags)\n" +
-        "  routes            list configured dispatch routes and resolved defaults\n" +
+        "  routes           list configured dispatch routes and resolved defaults\n" +
         "  dispatch <topic> [--route <name>] [--kind <agent>] [--model <m>] [@brief-file | prompt]\n" +
         "                   start a visible agent session (any herdr kind) in the\n" +
         "                   lane's workspace; defaults in .lane.json routes/dispatch\n" +

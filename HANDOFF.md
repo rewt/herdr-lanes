@@ -84,3 +84,20 @@ Living log for agents maintaining this repository. Newest entry last.
   both new route controls. `git diff --check` passed.
 - Did not run a live route dispatch against Herdr or validate vendor/model availability
   for a particular operator account; the behavior suite remained offline as required.
+
+## 2026-09-07 — post-review route documentation corrections
+
+- Corrected the OpenAI guidance to match the cited models page: Low, Medium
+  (default), High, Extra High, Max, and Ultra. Removed `gpt-5.4-mini` from the
+  current-routing table and documented its 2026-08-31 Codex retirement for ChatGPT
+  sign-in plus the recommended `gpt-5.6-luna` replacement.
+- Clarified that command-line `--arg` replaces `dispatch.args` when no route is
+  selected and aligned the `routes` usage description with the other commands.
+- Extended the offline unknown-route test to cover the exact `(none configured)`
+  message and confirm that this path also stops before the Herdr availability check.
+- Baseline and final `npm test` runs passed 17/17. The focused unknown-route test
+  passed after adding the assertion, showing that this was missing coverage rather
+  than a runtime defect. `LANE_TEST_NEGATIVE_CONTROL=1 npm test` failed all 17
+  deliberate controls, including the expanded unknown-route control.
+- Verified with Node.js 20.19.4 and git 2.54.0; `git diff --check` passed. No live
+  Herdr dispatch or account-specific model availability check was performed.

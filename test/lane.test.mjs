@@ -402,6 +402,15 @@ test("dispatch rejects an unknown route before checking Herdr", () => {
       /lane: unknown route: missing \(configured: engineer, review, unblock\)/,
     );
     assert.doesNotMatch(run.stderr, /herdr is unavailable/);
+
+    writeConfig(fixture, { main: "main", validate: "true" });
+    const noneConfigured = lane(fixture, ["dispatch", "alpha", "--route", "missing"]);
+    assert.equal(noneConfigured.status, 1);
+    assert.match(
+      noneConfigured.stderr,
+      /lane: unknown route: missing \(none configured\)/,
+    );
+    assert.doesNotMatch(noneConfigured.stderr, /herdr is unavailable/);
     negativeControl("unknown dispatch route");
   } finally {
     fixture.cleanup();
