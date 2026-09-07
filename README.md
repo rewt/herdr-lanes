@@ -19,8 +19,8 @@ In the repository you want agents to work on:
 cp /path/to/herdr-lanes/.lane.json.example .lane.json
 ```
 
-Edit `.lane.json` so `validate`, `prepare`, and `dispatch.kind` match the project.
-Put the project's instructions in `AGENTS.md` before opening lanes.
+Edit `.lane.json` so `validate`, `prepare`, `dispatch.kind`, and the named `routes`
+match the project. Put the project's instructions in `AGENTS.md` before opening lanes.
 
 Start Herdr in that repository:
 
@@ -33,11 +33,12 @@ From an operator terminal or Herdr pane, open and dispatch one lane per task:
 
 ```sh
 lane open api-change
-lane dispatch api-change @/absolute/path/to/api-change-brief.md
+lane dispatch api-change --route engineer @/absolute/path/to/api-change-brief.md
 
 lane open docs-change
-lane dispatch docs-change @/absolute/path/to/docs-change-brief.md
+lane dispatch docs-change --route engineer @/absolute/path/to/docs-change-brief.md
 
+lane routes
 lane status
 ```
 
@@ -67,8 +68,8 @@ lane/<topic> branch
 Herdr workspace for that worktree
 ```
 
-`lane dispatch <topic> @brief.md` starts the configured agent in that workspace,
-verifies its cwd, then sends the brief.
+`lane dispatch <topic> --route <name> @brief.md` starts the route's configured agent
+in that workspace, verifies its cwd, then sends the brief.
 
 `lane status` shows each lane's commits ahead/behind main, dirty state, rebase state,
 and files changed by more than one lane. Keep concurrent lanes in separate files when
@@ -82,7 +83,8 @@ rebases automatically when clean and refuses with a file list when conflicts exi
 | Command | Purpose |
 | --- | --- |
 | `lane open <topic> [base-ref]` | Create a lane |
-| `lane dispatch <topic> [options] [@brief \| prompt]` | Start and prompt its agent |
+| `lane dispatch <topic> [--route <name>] [options] [@brief \| prompt]` | Start and prompt its agent |
+| `lane routes` | List resolved named dispatch routes |
 | `lane status` | Show lane state and overlap |
 | `lane promote <topic>` | Rebase, validate, and fast-forward local main |
 | `lane close <topic>` | Remove and delete or archive a lane |

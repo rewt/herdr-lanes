@@ -345,6 +345,69 @@ test("prepare runs needed steps and skips steps whose unless path exists", () =>
   }
 });
 
+test("routes prints configured routes with resolved dispatch defaults", () => {
+  const fixture = makeFixture({
+    main: "main",
+    validate: "true",
+    dispatch: {
+      kind: "claude",
+      model: "default-model",
+      args: ["--default-flag"],
+    },
+    routes: {
+      review: { kind: "reviewer" },
+      engineer: {
+        kind: "codex",
+        model: "engineer-model",
+        args: ["--profile", "implementation"],
+        use: "Complex implementation lanes",
+      },
+    },
+  });
+  try {
+    const run = lane(fixture, ["routes"]);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(
+      run.stdout,
+      "engineer\tkind=codex\tmodel=engineer-model\targs=[\"--profile\",\"implementation\"]\tuse=Complex implementation lanes\n" +
+        "review\tkind=reviewer\tmodel=default-model\targs=[\"--default-flag\"]\tuse=(none)\n",
+    );
+
+    writeConfig(fixture, { main: "main", validate: "true" });
+    const empty = lane(fixture, ["routes"]);
+    assert.equal(empty.status, 1);
+    assert.match(empty.stderr, /lane: no routes configured/);
+    negativeControl("routes output");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("dispatch rejects an unknown route before checking Herdr", () => {
+  const fixture = makeFixture({
+    main: "main",
+    validate: "true",
+    routes: {
+      unblock: { kind: "claude", model: "planner-model" },
+      engineer: { kind: "codex", model: "engineer-model" },
+      review: { kind: "claude", model: "review-model" },
+    },
+  });
+  try {
+    openLane(fixture, "alpha");
+    const run = lane(fixture, ["dispatch", "alpha", "--route", "missing"]);
+    assert.equal(run.status, 1);
+    assert.match(
+      run.stderr,
+      /lane: unknown route: missing \(configured: engineer, review, unblock\)/,
+    );
+    assert.doesNotMatch(run.stderr, /herdr is unavailable/);
+    negativeControl("unknown dispatch route");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("usage exits one with no command and with an unknown command", () => {
   const fixture = makeFixture();
   try {

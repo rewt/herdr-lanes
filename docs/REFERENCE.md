@@ -17,6 +17,15 @@
     "env": ["KEY=value"],
     "args": ["--agent-flag"]
   },
+  "routes": {
+    "engineer": {
+      "kind": "codex",
+      "model": "engineering-model",
+      "env": ["ROLE=engineer"],
+      "args": ["--agent-flag"],
+      "use": "Implementation work that needs full repository context"
+    }
+  },
   "seams_doc": "docs/tasks.md"
 }
 ```
@@ -30,6 +39,12 @@
 | `dispatch.model` | none | Model passed to the agent |
 | `dispatch.env` | none | Environment added to the Herdr tab |
 | `dispatch.args` | none | Raw agent arguments |
+| `routes` | none | Named dispatch configurations selected with `--route` |
+| `routes.<name>.kind` | `dispatch.kind` | Herdr agent kind for this route |
+| `routes.<name>.model` | `dispatch.model` | Model for this route |
+| `routes.<name>.env` | none | Environment appended after `dispatch.env` |
+| `routes.<name>.args` | `dispatch.args` | Raw agent arguments replacing `dispatch.args` when present |
+| `routes.<name>.use` | none | Operator note describing when to select the route; dispatch ignores it |
 | `seams_doc` | none | Optional task-map path printed by `seams` |
 
 Overrides: `LANE_CONFIG`, `LANE_VALIDATE`, and `LANE_WORKTREE_ROOT`. Do not put
@@ -64,18 +79,51 @@ Without Herdr, `open` falls back to `git worktree`; `dispatch` is unavailable.
 
 ```sh
 lane dispatch <topic> \
-  [--kind <agent>] [--model <model>] \
+  [--route <name>] [--kind <agent>] [--model <model>] \
   [--env KEY=VALUE ...] [--arg <raw-agent-argument> ...] \
   [@brief-file | prompt text]
 ```
 
-Command-line kind and model override configuration. Environment entries are added.
-Supplying any `--arg` replaces configured `dispatch.args`. List supported kinds with
+Without `--route`, values come from `dispatch`. With a route, its `kind`, `model`,
+and `args` replace the corresponding dispatch defaults when present; its `env`
+entries append to `dispatch.env`. Explicit `--kind` and `--model` flags override
+the route. Supplying any `--arg` replaces route arguments, while command-line
+`--env` entries append after both configured environment lists. The route's `use`
+text is descriptive and never passed to Herdr. List supported kinds with
 `herdr agent start --help`.
+
+`lane routes` prints each configured route, sorted by name, with its resolved kind,
+model, arguments, and `use` note. It exits 1 when no routes are configured. An
+unknown `--route` is rejected before any Herdr call.
 
 Before sending the brief, `dispatch` waits for the pane shell to reach the lane
 worktree, starts the agent with a unique name, and verifies the agent cwd reported by
 Herdr. A failed cwd check closes the tab without sending the brief.
+
+## Model routing guidance
+
+Operators should map stable role names to models using the vendors' own current
+recommendations, then record why each mapping exists in the route's `use` field.
+The table below summarizes the vendor guidance fetched on 2026-09-07; availability
+and recommendations can change, so recheck the linked source when updating routes.
+
+| Model | Vendor positioning | Example route fit |
+| --- | --- | --- |
+| [`gpt-6-astra`](https://learn.chatgpt.com/docs/models) | OpenAI's most capable model for complex work across code, apps, and research, with stronger judgment | Planning and unblocking |
+| [`gpt-5.6-sol`](https://learn.chatgpt.com/docs/models) | Most capable GPT-5.6 model for complex coding, computer use, and research | Engineering lanes |
+| [`gpt-5.6-terra`](https://learn.chatgpt.com/docs/models) | Balanced everyday work at lower cost | Mechanical or isolated changes |
+| [`gpt-5.6-luna`](https://learn.chatgpt.com/docs/models) | Fast and affordable for clear, repeatable tasks such as extraction and classification | Repeatable, well-specified work |
+| [`gpt-5.4-mini`](https://learn.chatgpt.com/docs/models) | Fast mini model for responsive coding tasks and subagents | Small responsive tasks or subagents |
+| [`claude-opus-5`](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model) | Complex agentic coding and enterprise work, including large refactors and complex systems engineering; start at its default `high` effort | Independent review |
+| [`claude-sonnet-5`](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model) | Speed and capability for everyday coding and agent workloads | Everyday engineering |
+| [`claude-haiku-4-5`](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model) | Lowest latency and price, including sub-agent tasks | Narrow or high-volume tasks |
+| [`claude-fable-5-1`](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model) | Highest capability for agent sessions that run for hours and multistep research | Long-running facilitator |
+
+For OpenAI models that accept reasoning effort, the configurable levels are `none`,
+`low`, `medium`, `high`, `xhigh`, and `max`. Start low for clear work and raise effort
+as ambiguity, complexity, or risk increases. Vendor recommendations are starting
+points: validate route choices against the repository's real tasks, latency needs,
+and budget.
 
 ## Status
 

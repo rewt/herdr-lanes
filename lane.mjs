@@ -52,10 +52,12 @@ const REPO_ROOT = (() => {
 //             built dist), so validation fails there for environmental
 //             reasons that look like real failures. Each entry is
 //             {"unless": "<path that proves the step is done>", "run": "<cmd>"}.
-//   dispatch  {"kind", "model", "env": ["K=V"], "args": [...]} — the
-//             operator-owned mapping from "dispatch a session" to a concrete
-//             herdr agent kind and model; flags override the file, and --arg
-//             REPLACES args, so repeat every model flag when you pass one.
+//   dispatch  {"kind", "model", "env": ["K=V"], "args": [...]} — global
+//             defaults for dispatching a herdr agent session.
+//   routes    {"name": {"kind", "model", "env": ["K=V"], "args": [...],
+//             "use": "when to select it"}} — named dispatch defaults;
+//             kind/model/args override dispatch, while env is appended. CLI
+//             flags take final precedence; use is descriptive only.
 //   seams_doc path of a topic map for kept unfinished work, shown by `seams`
 const CONFIG = (() => {
   const file = process.env.LANE_CONFIG ?? join(REPO, ".lane.json");
@@ -74,6 +76,48 @@ const DEFAULT_VALIDATE = CONFIG.validate ?? "npm test";
 function fail(message) {
   process.stderr.write(`lane: ${message}\n`);
   process.exit(1);
+}
+
+function configuredRoutes() {
+  return CONFIG.routes !== null && typeof CONFIG.routes === "object" && !Array.isArray(CONFIG.routes)
+    ? CONFIG.routes
+    : {};
+}
+
+function routeNames() {
+  return Object.keys(configuredRoutes()).sort();
+}
+
+function resolveDispatch(options = {}) {
+  const defaults = CONFIG.dispatch ?? {};
+  let route = {};
+  if (options.route !== undefined) {
+    const routes = configuredRoutes();
+    if (!Object.hasOwn(routes, options.route)) {
+      const names = routeNames();
+      fail(`unknown route: ${options.route} (${names.length > 0 ? `configured: ${names.join(", ")}` : "none configured"})`);
+    }
+    route = routes[options.route] ?? {};
+  }
+  return {
+    kind: options.kind ?? route.kind ?? defaults.kind ?? "claude",
+    model: options.model ?? route.model ?? defaults.model,
+    args: options.args?.length > 0 ? options.args : (route.args ?? defaults.args ?? []),
+    env: [...(defaults.env ?? []), ...(route.env ?? []), ...(options.env ?? [])],
+    use: route.use,
+  };
+}
+
+function routes() {
+  const names = routeNames();
+  if (names.length === 0) fail("no routes configured");
+  for (const name of names) {
+    const resolved = resolveDispatch({ route: name });
+    process.stdout.write(
+      `${name}\tkind=${resolved.kind}\tmodel=${resolved.model ?? "(none)"}\targs=${JSON.stringify(resolved.args)}` +
+        `\tuse=${resolved.use ?? "(none)"}\n`,
+    );
+  }
 }
 
 function git(args, options = {}) {
@@ -308,6 +352,7 @@ function seams(pattern) {
 // kinds to read the repository's instructions.
 function dispatch(topic, promptText, options = {}) {
   const branch = laneBranch(topic);
+  const resolved = resolveDispatch(options);
   const path = worktreeFor(branch);
   if (path === undefined) fail(`lane ${branch} has no worktree; open it first`);
   if (herdrJson(["workspace", "list"]) === undefined) fail("herdr is unavailable; dispatch requires the herdr server");
@@ -316,8 +361,7 @@ function dispatch(topic, promptText, options = {}) {
     fail(`herdr shows no open workspace for ${path} and could not open one from the ${REPO_ROOT} workspace`);
   }
   const tabArgs = ["tab", "create", "--workspace", workspaceId, "--label", `agent:${topic}`];
-  const tabDefaults = CONFIG.dispatch ?? {};
-  for (const pair of [...(tabDefaults.env ?? []), ...(options.env ?? [])]) tabArgs.push("--env", pair);
+  for (const pair of resolved.env) tabArgs.push("--env", pair);
   const created = JSON.parse(execFileSync("herdr", tabArgs, { encoding: "utf8" }));
   const pane = created.result.root_pane.pane_id;
   const tabId = created.result.tab.tab_id;
@@ -337,18 +381,15 @@ function dispatch(topic, promptText, options = {}) {
   const stem = `lane-${topic}`.slice(0, 22);
   let agentName = `${stem}-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}`;
   // Dispatch is model-agnostic: the tier policy is the operator's, and the
-  // operator-owned tier->agent mapping lives in .lane.json "dispatch". Flags
-  // override the file; extra agent-CLI arguments pass through verbatim via
-  // --arg. No config: kind falls back to claude, no model argument sent.
-  const defaults = CONFIG.dispatch ?? {};
-  const kind = options.kind ?? defaults.kind ?? "claude";
-  const model = options.model ?? defaults.model;
+  // operator-owned role->agent mappings live in .lane.json "routes". Flags
+  // override a selected route and global dispatch defaults; extra agent-CLI
+  // arguments pass through verbatim via --arg. No config: kind falls back to
+  // claude, no model argument is sent.
   const agentArgs = [];
-  if (model !== undefined) agentArgs.push("--model", model);
-  // options.args is always an array (possibly empty): fall back to the defaults only when no --arg was given.
-  agentArgs.push(...((options.args && options.args.length > 0) ? options.args : (defaults.args ?? [])));
+  if (resolved.model !== undefined) agentArgs.push("--model", resolved.model);
+  agentArgs.push(...resolved.args);
   const startArgsFor = (name) => {
-    const args = ["agent", "start", name, "--kind", kind, "--pane", pane];
+    const args = ["agent", "start", name, "--kind", resolved.kind, "--pane", pane];
     if (agentArgs.length > 0) args.push("--", ...agentArgs);
     return args;
   };
@@ -509,14 +550,18 @@ switch (command) {
   case "seams":
     seams(topic);
     break;
+  case "routes":
+    routes();
+    break;
   case "dispatch": {
     if (topic === undefined) {
-      fail("usage: lane.mjs dispatch <topic> [--kind <agent>] [--model <m>] [--env K=V ...] [--arg <raw> ...] [@brief-file | prompt text]");
+      fail("usage: lane.mjs dispatch <topic> [--route <name>] [--kind <agent>] [--model <m>] [--env K=V ...] [--arg <raw> ...] [@brief-file | prompt text]");
     }
     const options = { env: [], args: [] };
     const positional = [];
     for (let i = 0; i < rest.length; i += 1) {
-      if (rest[i] === "--model") options.model = rest[(i += 1)];
+      if (rest[i] === "--route") options.route = rest[(i += 1)];
+      else if (rest[i] === "--model") options.model = rest[(i += 1)];
       else if (rest[i] === "--kind") options.kind = rest[(i += 1)];
       else if (rest[i] === "--env") options.env.push(rest[(i += 1)]);
       else if (rest[i] === "--arg") options.args.push(rest[(i += 1)]);
@@ -568,13 +613,14 @@ switch (command) {
     break;
   default:
     process.stdout.write(
-      "usage: lane <open|status|seams|dispatch|prepare|rebase-check|verify-agent|promote|close> [topic] [base-ref]\n" +
+      "usage: lane <open|status|seams|routes|dispatch|prepare|rebase-check|verify-agent|promote|close> [topic] [base-ref]\n" +
         `  open <topic> [base]  cut lane/<topic> into a herdr worktree; base defaults to\n` +
         `                       ${MAIN} — pass a kept branch or archive/* tag to resume it\n` +
         "  seams [pattern]  list kept unfinished work (branches + archive tags)\n" +
-        "  dispatch <topic> [--kind <agent>] [--model <m>] [@brief-file | prompt]\n" +
+        "  routes            list configured dispatch routes and resolved defaults\n" +
+        "  dispatch <topic> [--route <name>] [--kind <agent>] [--model <m>] [@brief-file | prompt]\n" +
         "                   start a visible agent session (any herdr kind) in the\n" +
-        "                   lane's workspace; defaults in .lane.json \"dispatch\"\n" +
+        "                   lane's workspace; defaults in .lane.json routes/dispatch\n" +
         "  prepare <topic>  run .lane.json prepare steps in the lane worktree; a\n" +
         "                   fresh worktree carries no gitignored state, and validation\n" +
         "                   then fails for environmental reasons that look real\n" +

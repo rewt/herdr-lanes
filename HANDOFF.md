@@ -62,3 +62,25 @@ Living log for agents maintaining this repository. Newest entry last.
   README and keeps technical detail in the reference.
 - No runtime behavior changed. Baseline and final `npm test` runs passed 15/15.
 - Did not run live workspace creation or dispatch during this documentation-only slice.
+
+## 2026-09-07 — named dispatch routes
+
+- Added `.lane.json` `routes` with per-route `kind`, `model`, `env`, `args`, and
+  descriptive `use` fields. `lane dispatch --route` resolves global defaults, the
+  named route, and command-line overrides in that order; environment entries append,
+  while explicit `--arg` entries replace configured arguments.
+- Added `lane routes`, deterministic route-name ordering, resolved route output, and
+  early unknown-route errors that report the configured names without calling Herdr.
+- Added offline coverage for resolved route kind/model/arguments/`use`, the empty-route
+  error, and rejection of an unknown route before the Herdr availability check.
+- Before implementation, the expanded suite passed 15/17: `routes` fell through to
+  usage and unknown-route dispatch reached the Herdr guard. The addendum's focused
+  negative control then failed because route output omitted `use`.
+- Documented configuration and precedence, added repository-neutral example routes,
+  and recorded model-routing guidance from the official OpenAI and Anthropic pages
+  fetched on 2026-09-07. The README quick start now selects a named route.
+- Verified with Node.js 20.19.4 and git 2.54.0: normal `npm test` passed 17/17;
+  `LANE_TEST_NEGATIVE_CONTROL=1 npm test` failed all 17 deliberate controls, including
+  both new route controls. `git diff --check` passed.
+- Did not run a live route dispatch against Herdr or validate vendor/model availability
+  for a particular operator account; the behavior suite remained offline as required.
