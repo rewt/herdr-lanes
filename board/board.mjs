@@ -26,6 +26,8 @@ const TABLE_COLUMNS = [
   ["LAST OUTPUT", "output", 28],
   ["DONE", "done", 4],
 ];
+const WIDE_TABLE_WIDTH = TABLE_COLUMNS.reduce((total, [, , width]) => total + width, 0)
+  + TABLE_COLUMNS.length - 1;
 
 function truncate(value, width) {
   const text = `${value ?? "-"}`.replaceAll(/\s+/gu, " ").trim() || "-";
@@ -270,14 +272,27 @@ export function countWorkers(command) {
 }
 
 export function tableLineEntries(rows, { width = Number.POSITIVE_INFINITY } = {}) {
-  if (width >= 150) {
+  if (width >= WIDE_TABLE_WIDTH + 2) {
     const header = TABLE_COLUMNS.map(([title, , columnWidth]) => pad(title, columnWidth)).join(" ").trimEnd();
     const separator = TABLE_COLUMNS.map(([, , columnWidth]) => "-".repeat(columnWidth)).join(" ");
     const body = rows.map((row, rowIndex) => {
-      const gateText = truncate(row.gate, TABLE_COLUMNS.find(([, key]) => key === "gate")[2]);
+      const cells = [];
+      let offset = 0;
+      let gateStart;
+      let gateText;
+      for (const [, key, columnWidth] of TABLE_COLUMNS) {
+        const cell = pad(row[key], columnWidth);
+        if (key === "gate") {
+          gateStart = offset;
+          gateText = truncate(row.gate, columnWidth);
+        }
+        cells.push(cell);
+        offset += cell.length + 1;
+      }
       return {
-        text: TABLE_COLUMNS.map(([, key, columnWidth]) => pad(row[key], columnWidth)).join(" ").trimEnd(),
+        text: cells.join(" ").trimEnd(),
         rowIndex,
+        gateStart,
         gateText,
         gateColor: row.gateColor,
       };
@@ -304,7 +319,7 @@ export function tableLineEntries(rows, { width = Number.POSITIVE_INFINITY } = {}
       rowIndex,
     });
     const gateText = truncate(row.gate, usable - 5);
-    entries.push({ text: `gate ${gateText}`, rowIndex, gateText, gateColor: row.gateColor });
+    entries.push({ text: `gate ${gateText}`, rowIndex, gateStart: 5, gateText, gateColor: row.gateColor });
     entries.push({ text: `report ${truncate(row.report, usable - 7)}`, rowIndex });
     const deadline = truncate(row.deadline, 12);
     entries.push({

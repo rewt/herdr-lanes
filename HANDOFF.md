@@ -193,3 +193,24 @@ Living log for agents maintaining this repository. Newest entry last.
   and git 2.54.0. The clean-tree gate line is recorded in the implementation report.
 - No live Herdr event, real-TTY Ink color sequence, Linux host, or Windows host was
   tested. No push was performed.
+
+## 2026-09-08 — lane check round-two review corrections
+
+- Made `check` run configured preparation before validation, matching `promote`, and
+  preserved signal termination as a named `signal` plus shell-compatible
+  `exit_code`. Added coverage for both behaviors and for detached HEAD, unknown
+  options, missing/empty `--cmd`, and the board's absent `-` state.
+- Derived the wide board breakpoint from its columns, passed the exact GATE cell
+  offset to Ink coloring, and aligned the multiline `check` usage entry.
+- Generalized the `.lane/` gitignore requirement beyond board setup and documented
+  that handoff requires re-running `lane check` after the final commit until the
+  board shows `exit=0` against current HEAD.
+- Before implementation, focused tests failed for prepare parity, signal/null signal
+  recording, usage alignment, and board layout. Existing refusal and absent-state
+  behavior passed normally, then failed under their deliberate negative controls.
+- Baseline `npm test` passed 44/44. Final `npm test` passed 49/49, and
+  `LANE_TEST_NEGATIVE_CONTROL=1 npm test` deliberately failed all 49 controls (0
+  passed), and `git diff --check` passed. Verified with Node.js 20.19.4, npm 10.8.2,
+  and git 2.54.0; the post-commit GATE is reported after the final commit. No live
+  Herdr event, real-TTY Ink color sequence, Linux host, or Windows host was tested.
+  No push was performed.

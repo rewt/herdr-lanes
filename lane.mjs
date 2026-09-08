@@ -12,7 +12,7 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { constants as osConstants, homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -486,17 +486,21 @@ function check(args) {
   const branch = git(["branch", "--show-current"]);
   if (branch === "") fail("current checkout is detached; check requires a branch");
 
+  prepareWorktree(REPO);
   const startedAt = new Date();
   const started = process.hrtime.bigint();
   const run = spawnSync(command, { cwd: REPO, shell: true, stdio: "inherit" });
   const finishedAt = new Date();
   const durationS = Number(process.hrtime.bigint() - started) / 1_000_000_000;
-  const exitCode = run.status ?? 1;
+  const signal = run.signal ?? null;
+  const signalNumber = signal === null ? undefined : osConstants.signals[signal];
+  const exitCode = run.status ?? (signalNumber === undefined ? 1 : 128 + signalNumber);
   const gate = {
     head,
     branch,
     command,
     exit_code: exitCode,
+    signal,
     started_at: startedAt.toISOString(),
     finished_at: finishedAt.toISOString(),
     duration_s: durationS,
@@ -705,7 +709,8 @@ switch (command) {
         "                   fresh worktree carries no gitignored state, and validation\n" +
         "                   then fails for environmental reasons that look real\n" +
         `  status           list open lanes vs ${MAIN}\n` +
-        "  check [--cmd <validate command>]  validate this clean worktree and record its HEAD gate\n" +
+        "  check [--cmd <validate command>]\n" +
+        "                   validate this clean worktree and record its HEAD gate\n" +
         "  board [--once]   watch registered lane sessions; --once prints plain text\n" +
         `  promote <topic>  validate then fast-forward ${MAIN} (clean + rebased + green only)\n` +
         "  close <topic>    remove worktree; delete merged branch or archive-tag unmerged\n",

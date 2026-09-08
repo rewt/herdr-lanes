@@ -15,6 +15,7 @@ import {
   markSessionDone,
   parseVerdict,
   renderPlainBoard,
+  tableLineEntries,
   tableLines,
 } from "../board.mjs";
 
@@ -143,6 +144,7 @@ test("plain rendering exposes the same board fields without ANSI", () => {
 
 test("narrow pane rendering keeps every line within the terminal width", () => {
   const [row] = joinBoardRows({ registry, snapshot, now: new Date("2026-09-08T16:00:00Z") });
+  assert.equal(row.gate, "-");
   const lines = tableLines([row], { width: 80 });
   assert.ok(lines.every((line) => line.length <= 78));
   assert.match(lines.join("\n"), /report /);
@@ -150,6 +152,23 @@ test("narrow pane rendering keeps every line within the terminal width", () => {
   assert.match(lines.join("\n"), /deadline .*tripwire /);
   assert.match(lines.join("\n"), /output /);
   negativeControl("narrow board rendering");
+});
+
+test("wide layout uses its derived width and carries the exact gate offset", () => {
+  const gate = "exit=137 @abcdef0";
+  const [row] = joinBoardRows({
+    registry: [{ ...registry[0], name: gate }],
+    snapshot,
+    gitStates: new Map([["api", { gate, gateColor: "red" }]]),
+  });
+  const almostWide = tableLines([row], { width: 182 });
+  assert.ok(almostWide.every((line) => line.length <= 180));
+
+  const wide = tableLineEntries([row], { width: 183 });
+  const body = wide.find((entry) => entry.rowIndex === 0);
+  assert.equal(body.text.slice(body.gateStart, body.gateStart + body.gateText.length), gate);
+  assert.notEqual(body.gateStart, body.text.indexOf(gate));
+  negativeControl("derived board width and gate offset");
 });
 
 test("report verdicts are explicit and marking done updates the registry", () => {
@@ -256,6 +275,12 @@ test("git and gate state use the repository worktree and its current HEAD", () =
     const stale = collectGitStates(repo, "main", registry, snapshot);
     assert.equal(stale.get("api").gate, "STALE");
     assert.equal(stale.get("api").gateColor, undefined);
+
+    rmSync(join(lanePath, ".lane", "gate.json"));
+    const absent = collectGitStates(repo, "main", registry, snapshot);
+    const [absentRow] = joinBoardRows({ registry, snapshot, gitStates: absent });
+    assert.equal(absentRow.gate, "-");
+    assert.equal(absentRow.gateColor, undefined);
     negativeControl("repository worktree gate selection");
   } finally {
     rmSync(root, { recursive: true, force: true });

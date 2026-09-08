@@ -21,6 +21,8 @@ cp /path/to/herdr-lanes/.lane.json.example .lane.json
 
 Edit `.lane.json` so `validate`, `prepare`, `dispatch.kind`, and the named `routes`
 match the project. Put the project's instructions in `AGENTS.md` before opening lanes.
+Add `.lane/` to the target repository's `.gitignore`; `lane check` and `lane board`
+write runtime state there, and that state must not make a worktree dirty.
 
 Start Herdr in that repository:
 
@@ -105,9 +107,8 @@ The interactive board is optional. Install its isolated dependencies once:
 npm --prefix /path/to/herdr-lanes/board ci
 ```
 
-Add `.lane/` to the target repository's `.gitignore`, then add
-`"registry": ".lane/sessions.json"` to `.lane.json`. The registry path must be
-gitignored so board updates never make the canonical checkout dirty.
+Add `"registry": ".lane/sessions.json"` to `.lane.json`. If a different registry
+path is configured, it must also be gitignored.
 
 ```sh
 lane board
@@ -116,6 +117,8 @@ lane board --once
 
 Run the interactive view in a Herdr pane; use `--once` for plain, scriptable
 output. A report is incomplete without the `GATE` line printed by `lane check`.
+Run `lane check` again after the last commit; before handoff, the board's `GATE`
+column must read `exit=0 @<head7>` against the lane's current HEAD.
 
 See [the technical reference](docs/REFERENCE.md) for configuration, dispatch options,
 board fields, status fields, recovery, archived lanes, and unattended promotion. Use the

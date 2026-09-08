@@ -105,7 +105,7 @@ function refExists(repo, ref) {
 }
 
 function ignoreLaneState(fixture) {
-  writeFileSync(join(fixture.repo, ".gitignore"), ".lane/\n");
+  writeFileSync(join(fixture.repo, ".gitignore"), ".lane/\n.ready.marker\n");
   git(fixture.repo, ["add", ".gitignore"]);
   git(fixture.repo, ["commit", "-m", "ignore lane state"], { stdio: "ignore" });
 }
@@ -402,6 +402,7 @@ test("check records configured validation against the current HEAD", () => {
     assert.equal(gate.branch, "lane/checked-topic");
     assert.equal(gate.command, "gate-pass configured");
     assert.equal(gate.exit_code, 0);
+    assert.equal(gate.signal, null);
     assert.equal(new Date(gate.started_at).toISOString(), gate.started_at);
     assert.equal(new Date(gate.finished_at).toISOString(), gate.finished_at);
     assert.ok(Date.parse(gate.finished_at) >= Date.parse(gate.started_at));
@@ -460,6 +461,85 @@ test("check defaults to npm test and refuses a dirty current worktree", () => {
     assert.match(dirty.stderr, /current worktree is not clean/);
     assert.equal(readFileSync(gatePath, "utf8"), previous);
     negativeControl("check default and dirty refusal");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("check runs configured prepare steps before validation", () => {
+  const fixture = makeFixture({
+    main: "main",
+    validate: "gate-needs-prepare",
+    prepare: [{ unless: ".ready.marker", run: ": > .ready.marker" }],
+  });
+  try {
+    ignoreLaneState(fixture);
+    writeExecutable(fixture, "gate-needs-prepare", "[ -f .ready.marker ] || exit 6\nexit 0");
+
+    const run = lane(fixture, ["check"]);
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /preparing .*: : > \.ready\.marker/);
+    assert.ok(existsSync(join(fixture.repo, ".ready.marker")));
+    assert.equal(
+      JSON.parse(readFileSync(join(fixture.repo, ".lane", "gate.json"), "utf8")).exit_code,
+      0,
+    );
+    negativeControl("check prepare parity");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("check records signal termination using the shell exit convention", () => {
+  const fixture = makeFixture();
+  try {
+    ignoreLaneState(fixture);
+    const run = lane(fixture, ["check", "--cmd", "kill -9 $$"]);
+    assert.equal(run.status, 137, run.stderr);
+    assert.match(run.stdout, /GATE [0-9a-f]{40} exit=137/);
+    const gate = JSON.parse(readFileSync(join(fixture.repo, ".lane", "gate.json"), "utf8"));
+    assert.equal(gate.exit_code, 137);
+    assert.equal(gate.signal, "SIGKILL");
+    negativeControl("check signal gate");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("check refuses a detached HEAD without replacing an existing gate", () => {
+  const fixture = makeFixture();
+  try {
+    ignoreLaneState(fixture);
+    mkdirSync(join(fixture.repo, ".lane"));
+    const gatePath = join(fixture.repo, ".lane", "gate.json");
+    writeFileSync(gatePath, "existing gate\n");
+    git(fixture.repo, ["switch", "--detach"]);
+
+    const run = lane(fixture, ["check"]);
+    assert.equal(run.status, 1);
+    assert.equal(run.stderr, "lane: current checkout is detached; check requires a branch\n");
+    assert.equal(readFileSync(gatePath, "utf8"), "existing gate\n");
+    negativeControl("check detached HEAD refusal");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("check rejects unknown options and missing or empty --cmd values", () => {
+  const fixture = makeFixture();
+  try {
+    const unknown = lane(fixture, ["check", "--unknown"]);
+    assert.equal(unknown.status, 1);
+    assert.match(unknown.stderr, /unknown option: --unknown/);
+
+    const missing = lane(fixture, ["check", "--cmd"]);
+    assert.equal(missing.status, 1);
+    assert.equal(missing.stderr, "lane: usage: lane check [--cmd <validate command>]\n");
+
+    const empty = lane(fixture, ["check", "--cmd", ""]);
+    assert.equal(empty.status, 1);
+    assert.equal(empty.stderr, "lane: usage: lane check [--cmd <validate command>]\n");
+    negativeControl("check argument refusals");
   } finally {
     fixture.cleanup();
   }
@@ -598,6 +678,10 @@ test("usage exits one with no command and with an unknown command", () => {
     assert.equal(missing.status, 1);
     assert.match(missing.stdout, /^usage:/);
     assert.match(missing.stdout, /check \[--cmd <validate command>\]/);
+    assert.match(
+      missing.stdout,
+      /  check \[--cmd <validate command>\]\n                   validate this clean worktree/,
+    );
     const unknown = lane(fixture, ["not-a-command"]);
     assert.equal(unknown.status, 1);
     assert.match(unknown.stdout, /^usage:/);

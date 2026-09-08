@@ -58,11 +58,14 @@ secrets in tracked configuration.
 records the result against its exact commit. The command is resolved in the same
 order as promotion: `.lane.json` `validate`, otherwise `npm test`, with
 `LANE_VALIDATE` overriding either. `--cmd` overrides the command for that run and
-is recorded verbatim.
+is recorded verbatim. Before validation, `check` runs the configured `prepare`
+steps in the current worktree just as `promote` does.
 
 The command refuses with exit 1 before validation when `git status --porcelain`
-is non-empty. After validation it atomically writes the gitignored
-`.lane/gate.json`, even when validation fails:
+is non-empty. `lane check` writes `.lane/gate.json`; `.lane/` must be in the target
+repository's `.gitignore`, or the gate makes the worktree dirty and blocks the next
+`lane check` and `lane promote`. After validation, `check` atomically writes the
+gate file even when validation fails:
 
 ```json
 {
@@ -70,6 +73,7 @@ is non-empty. After validation it atomically writes the gitignored
   "branch": "lane/example",
   "command": "npm test",
   "exit_code": 0,
+  "signal": null,
   "started_at": "2026-09-08T14:00:00.000Z",
   "finished_at": "2026-09-08T14:00:03.250Z",
   "duration_s": 3.25
@@ -79,7 +83,14 @@ is non-empty. After validation it atomically writes the gitignored
 `head` is the full SHA captured before validation, `branch` is the current branch,
 the timestamps are ISO-8601 UTC, and `duration_s` is numeric. The command prints
 `GATE <full-head> exit=<n> (<duration>)` after writing the file and exits with the
-validation command's exit code, so scripts see a failed gate directly.
+validation command's exit code, so scripts see a failed gate directly. `signal` is
+the terminating signal name or `null`; when validation dies by signal, `exit_code`
+uses the shell convention 128 plus that signal's number.
+
+Run `lane check` again after the last commit. The `GATE` line pasted into a report
+names the commit it measured; the board's `GATE` column must read
+`exit=0 @<head7>` against the lane's current HEAD before handoff. Because
+`.lane/gate.json` is untracked, re-running the check does not dirty the worktree.
 
 ## Board
 

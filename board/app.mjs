@@ -146,7 +146,7 @@ function BoardApp({ repoRoot, config }) {
     h(Text, { bold: true, color: "cyan" }, "lane board · ", state.connection),
     ...lines.map((line, index) => {
       const active = line.rowIndex === selected;
-      const gateIndex = line.gateColor === undefined ? -1 : line.text.indexOf(line.gateText);
+      const gateIndex = line.gateColor === undefined ? -1 : line.gateStart;
       const content = gateIndex < 0
         ? line.text
         : [
