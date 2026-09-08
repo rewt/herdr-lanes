@@ -33,7 +33,8 @@ test includes the suite's `negativeControl` call.
   deliberately failed all 44 controls (0 passed).
 - `git diff --check` passed.
 - Verified with Node.js 20.19.4, npm 10.8.2, and git 2.54.0.
-- Final clean-tree gate line: pending the requested clean-tree check.
+- Clean-tree implementation gate:
+  `GATE ec88e4b42d49dd413aa29fb06fbdf56bebf96be5 exit=0 (4.941s)`
 
 ## Unverified
 
