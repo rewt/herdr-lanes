@@ -59,5 +59,5 @@ after the React view unmounts.
   promotion contract. The registry path must be gitignored so it cannot block a clean
   promotion.
 - Git dirtiness is read from the worktree registered to the lane branch in the target
-  repository. Workspace checkout metadata is only a fallback when its repository root
-  and branch both match.
+  repository. If that branch has no locally registered worktree, its dirty state is not
+  available; protocol-20 workspace metadata does not identify the checked-out branch.

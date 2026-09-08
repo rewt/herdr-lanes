@@ -10,6 +10,7 @@ import {
   buildSubscriptions,
   collectGitStates,
   countWorkers,
+  interactiveMessage,
   joinBoardRows,
   markSessionDone,
   parseVerdict,
@@ -175,7 +176,7 @@ test("marking done rejects a registry that is not an array", () => {
   }
 });
 
-test("git state prefers the repository worktree when workspace fields disagree", () => {
+test("git state prefers the repository worktree over protocol workspace metadata", () => {
   const root = mkdtempSync(join(tmpdir(), "lane-board-checkout-"));
   const repo = join(root, "repo");
   const lanePath = join(root, "lane-api");
@@ -207,8 +208,10 @@ test("git state prefers the repository worktree when workspace fields disagree",
         label: "lane-api",
         worktree: {
           checkout_path: unrelated,
+          is_linked_worktree: false,
+          repo_key: "unrelated-key",
+          repo_name: "unrelated",
           repo_root: unrelated,
-          branch: "lane/api",
         },
       }],
     });
@@ -218,6 +221,25 @@ test("git state prefers the repository worktree when workspace fields disagree",
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("worker counts include interpreter-launched worker scripts", () => {
+  assert.deepEqual(
+    countWorkers("node /example/tools/bin/vitest --run\n"),
+    { vitest: 1, cargo: 0, go: 0, rustc: 0 },
+  );
+  negativeControl("interpreter-launched worker matching");
+});
+
+test("interactive status names a missing registry", () => {
+  assert.equal(
+    interactiveMessage({
+      exists: false,
+      path: "/example/repository/.lane/sessions.json",
+    }, ""),
+    "registry not found: /example/repository/.lane/sessions.json",
+  );
+  negativeControl("interactive missing registry hint");
 });
 
 test("worker counts match executable basenames instead of path segments", () => {

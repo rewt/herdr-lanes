@@ -198,16 +198,7 @@ export function collectGitStates(repoRoot, main, registry, snapshot) {
   const trees = worktrees(repoRoot);
   for (const session of registry) {
     const branch = session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`;
-    const workspace = workspaceFor(session, snapshot);
-    const repositoryCheckout = trees.find((tree) => tree.branch === branch)?.path;
-    const workspaceBranch = workspace?.worktree?.branch?.replace(/^refs\/heads\//u, "");
-    const workspaceRepoRoot = workspace?.worktree?.repo_root;
-    const workspaceCheckout = workspaceRepoRoot !== undefined
-      && resolve(workspaceRepoRoot) === resolve(repoRoot)
-      && workspaceBranch === branch
-      ? workspace.worktree.checkout_path
-      : undefined;
-    const checkout = repositoryCheckout ?? workspaceCheckout;
+    const checkout = trees.find((tree) => tree.branch === branch)?.path;
     const counts = gitOutput(repoRoot, ["rev-list", "--left-right", "--count", `${branch}...${main}`]);
     if (counts === undefined) continue;
     const [ahead] = counts.split(/\s+/u).map(Number);
@@ -244,8 +235,16 @@ export function systemStats() {
 export function countWorkers(command) {
   const workers = { vitest: 0, cargo: 0, go: 0, rustc: 0 };
   for (const line of command.split("\n")) {
-    const executable = basename(line.trim().split(/\s+/u, 1)[0] ?? "");
-    if (Object.hasOwn(workers, executable)) workers[executable] += 1;
+    const argv = line.trim().split(/\s+/u);
+    const executable = basename(argv[0] ?? "");
+    const candidates = [executable];
+    if (/^(?:node(?:js)?|python(?:\d+(?:\.\d+)?)?|ruby|perl|php|bash|sh|zsh|deno|bun)$/u.test(executable)) {
+      candidates.push(basename(argv[1] ?? ""));
+    }
+    const worker = candidates
+      .map((candidate) => candidate.replace(/\.(?:[cm]?js|py|rb)$/u, ""))
+      .find((candidate) => Object.hasOwn(workers, candidate));
+    if (worker !== undefined) workers[worker] += 1;
   }
   return workers;
 }
@@ -308,6 +307,12 @@ export function renderPlainBoard(rows, stats, { connection = "offline", missingR
     ...tableLines(rows),
     footerLine(stats),
   ].join("\n") + "\n";
+}
+
+export function interactiveMessage(state, message) {
+  if (message) return message;
+  if (state.exists === false) return `registry not found: ${state.path}`;
+  return "↑/↓ select · a attach command · d done · r refresh · q quit";
 }
 
 export function markSessionDone(registryPath, name) {

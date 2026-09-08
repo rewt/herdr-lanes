@@ -17,6 +17,7 @@ user request defines the work; the handoff provides state and prior verification
 ## Repository map
 
 - `lane.mjs`: the complete CLI; keep it dependency-free.
+- `board/`: board model, Herdr client, and isolated Ink/React interactive entrypoint.
 - `test/lane.test.mjs`: offline behavioral tests using temporary git repositories.
 - `.lane.json.example`: portable target-repository configuration.
 - `contrib/promote-safely.sh`: serialized wrapper for unattended promotion.
@@ -47,7 +48,8 @@ status definitions, and recovery details in `docs/REFERENCE.md`.
 - Treat every tracked file as public. Do not add credentials, personal paths,
   unrelated repository names, internal documents, or organization-specific defaults.
 - Preserve Node.js 20 and git 2.38 compatibility.
-- Use Node.js built-ins only in `lane.mjs` and the test suite.
+- Use Node.js built-ins only in `lane.mjs` and the test suite. The isolated
+  `board/app.mjs` entrypoint may use Ink and React from `board/package.json`.
 - Keep configuration repository-neutral and document every public key or environment
   variable in `README.md`.
 - Every behavior change requires a test in `test/` that is observed failing before

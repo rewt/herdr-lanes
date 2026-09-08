@@ -157,3 +157,20 @@ Living log for agents maintaining this repository. Newest entry last.
   sequence, live Herdr event, Linux host, or Unicode display-width behavior was tested.
   Async git/process sampling and display-width-aware truncation remain deferred as the
   two non-trivial review nits. No push was performed.
+
+## 2026-09-08 — lane board round-two review corrections
+
+- Removed the unreachable workspace checkout fallback because protocol 20 does not
+  provide a worktree branch; git dirtiness now comes only from the target repository's
+  worktree registered to the lane branch. Updated the test fixture and implementation
+  report to use only protocol fields Herdr sends.
+- Counted worker scripts launched by common interpreters using the basename of the
+  script argument, and gave the interactive footer the same missing-registry message
+  as `--once`. Added negative-controlled tests for both behaviors.
+- Added `board/` to the repository map and documented the isolated Ink/React entrypoint
+  exception while retaining the built-ins-only rules for `lane.mjs` and tests.
+- Baseline `npm test` passed 39/39. Before implementation, the two focused behavior
+  tests failed as expected. Final `npm test` passed 41/41, all 41 deliberate negative
+  controls failed, and `git diff --check` passed.
+- No real-TTY interaction, live Herdr event, or Linux host was tested. No push was
+  performed.

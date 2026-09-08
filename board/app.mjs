@@ -10,6 +10,7 @@ import {
   buildSubscriptions,
   collectBoardState,
   footerLine,
+  interactiveMessage,
   joinBoardRows,
   markSessionDone,
   tableLineEntries,
@@ -153,7 +154,7 @@ function BoardApp({ repoRoot, config }) {
       );
     }),
     h(Text, { dimColor: true }, footerLine(state.stats)),
-    h(Text, null, message || "↑/↓ select · a attach command · d done · r refresh · q quit"),
+    h(Text, null, interactiveMessage(state, message)),
   );
 }
 
