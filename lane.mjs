@@ -546,8 +546,11 @@ function board(args) {
   const unknown = args.filter((argument) => argument !== "--once");
   if (unknown.length > 0) fail(`usage: lane board [--once] (unknown option: ${unknown[0]})`);
   const boardRoot = join(TOOL_ROOT, "board");
+  if (!args.includes("--once") && !process.stdin.isTTY) {
+    fail("interactive board requires a TTY; use `lane board --once`");
+  }
   if (!args.includes("--once") && !existsSync(join(boardRoot, "node_modules", "ink"))) {
-    fail(`install board dependencies first: npm --prefix ${boardRoot} install`);
+    fail(`install board dependencies first: npm --prefix ${boardRoot} ci`);
   }
   const run = args.includes("--once")
     ? spawnSync(process.execPath, [join(boardRoot, "cli.mjs"), "--repo", REPO, "--once"], {

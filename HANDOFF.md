@@ -123,3 +123,37 @@ Living log for agents maintaining this repository. Newest entry last.
   passed. Live checks exercised protocol-20 snapshot/subscription handshakes,
   plain output, and Ink startup/quit. No live status-change event was induced, no
   non-macOS host was tested, and no push was performed.
+
+## 2026-09-08 — lane board post-review corrections
+
+- Gitignored `.lane/` and documented that every configured registry path must be
+  gitignored, with promotion coverage proving a present registry does not dirty the
+  canonical checkout. Lane dirtiness now prefers the target repository's worktree for
+  the lane branch and only trusts workspace checkout metadata when repository root and
+  branch both match.
+- Made Herdr client shutdown permanent, rejected pending requests on close, prevented
+  subscriptions after close, and guarded late React refreshes after unmount. Added
+  fake-server coverage for split and batched frames, timeouts, error bodies,
+  close-before-reply, and subscribe-after-close.
+- Replaced JSX/`tsx` with a plain Node.js 20 `React.createElement` entrypoint, added a
+  concise non-TTY failure pointing to `--once`, removed the undocumented
+  `LANE_BOARD_REPO`, validated missing `--repo` values, and standardized board install
+  instructions on `npm --prefix board ci`.
+- Corrected worker sampling to use `ps -Ao command=` and executable basenames, showed
+  report mtimes without a stray verdict separator, clarified malformed-registry
+  errors, named a missing registry under `--once`, generalized the ignored brief
+  pattern, and documented that tripwire and last-output values are live-only.
+- Baseline `npm test` passed 26/26. Before implementation, the expanded suite passed
+  29/37 with eight expected failures covering the main regressions; the malformed
+  registry and missing-registry hint controls were also observed failing in focused
+  runs before their fixes. Final `npm test` passed 39/39, and
+  `LANE_TEST_NEGATIVE_CONTROL=1 npm test` failed all 39 deliberate controls, including
+  all 18 board-package tests. `git diff --check` passed.
+- `npm --prefix board ci` installed 41 packages in under one second with two direct
+  dependencies. Removing `tsx` reduced the lockfile from 1,059 to 569 lines and the
+  installed package footprint from the reviewed 33 MB to 22 MB. Removed the three
+  empty temporary client directories identified by the review.
+- Verified with Node.js 20.19.4, npm 10.8.2, and git 2.54.0. No live interactive key
+  sequence, live Herdr event, Linux host, or Unicode display-width behavior was tested.
+  Async git/process sampling and display-width-aware truncation remain deferred as the
+  two non-trivial review nits. No push was performed.

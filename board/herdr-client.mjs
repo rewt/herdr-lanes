@@ -27,7 +27,9 @@ export class HerdrClient extends EventEmitter {
     this.subscriptionSocket = undefined;
     this.reconnectTimer = undefined;
     this.closed = false;
+    this.destroyed = false;
     this.generation = 0;
+    this.pendingRequests = new Set();
   }
 
   id() {
@@ -37,20 +39,24 @@ export class HerdrClient extends EventEmitter {
   }
 
   request(method, params = {}) {
+    if (this.destroyed) return Promise.reject(new Error("Herdr client closed"));
     const id = this.id();
     return new Promise((resolve, reject) => {
       const socket = this.connect(this.socketPath);
       let buffer = "";
       let settled = false;
+      let timer;
       const finish = (error, result) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        this.pendingRequests.delete(finish);
         socket.destroy();
         if (error !== undefined) reject(error);
         else resolve(result);
       };
-      const timer = setTimeout(
+      this.pendingRequests.add(finish);
+      timer = setTimeout(
         () => finish(new Error(`Herdr request timed out: ${method}`)),
         this.requestTimeoutMs,
       );
@@ -82,6 +88,7 @@ export class HerdrClient extends EventEmitter {
       });
       socket.on("error", (error) => finish(error));
       socket.on("end", () => finish(new Error(`Herdr closed before replying to ${method}`)));
+      socket.on("close", () => finish(new Error(`Herdr closed before replying to ${method}`)));
     });
   }
 
@@ -100,6 +107,7 @@ export class HerdrClient extends EventEmitter {
   }
 
   subscribe(subscriptions) {
+    if (this.destroyed) return;
     this.closed = false;
     this.subscriptions = [...subscriptions];
     this.generation += 1;
@@ -109,7 +117,7 @@ export class HerdrClient extends EventEmitter {
   }
 
   #connectSubscription(generation) {
-    if (this.closed || generation !== this.generation) return;
+    if (this.destroyed || this.closed || generation !== this.generation) return;
     const id = this.id();
     const socket = this.connect(this.socketPath);
     this.subscriptionSocket = socket;
@@ -117,7 +125,7 @@ export class HerdrClient extends EventEmitter {
     let ready = false;
     let scheduled = false;
     const reconnect = () => {
-      if (scheduled || this.closed || generation !== this.generation) return;
+      if (scheduled || this.destroyed || this.closed || generation !== this.generation) return;
       scheduled = true;
       if (this.subscriptionSocket === socket) this.subscriptionSocket = undefined;
       this.emit("disconnected");
@@ -175,11 +183,15 @@ export class HerdrClient extends EventEmitter {
   }
 
   close() {
+    this.destroyed = true;
     this.closed = true;
     this.generation += 1;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
     this.subscriptionSocket?.destroy();
     this.subscriptionSocket = undefined;
+    for (const finish of [...this.pendingRequests]) {
+      finish(new Error("Herdr client closed"));
+    }
   }
 }

@@ -2,11 +2,17 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { repoRootFromArgs } from "./args.mjs";
 import { runOnce } from "./board.mjs";
 
 const args = process.argv.slice(2);
-const repoIndex = args.indexOf("--repo");
-const repoRoot = resolve(repoIndex >= 0 ? args[repoIndex + 1] : process.cwd());
+let repoRoot;
+try {
+  repoRoot = repoRootFromArgs(args);
+} catch (error) {
+  process.stderr.write(`lane board: ${error.message}\n`);
+  process.exit(1);
+}
 const configPath = process.env.LANE_CONFIG ?? resolve(repoRoot, ".lane.json");
 let config = {};
 try {

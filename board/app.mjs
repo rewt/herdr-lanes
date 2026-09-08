@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Text, render, useApp, useInput } from "ink";
 
+import { repoRootFromArgs } from "./args.mjs";
 import {
   applyHerdrEvent,
   buildSubscriptions,
@@ -15,9 +16,12 @@ import {
 } from "./board.mjs";
 import { HerdrClient } from "./herdr-client.mjs";
 
+const h = React.createElement;
+
 function BoardApp({ repoRoot, config }) {
   const { exit } = useApp();
   const clientRef = useRef();
+  const mountedRef = useRef(false);
   const subscriptionSignature = useRef("");
   const runtimeRef = useRef(new Map());
   const [selected, setSelected] = useState(0);
@@ -34,6 +38,7 @@ function BoardApp({ repoRoot, config }) {
   });
 
   const installSubscriptions = useCallback((next) => {
+    if (!mountedRef.current) return;
     const subscriptions = buildSubscriptions(next.sessions, next.snapshot);
     const signature = JSON.stringify(subscriptions);
     if (signature !== subscriptionSignature.current) {
@@ -50,6 +55,7 @@ function BoardApp({ repoRoot, config }) {
         client: clientRef.current,
         runtime: runtimeRef.current,
       });
+      if (!mountedRef.current) return;
       next.gitStates = next.gitStates ?? new Map();
       next.reportStates = next.reportStates ?? new Map();
       setState(next);
@@ -57,11 +63,12 @@ function BoardApp({ repoRoot, config }) {
       setSelected((current) => Math.min(current, Math.max(0, next.rows.length - 1)));
       setMessage("");
     } catch (error) {
-      setMessage(error.message);
+      if (mountedRef.current) setMessage(error.message);
     }
   }, [config, installSubscriptions, repoRoot]);
 
   useEffect(() => {
+    mountedRef.current = true;
     const client = new HerdrClient();
     clientRef.current = client;
 
@@ -98,6 +105,7 @@ function BoardApp({ repoRoot, config }) {
     void refresh();
     const tick = setInterval(() => void refresh(), 5_000);
     return () => {
+      mountedRef.current = false;
       clearInterval(tick);
       client.close();
     };
@@ -105,6 +113,7 @@ function BoardApp({ repoRoot, config }) {
 
   useInput((input, key) => {
     if (input === "q" || key.escape) {
+      mountedRef.current = false;
       clientRef.current?.close();
       exit();
     } else if (input === "r") {
@@ -130,22 +139,37 @@ function BoardApp({ repoRoot, config }) {
   });
 
   const lines = tableLineEntries(state.rows, { width: process.stdout.columns ?? 160 });
-  return (
-    <Box flexDirection="column">
-      <Text bold color="cyan">lane board · {state.connection}</Text>
-      {lines.map((line, index) => {
-        const active = line.rowIndex === selected;
-        return <Text key={`${index}:${line.text}`} color={active ? "yellow" : undefined}>{active ? "> " : "  "}{line.text}</Text>;
-      })}
-      <Text dimColor>{footerLine(state.stats)}</Text>
-      <Text>{message || "↑/↓ select · a attach command · d done · r refresh · q quit"}</Text>
-    </Box>
+  return h(
+    Box,
+    { flexDirection: "column" },
+    h(Text, { bold: true, color: "cyan" }, "lane board · ", state.connection),
+    ...lines.map((line, index) => {
+      const active = line.rowIndex === selected;
+      return h(
+        Text,
+        { key: `${index}:${line.text}`, color: active ? "yellow" : undefined },
+        active ? "> " : "  ",
+        line.text,
+      );
+    }),
+    h(Text, { dimColor: true }, footerLine(state.stats)),
+    h(Text, null, message || "↑/↓ select · a attach command · d done · r refresh · q quit"),
   );
 }
 
+if (!process.stdin.isTTY) {
+  process.stderr.write("lane board: interactive mode requires a TTY; use `lane board --once`\n");
+  process.exit(1);
+}
+
 const args = process.argv.slice(2);
-const repoIndex = args.indexOf("--repo");
-const repoRoot = resolve(repoIndex >= 0 ? args[repoIndex + 1] : process.env.LANE_BOARD_REPO ?? process.cwd());
+let repoRoot;
+try {
+  repoRoot = repoRootFromArgs(args);
+} catch (error) {
+  process.stderr.write(`lane board: ${error.message}\n`);
+  process.exit(1);
+}
 const configPath = process.env.LANE_CONFIG ?? resolve(repoRoot, ".lane.json");
 let config = {};
 try {
@@ -154,4 +178,4 @@ try {
   // Every lane configuration key is optional.
 }
 
-render(<BoardApp repoRoot={repoRoot} config={config} />);
+render(h(BoardApp, { repoRoot, config }));

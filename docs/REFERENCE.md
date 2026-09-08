@@ -35,7 +35,7 @@
 | --- | --- | --- |
 | `main` | `main` | Local integration branch |
 | `validate` | `npm test` | Shell command required for promotion |
-| `registry` | `.lane/sessions.json` | JSON array of sessions displayed by `board` |
+| `registry` | `.lane/sessions.json` | Gitignored JSON array of sessions displayed by `board` |
 | `prepare` | none | `{unless, run}` steps for fresh worktrees |
 | `dispatch.kind` | `claude` | Herdr agent kind |
 | `dispatch.model` | none | Model passed to the agent |
@@ -64,7 +64,9 @@ The configured registry is a JSON array. Every entry has string fields `name`
 `lane/<topic>` branch), `role`, and `report` (absolute or repository-relative
 path), plus `deadline` (an ISO-8601 timestamp or `null`) and `done` (boolean).
 Optional `tripwires` is an array of literal output substrings. The default registry
-path is `.lane/sessions.json`.
+path is `.lane/sessions.json`. The configured registry path must be covered by the
+target repository's `.gitignore`; otherwise creating it, or marking a session done,
+makes the canonical checkout dirty and blocks `lane promote`.
 
 The board joins each entry with the Herdr snapshot, the lane worktree, and its report.
 It shows agent status and pane ID, commits ahead of the configured main branch, dirty
@@ -77,7 +79,8 @@ attach <name>`, `d` to atomically set the selected registry entry's `done` field
 `r` to refresh, and `q` to quit. It redraws for subscribed events and on a five-second
 host/git/report tick; there is no busy loop. Herdr sets `HERDR_SOCKET_PATH` inside its
 panes. Outside Herdr, `--once` degrades to offline status while retaining git, report,
-deadline, and host data.
+deadline, and host data. `TRIPWIRE` and `LAST OUTPUT` are live-only columns populated
+by interactive subscriptions, so they display `-` under `--once`.
 
 ## Workspace setup
 

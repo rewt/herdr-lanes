@@ -9,7 +9,6 @@ Install `lane` once:
 
 ```sh
 git clone https://github.com/rewt/herdr-lanes.git
-npm --prefix herdr-lanes/board ci
 mkdir -p ~/.local/bin
 ln -s "$PWD/herdr-lanes/lane.mjs" ~/.local/bin/lane
 ```
@@ -99,30 +98,23 @@ dispatch. Herdr is optional for git-only lane operations.
 
 ## Lane board
 
-Add `"registry": ".lane/sessions.json"` to `.lane.json` (that path is the
-default), then register the sessions to watch as a JSON array:
+The interactive board is optional. Install its isolated dependencies once:
 
-```json
-[
-  {
-    "name": "lane-api-123456",
-    "workspace": "lane-api",
-    "lane": "api",
-    "role": "engineer",
-    "report": "reports/api.md",
-    "deadline": "2026-09-08T17:00:00-05:00",
-    "done": false,
-    "tripwires": ["TRIPWIRE", "cargo prove"]
-  }
-]
+```sh
+npm --prefix /path/to/herdr-lanes/board ci
 ```
 
-Run `lane board` in a Herdr pane for the Ink view, or `lane board --once` for
-plain, scriptable output. The board reads Herdr's injected `HERDR_SOCKET_PATH`;
-without a live socket it still reports registry, git, report, and host state.
-Reports expose their newest `**PASS**`, `**NEEDS-WORK**`, or `**FAIL**` line.
-Use arrow keys (or `j`/`k`) to select, `a` to show the attach command, `d` to
-mark the registry entry done, `r` to refresh, and `q` to quit.
+Add `.lane/` to the target repository's `.gitignore`, then add
+`"registry": ".lane/sessions.json"` to `.lane.json`. The registry path must be
+gitignored so board updates never make the canonical checkout dirty.
+
+```sh
+lane board
+lane board --once
+```
+
+Run the interactive view in a Herdr pane; use `--once` for plain, scriptable
+output.
 
 See [the technical reference](docs/REFERENCE.md) for configuration, dispatch options,
 board fields, status fields, recovery, archived lanes, and unattended promotion. Use the

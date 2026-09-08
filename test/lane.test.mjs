@@ -206,6 +206,29 @@ test("promote rebases a clean lane behind main and fast-forwards", () => {
   }
 });
 
+test("promote accepts a gitignored lane board registry in the canonical checkout", () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  try {
+    writeFileSync(
+      join(fixture.repo, ".gitignore"),
+      readFileSync(resolve(HERE, "..", ".gitignore"), "utf8"),
+    );
+    git(fixture.repo, ["add", ".gitignore"]);
+    git(fixture.repo, ["commit", "-m", "add ignore rules"], { stdio: "ignore" });
+    const path = openLane(fixture, "board-registry");
+    commitFile(path, "lane.txt", "lane\n", "lane change");
+    mkdirSync(join(fixture.repo, ".lane"));
+    writeFileSync(join(fixture.repo, ".lane", "sessions.json"), "[]\n");
+
+    const run = lane(fixture, ["promote", "board-registry"]);
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /promoted lane\/board-registry/);
+    negativeControl("gitignored board registry promotion");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("promote refuses a conflicting rebase and names the file", () => {
   const fixture = makeFixture();
   try {
@@ -403,6 +426,35 @@ test("board --once renders a plain registered-session table without Herdr", () =
     assert.match(run.stdout, /offline-agent\s+reviewer\s+offline\s+offline/);
     assert.match(run.stdout, /load .* workers/);
     negativeControl("plain lane board");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("board --once names the missing registry path", () => {
+  const fixture = makeFixture();
+  try {
+    fixture.env.HERDR_SOCKET_PATH = join(fixture.root, "missing.sock");
+    const run = lane(fixture, ["board", "--once"]);
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /registry not found: .*\.lane\/sessions\.json/);
+    negativeControl("missing board registry hint");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("interactive board rejects non-TTY input with a concise --once hint", () => {
+  const fixture = makeFixture();
+  try {
+    const run = lane(fixture, ["board"]);
+    assert.equal(run.status, 1);
+    assert.equal(
+      run.stderr,
+      "lane: interactive board requires a TTY; use `lane board --once`\n",
+    );
+    assert.equal(run.stdout, "");
+    negativeControl("non-TTY board failure");
   } finally {
     fixture.cleanup();
   }

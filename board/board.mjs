@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { freemem, loadavg } from "node:os";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 
 import { HerdrClient } from "./herdr-client.mjs";
 
@@ -42,7 +42,7 @@ function registryPathFor(repoRoot, config = {}) {
 
 export function loadRegistry(repoRoot, config = {}) {
   const path = registryPathFor(repoRoot, config);
-  if (!existsSync(path)) return { path, sessions: [] };
+  if (!existsSync(path)) return { path, sessions: [], exists: false };
   const parsed = JSON.parse(readFileSync(path, "utf8"));
   if (!Array.isArray(parsed)) throw new Error(`lane board registry must be a JSON array: ${path}`);
   for (const [index, session] of parsed.entries()) {
@@ -61,7 +61,7 @@ export function loadRegistry(repoRoot, config = {}) {
       throw new Error(`lane board registry entry ${index} tripwires must contain non-empty strings`);
     }
   }
-  return { path, sessions: parsed };
+  return { path, sessions: parsed, exists: true };
 }
 
 export function parseVerdict(text) {
@@ -160,7 +160,9 @@ export function joinBoardRows({
       status: agent?.agent_status ?? "offline",
       pane: agent?.pane_id ?? "-",
       git: git.ahead === undefined ? "-" : `+${git.ahead}${git.dirty ? " DIRTY" : ""}`,
-      report: report.verdict === undefined ? "-" : `${report.verdict}@${report.mtime}`,
+      report: report.verdict === undefined
+        ? "-"
+        : report.verdict === "-" ? report.mtime : `${report.verdict}@${report.mtime}`,
       deadline,
       tripwire: live.tripwire ?? "-",
       output: live.lastOutput ?? "-",
@@ -197,8 +199,15 @@ export function collectGitStates(repoRoot, main, registry, snapshot) {
   for (const session of registry) {
     const branch = session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`;
     const workspace = workspaceFor(session, snapshot);
-    const checkout = workspace?.worktree?.checkout_path
-      ?? trees.find((tree) => tree.branch === branch)?.path;
+    const repositoryCheckout = trees.find((tree) => tree.branch === branch)?.path;
+    const workspaceBranch = workspace?.worktree?.branch?.replace(/^refs\/heads\//u, "");
+    const workspaceRepoRoot = workspace?.worktree?.repo_root;
+    const workspaceCheckout = workspaceRepoRoot !== undefined
+      && resolve(workspaceRepoRoot) === resolve(repoRoot)
+      && workspaceBranch === branch
+      ? workspace.worktree.checkout_path
+      : undefined;
+    const checkout = repositoryCheckout ?? workspaceCheckout;
     const counts = gitOutput(repoRoot, ["rev-list", "--left-right", "--count", `${branch}...${main}`]);
     if (counts === undefined) continue;
     const [ahead] = counts.split(/\s+/u).map(Number);
@@ -224,18 +233,21 @@ export function collectReportStates(repoRoot, registry) {
 }
 
 export function systemStats() {
-  const command = spawnSync("ps", ["-axo", "command="], { encoding: "utf8" }).stdout ?? "";
-  const workers = { vitest: 0, cargo: 0, go: 0, rustc: 0 };
-  for (const line of command.split("\n")) {
-    for (const name of Object.keys(workers)) {
-      if (new RegExp(`(?:^|[\\s/])${name}(?:[\\s/]|$)`, "u").test(line)) workers[name] += 1;
-    }
-  }
+  const command = spawnSync("ps", ["-Ao", "command="], { encoding: "utf8" }).stdout ?? "";
   return {
     load: loadavg()[0],
     freeMemory: `${(freemem() / (1024 ** 3)).toFixed(1)} GiB`,
-    workers,
+    workers: countWorkers(command),
   };
+}
+
+export function countWorkers(command) {
+  const workers = { vitest: 0, cargo: 0, go: 0, rustc: 0 };
+  for (const line of command.split("\n")) {
+    const executable = basename(line.trim().split(/\s+/u, 1)[0] ?? "");
+    if (Object.hasOwn(workers, executable)) workers[executable] += 1;
+  }
+  return workers;
 }
 
 export function tableLineEntries(rows, { width = Number.POSITIVE_INFINITY } = {}) {
@@ -288,12 +300,21 @@ export function footerLine(stats) {
   return `load ${load} | free ${stats.freeMemory} | workers vitest=${workers.vitest ?? 0} cargo=${workers.cargo ?? 0} go=${workers.go ?? 0} rustc=${workers.rustc ?? 0}`;
 }
 
-export function renderPlainBoard(rows, stats, { connection = "offline" } = {}) {
-  return [`lane board (${connection})`, ...tableLines(rows), footerLine(stats)].join("\n") + "\n";
+export function renderPlainBoard(rows, stats, { connection = "offline", missingRegistry } = {}) {
+  const registryNotice = missingRegistry === undefined ? [] : [`registry not found: ${missingRegistry}`];
+  return [
+    `lane board (${connection})`,
+    ...registryNotice,
+    ...tableLines(rows),
+    footerLine(stats),
+  ].join("\n") + "\n";
 }
 
 export function markSessionDone(registryPath, name) {
   const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+  if (!Array.isArray(registry)) {
+    throw new Error(`lane board registry must be a JSON array: ${registryPath}`);
+  }
   const session = registry.find((candidate) => candidate.name === name);
   if (session === undefined) throw new Error(`session not found in registry: ${name}`);
   session.done = true;
@@ -338,7 +359,10 @@ export async function runOnce({ repoRoot, config = {} }) {
   const client = new HerdrClient({ requestTimeoutMs: 500 });
   try {
     const state = await collectBoardState({ repoRoot, config, client });
-    process.stdout.write(renderPlainBoard(state.rows, state.stats, { connection: state.connection }));
+    process.stdout.write(renderPlainBoard(state.rows, state.stats, {
+      connection: state.connection,
+      missingRegistry: state.exists ? undefined : state.path,
+    }));
   } finally {
     client.close();
   }

@@ -1,4 +1,5 @@
 .DS_Store
 node_modules/
+.lane/
 !CLAUDE.md
-docs/BRIEF-lane-board-ink-20260908.md
+docs/BRIEF-*.md

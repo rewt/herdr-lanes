@@ -4,6 +4,12 @@ import test from "node:test";
 
 import { HerdrClient } from "../herdr-client.mjs";
 
+const NEGATIVE_CONTROL = process.env.LANE_TEST_NEGATIVE_CONTROL === "1";
+
+function negativeControl(name) {
+  if (NEGATIVE_CONTROL) assert.fail(`deliberately broken expectation: ${name}`);
+}
+
 function waitFor(predicate, timeoutMs = 1_000) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
@@ -41,6 +47,10 @@ class FakeSocket extends EventEmitter {
     queueMicrotask(() => this.emit("data", `${JSON.stringify(message)}\n`));
   }
 
+  receiveChunk(chunk) {
+    queueMicrotask(() => this.emit("data", chunk));
+  }
+
   end() {
     this.destroy();
   }
@@ -76,6 +86,7 @@ test("snapshot preserves request ids and returns protocol state", async () => {
   assert.equal(snapshot.protocol, 20);
   assert.equal(requests[0].method, "session.snapshot");
   assert.match(requests[0].id, /^lane-board:/);
+  negativeControl("Herdr snapshot request");
 });
 
 test("subscriptions emit events and reconnect with bounded backoff", async () => {
@@ -105,6 +116,7 @@ test("subscriptions emit events and reconnect with bounded backoff", async () =>
     assert.deepEqual(requests[0].params.subscriptions, [
       { type: "pane.agent_status_changed", pane_id: "w1:p1" },
     ]);
+    negativeControl("Herdr subscription reconnect");
   } finally {
     client.close();
   }
@@ -119,6 +131,115 @@ test("a subscription handshake is observable before streamed events", async () =
     const ready = once(client, "ready");
     client.subscribe([{ type: "pane.scroll_changed", pane_id: "w1:p1" }]);
     await ready;
+    negativeControl("Herdr subscription handshake");
+  } finally {
+    client.close();
+  }
+});
+
+test("request responses may be split across data chunks", async () => {
+  const connect = fakeServer((socket, request) => {
+    const response = `${JSON.stringify({
+      id: request.id,
+      result: {
+        type: "session_snapshot",
+        snapshot: { protocol: 20, version: "test", agents: [], panes: [], workspaces: [] },
+      },
+    })}\n`;
+    for (const chunk of [response.slice(0, 3), response.slice(3, 17), response.slice(17)]) {
+      socket.receiveChunk(chunk);
+    }
+  });
+  const client = new HerdrClient({ socketPath: "fake.sock", connect });
+  try {
+    assert.equal((await client.snapshot()).protocol, 20);
+    negativeControl("chunked Herdr response");
+  } finally {
+    client.close();
+  }
+});
+
+test("subscriptions parse two messages delivered in one chunk", async () => {
+  const connect = fakeServer((socket, request) => {
+    socket.receiveChunk(
+      `${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n` +
+      `${JSON.stringify({
+        event: "pane.agent_status_changed",
+        data: { pane_id: "w1:p1", agent_status: "done" },
+      })}\n`,
+    );
+  });
+  const client = new HerdrClient({ socketPath: "fake.sock", connect });
+  try {
+    const event = once(client, "event");
+    client.subscribe([{ type: "pane.agent_status_changed", pane_id: "w1:p1" }]);
+    assert.equal((await event)[0].data.agent_status, "done");
+    negativeControl("batched Herdr messages");
+  } finally {
+    client.close();
+  }
+});
+
+test("requests reject after the configured timeout", async () => {
+  const client = new HerdrClient({
+    socketPath: "fake.sock",
+    requestTimeoutMs: 20,
+    connect: fakeServer(() => {}),
+  });
+  try {
+    await assert.rejects(client.snapshot(), /Herdr request timed out: session\.snapshot/);
+    negativeControl("Herdr request timeout");
+  } finally {
+    client.close();
+  }
+});
+
+test("requests reject Herdr error response bodies", async () => {
+  const connect = fakeServer((socket, request) => {
+    socket.receive({
+      id: request.id,
+      error: { code: "invalid_request", message: "bad snapshot" },
+    });
+  });
+  const client = new HerdrClient({ socketPath: "fake.sock", connect });
+  try {
+    await assert.rejects(client.snapshot(), /Herdr invalid_request: bad snapshot/);
+    negativeControl("Herdr error response");
+  } finally {
+    client.close();
+  }
+});
+
+test("close rejects a request before its reply arrives", async () => {
+  let requestSeen;
+  const seen = new Promise((resolve) => { requestSeen = resolve; });
+  const client = new HerdrClient({
+    socketPath: "fake.sock",
+    requestTimeoutMs: 500,
+    connect: fakeServer(() => requestSeen()),
+  });
+  const request = client.snapshot();
+  await seen;
+  client.close();
+  await assert.rejects(request, /Herdr client closed/);
+  negativeControl("close before Herdr reply");
+});
+
+test("subscribe after close does not open another socket", async () => {
+  let connections = 0;
+  const client = new HerdrClient({
+    socketPath: "fake.sock",
+    connect: () => {
+      connections += 1;
+      return new FakeSocket(() => {});
+    },
+  });
+  try {
+    client.close();
+    client.subscribe([{ type: "pane.agent_status_changed", pane_id: "w1:p1" }]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(connections, 0);
+    negativeControl("permanent Herdr client close");
   } finally {
     client.close();
   }

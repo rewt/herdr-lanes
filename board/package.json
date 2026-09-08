@@ -5,11 +5,10 @@
   "type": "module",
   "engines": { "node": ">=20" },
   "scripts": {
-    "start": "node --import tsx app.jsx"
+    "start": "node app.mjs"
   },
   "dependencies": {
     "ink": "^5.2.1",
-    "react": "^18.3.1",
-    "tsx": "^4.20.6"
+    "react": "^18.3.1"
   }
 }
