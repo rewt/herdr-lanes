@@ -13,8 +13,9 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 // Unix readers such as `head` routinely close a pipeline before the producer
 // is finished. Treat that as successful early consumption, not a crash.
@@ -58,6 +59,8 @@ const REPO_ROOT = (() => {
 //             "use": "when to select it"}} — named dispatch defaults;
 //             kind/model/args override dispatch, while env is appended. CLI
 //             flags take final precedence; use is descriptive only.
+//   registry  JSON session-registry path for `board` (default
+//             ".lane/sessions.json", relative to the repository root)
 //   seams_doc path of a topic map for kept unfinished work, shown by `seams`
 const CONFIG = (() => {
   const file = process.env.LANE_CONFIG ?? join(REPO, ".lane.json");
@@ -72,6 +75,7 @@ const LANE_PREFIX = "lane/";
 const WORKTREE_ROOT = process.env.LANE_WORKTREE_ROOT
   ?? join(homedir(), ".herdr", "worktrees", REPO_ROOT.split("/").filter((x) => x !== "").pop());
 const DEFAULT_VALIDATE = CONFIG.validate ?? "npm test";
+const TOOL_ROOT = dirname(fileURLToPath(import.meta.url));
 
 function fail(message) {
   process.stderr.write(`lane: ${message}\n`);
@@ -538,8 +542,35 @@ function close(topic) {
   }
 }
 
+function board(args) {
+  const unknown = args.filter((argument) => argument !== "--once");
+  if (unknown.length > 0) fail(`usage: lane board [--once] (unknown option: ${unknown[0]})`);
+  const boardRoot = join(TOOL_ROOT, "board");
+  if (!args.includes("--once") && !existsSync(join(boardRoot, "node_modules", "ink"))) {
+    fail(`install board dependencies first: npm --prefix ${boardRoot} install`);
+  }
+  const run = args.includes("--once")
+    ? spawnSync(process.execPath, [join(boardRoot, "cli.mjs"), "--repo", REPO, "--once"], {
+      cwd: REPO,
+      env: process.env,
+      stdio: "inherit",
+    })
+    : spawnSync("npm", ["--prefix", boardRoot, "run", "--silent", "start", "--", "--repo", REPO], {
+      cwd: REPO,
+      env: process.env,
+      stdio: "inherit",
+    });
+  if (run.error?.code === "ENOENT") fail("npm is required to start the interactive board");
+  if (run.status !== 0) {
+    process.exit(run.status ?? 1);
+  }
+}
+
 const [command, topic, ...rest] = process.argv.slice(2);
 switch (command) {
+  case "board":
+    board([topic, ...rest].filter((argument) => argument !== undefined));
+    break;
   case "open":
     if (topic === undefined) fail("usage: lane.mjs open <topic> [base-ref]");
     open(topic, rest[0]);
@@ -613,7 +644,7 @@ switch (command) {
     break;
   default:
     process.stdout.write(
-      "usage: lane <open|status|seams|routes|dispatch|prepare|rebase-check|verify-agent|promote|close> [topic] [base-ref]\n" +
+      "usage: lane <open|status|seams|routes|dispatch|prepare|rebase-check|verify-agent|promote|close|board> [topic] [base-ref]\n" +
         `  open <topic> [base]  cut lane/<topic> into a herdr worktree; base defaults to\n` +
         `                       ${MAIN} — pass a kept branch or archive/* tag to resume it\n` +
         "  seams [pattern]  list kept unfinished work (branches + archive tags)\n" +
@@ -625,6 +656,7 @@ switch (command) {
         "                   fresh worktree carries no gitignored state, and validation\n" +
         "                   then fails for environmental reasons that look real\n" +
         `  status           list open lanes vs ${MAIN}\n` +
+        "  board [--once]   watch registered lane sessions; --once prints plain text\n" +
         `  promote <topic>  validate then fast-forward ${MAIN} (clean + rebased + green only)\n` +
         "  close <topic>    remove worktree; delete merged branch or archive-tag unmerged\n",
     );

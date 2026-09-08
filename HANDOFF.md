@@ -101,3 +101,25 @@ Living log for agents maintaining this repository. Newest entry last.
   deliberate controls, including the expanded unknown-route control.
 - Verified with Node.js 20.19.4 and git 2.54.0; `git diff --check` passed. No live
   Herdr dispatch or account-specific model availability check was performed.
+
+## 2026-09-08 — live lane board
+
+- Added `lane board` as a spawned Ink 5/React child package and dependency-free
+  `lane board --once` output. The board joins a repository session registry with
+  Herdr agent/pane state, lane ahead/dirty state, report verdict and mtime, deadline,
+  output tripwires, last output, and lightweight host metrics.
+- Added a protocol-20 Unix-socket client with caller request IDs, one-shot snapshots,
+  long-lived agent/output subscriptions, and capped exponential reconnect backoff.
+  A live read-only probe verified one request per connection and the ID-less event
+  envelopes that follow the `subscription_started` response.
+- Added offline tests against an injected in-memory fake socket server plus board model,
+  plain rendering, registry update, and CLI coverage. The deliberate pre-implementation
+  run failed because both board modules were absent and `board --once` was unknown.
+- Documented setup, the optional `.lane.json` `registry` key, registry fields,
+  interactive keys, protocol behavior, and limits. The task brief remains excluded
+  because it contains host- and account-specific text unsuitable for public tracking.
+- Baseline `npm test` passed 17/17 with Node.js 20.19.4 and git 2.54.0. Final
+  `npm test` passed 26/26, including the board package tests; `git diff --check`
+  passed. Live checks exercised protocol-20 snapshot/subscription handshakes,
+  plain output, and Ink startup/quit. No live status-change event was induced, no
+  non-macOS host was tested, and no push was performed.

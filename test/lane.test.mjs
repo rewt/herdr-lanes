@@ -383,6 +383,31 @@ test("routes prints configured routes with resolved dispatch defaults", () => {
   }
 });
 
+test("board --once renders a plain registered-session table without Herdr", () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  try {
+    mkdirSync(join(fixture.repo, ".lane"));
+    writeFileSync(join(fixture.repo, ".lane", "sessions.json"), `${JSON.stringify([{
+      name: "offline-agent",
+      workspace: "lane-offline",
+      lane: "offline",
+      role: "reviewer",
+      report: "reports/offline.md",
+      deadline: null,
+      done: false,
+    }], null, 2)}\n`);
+    fixture.env.HERDR_SOCKET_PATH = join(fixture.root, "missing.sock");
+    const run = lane(fixture, ["board", "--once"]);
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /NAME\s+ROLE\s+LANE\s+STATUS\s+PANE/);
+    assert.match(run.stdout, /offline-agent\s+reviewer\s+offline\s+offline/);
+    assert.match(run.stdout, /load .* workers/);
+    negativeControl("plain lane board");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("dispatch rejects an unknown route before checking Herdr", () => {
   const fixture = makeFixture({
     main: "main",

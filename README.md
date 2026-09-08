@@ -9,6 +9,7 @@ Install `lane` once:
 
 ```sh
 git clone https://github.com/rewt/herdr-lanes.git
+npm --prefix herdr-lanes/board ci
 mkdir -p ~/.local/bin
 ln -s "$PWD/herdr-lanes/lane.mjs" ~/.local/bin/lane
 ```
@@ -88,6 +89,7 @@ rebases automatically when clean and refuses with a file list when conflicts exi
 | `lane status` | Show lane state and overlap |
 | `lane promote <topic>` | Rebase, validate, and fast-forward local main |
 | `lane close <topic>` | Remove and delete or archive a lane |
+| `lane board [--once]` | Watch registered sessions, or print one plain snapshot |
 | `lane seams [pattern]` | List work that can be resumed |
 | `lane prepare <topic>` | Run missing setup steps |
 | `lane rebase-check <topic>` | Check whether promotion will conflict |
@@ -95,8 +97,35 @@ rebases automatically when clean and refuses with a file list when conflicts exi
 Requirements: Node.js 20+, git 2.38+, and [Herdr](https://herdr.dev) 0.8+ for
 dispatch. Herdr is optional for git-only lane operations.
 
+## Lane board
+
+Add `"registry": ".lane/sessions.json"` to `.lane.json` (that path is the
+default), then register the sessions to watch as a JSON array:
+
+```json
+[
+  {
+    "name": "lane-api-123456",
+    "workspace": "lane-api",
+    "lane": "api",
+    "role": "engineer",
+    "report": "reports/api.md",
+    "deadline": "2026-09-08T17:00:00-05:00",
+    "done": false,
+    "tripwires": ["TRIPWIRE", "cargo prove"]
+  }
+]
+```
+
+Run `lane board` in a Herdr pane for the Ink view, or `lane board --once` for
+plain, scriptable output. The board reads Herdr's injected `HERDR_SOCKET_PATH`;
+without a live socket it still reports registry, git, report, and host state.
+Reports expose their newest `**PASS**`, `**NEEDS-WORK**`, or `**FAIL**` line.
+Use arrow keys (or `j`/`k`) to select, `a` to show the attach command, `d` to
+mark the registry entry done, `r` to refresh, and `q` to quit.
+
 See [the technical reference](docs/REFERENCE.md) for configuration, dispatch options,
-status fields, recovery, archived lanes, and unattended promotion. Use the
+board fields, status fields, recovery, archived lanes, and unattended promotion. Use the
 [brief template](docs/BRIEF_TEMPLATE.md) when dispatching work.
 
 Run this repository's offline tests with `npm test`. License: MIT.

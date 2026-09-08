@@ -1,6 +1,7 @@
 {
   "main": "main",
   "validate": "npm test",
+  "registry": ".lane/sessions.json",
   "prepare": [
     { "unless": "node_modules", "run": "npm ci" }
   ],

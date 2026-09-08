@@ -8,6 +8,7 @@
 {
   "main": "main",
   "validate": "npm test",
+  "registry": ".lane/sessions.json",
   "prepare": [
     { "unless": "node_modules", "run": "npm ci" }
   ],
@@ -34,6 +35,7 @@
 | --- | --- | --- |
 | `main` | `main` | Local integration branch |
 | `validate` | `npm test` | Shell command required for promotion |
+| `registry` | `.lane/sessions.json` | JSON array of sessions displayed by `board` |
 | `prepare` | none | `{unless, run}` steps for fresh worktrees |
 | `dispatch.kind` | `claude` | Herdr agent kind |
 | `dispatch.model` | none | Model passed to the agent |
@@ -49,6 +51,33 @@
 
 Overrides: `LANE_CONFIG`, `LANE_VALIDATE`, and `LANE_WORKTREE_ROOT`. Do not put
 secrets in tracked configuration.
+
+## Board
+
+Install the isolated Ink package once with `npm --prefix board ci`. `lane
+board` starts that package as a child process, so `lane.mjs` remains dependency-free.
+`lane board --once` uses only Node.js built-ins and prints the same columns without
+ANSI styling.
+
+The configured registry is a JSON array. Every entry has string fields `name`
+(the Herdr agent name), `workspace` (workspace ID or label), `lane` (topic or
+`lane/<topic>` branch), `role`, and `report` (absolute or repository-relative
+path), plus `deadline` (an ISO-8601 timestamp or `null`) and `done` (boolean).
+Optional `tripwires` is an array of literal output substrings. The default registry
+path is `.lane/sessions.json`.
+
+The board joins each entry with the Herdr snapshot, the lane worktree, and its report.
+It shows agent status and pane ID, commits ahead of the configured main branch, dirty
+state, report mtime and verdict, overdue state, the latest tripwire match, and the last
+matched output line. The footer samples one-minute load, free memory, and processes
+whose commands identify them as `vitest`, `cargo`, `go`, or `rustc` workers.
+
+Interactive keys are arrow keys or `j`/`k` to select, `a` to display `herdr agent
+attach <name>`, `d` to atomically set the selected registry entry's `done` field,
+`r` to refresh, and `q` to quit. It redraws for subscribed events and on a five-second
+host/git/report tick; there is no busy loop. Herdr sets `HERDR_SOCKET_PATH` inside its
+panes. Outside Herdr, `--once` degrades to offline status while retaining git, report,
+deadline, and host data.
 
 ## Workspace setup
 
