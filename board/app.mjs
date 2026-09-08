@@ -146,11 +146,19 @@ function BoardApp({ repoRoot, config }) {
     h(Text, { bold: true, color: "cyan" }, "lane board · ", state.connection),
     ...lines.map((line, index) => {
       const active = line.rowIndex === selected;
+      const gateIndex = line.gateColor === undefined ? -1 : line.text.indexOf(line.gateText);
+      const content = gateIndex < 0
+        ? line.text
+        : [
+          line.text.slice(0, gateIndex),
+          h(Text, { key: "gate", color: line.gateColor }, line.gateText),
+          line.text.slice(gateIndex + line.gateText.length),
+        ];
       return h(
         Text,
         { key: `${index}:${line.text}`, color: active ? "yellow" : undefined },
         active ? "> " : "  ",
-        line.text,
+        content,
       );
     }),
     h(Text, { dimColor: true }, footerLine(state.stats)),

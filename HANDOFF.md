@@ -174,3 +174,22 @@ Living log for agents maintaining this repository. Newest entry last.
   controls failed, and `git diff --check` passed.
 - No real-TTY interaction, live Herdr event, or Linux host was tested. No push was
   performed.
+
+## 2026-09-08 — commit-bound validation gates
+
+- Added `lane check [--cmd <validate command>]`, using promotion's existing
+  `.lane.json`/`npm test` default and `LANE_VALIDATE` override. It refuses a dirty
+  current worktree, atomically records full HEAD, branch, verbatim command, exit,
+  UTC timestamps, and numeric duration in `.lane/gate.json`, prints one `GATE` line,
+  and returns the validator's exit code.
+- Added a board `GATE` column sourced from each registered lane worktree. Matching
+  records show the exit and seven-character head, mismatched heads show `STALE`, and
+  missing or unusable records show `-`; only Ink colors matching zero/non-zero exits
+  green/red.
+- Before implementation, all three focused CLI checks and all four focused board
+  expectations failed. Final `npm test` passed 44/44;
+  `LANE_TEST_NEGATIVE_CONTROL=1 npm test` deliberately failed all 44 controls (0
+  passed), and `git diff --check` passed. Verified with Node.js 20.19.4, npm 10.8.2,
+  and git 2.54.0. The clean-tree gate line is recorded in the implementation report.
+- No live Herdr event, real-TTY Ink color sequence, Linux host, or Windows host was
+  tested. No push was performed.

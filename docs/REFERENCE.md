@@ -52,6 +52,35 @@
 Overrides: `LANE_CONFIG`, `LANE_VALIDATE`, and `LANE_WORKTREE_ROOT`. Do not put
 secrets in tracked configuration.
 
+## Check
+
+`lane check [--cmd <validate command>]` validates the current clean worktree and
+records the result against its exact commit. The command is resolved in the same
+order as promotion: `.lane.json` `validate`, otherwise `npm test`, with
+`LANE_VALIDATE` overriding either. `--cmd` overrides the command for that run and
+is recorded verbatim.
+
+The command refuses with exit 1 before validation when `git status --porcelain`
+is non-empty. After validation it atomically writes the gitignored
+`.lane/gate.json`, even when validation fails:
+
+```json
+{
+  "head": "0123456789abcdef0123456789abcdef01234567",
+  "branch": "lane/example",
+  "command": "npm test",
+  "exit_code": 0,
+  "started_at": "2026-09-08T14:00:00.000Z",
+  "finished_at": "2026-09-08T14:00:03.250Z",
+  "duration_s": 3.25
+}
+```
+
+`head` is the full SHA captured before validation, `branch` is the current branch,
+the timestamps are ISO-8601 UTC, and `duration_s` is numeric. The command prints
+`GATE <full-head> exit=<n> (<duration>)` after writing the file and exits with the
+validation command's exit code, so scripts see a failed gate directly.
+
 ## Board
 
 Install the isolated Ink package once with `npm --prefix board ci`. `lane
@@ -70,9 +99,21 @@ makes the canonical checkout dirty and blocks `lane promote`.
 
 The board joins each entry with the Herdr snapshot, the lane worktree, and its report.
 It shows agent status and pane ID, commits ahead of the configured main branch, dirty
-state, report mtime and verdict, overdue state, the latest tripwire match, and the last
-matched output line. The footer samples one-minute load, free memory, and processes
-whose commands identify them as `vitest`, `cargo`, `go`, or `rustc` workers.
+state, gate state, report mtime and verdict, overdue state, the latest tripwire match,
+and the last matched output line. The footer samples one-minute load, free memory, and
+processes whose commands identify them as `vitest`, `cargo`, `go`, or `rustc` workers.
+
+The `GATE` column reads `<lane worktree>/.lane/gate.json` and compares its full
+`head` with that worktree's current HEAD:
+
+| State | Meaning |
+| --- | --- |
+| `exit=0 @<head7>` | Matching HEAD passed validation; green in the interactive Ink view |
+| `exit=<n> @<head7>` | Matching HEAD failed with non-zero `<n>`; red in Ink |
+| `STALE` | A gate file exists for a different HEAD |
+| `-` | No usable gate file exists |
+
+`lane board --once` prints these values as plain text without color or ANSI escapes.
 
 Interactive keys are arrow keys or `j`/`k` to select, `a` to display `herdr agent
 attach <name>`, `d` to atomically set the selected registry entry's `done` field,
@@ -211,6 +252,7 @@ lane open resumed-task archive/lane/old-task
 | --- | --- |
 | `herdr workspace: none` | Start Herdr in the canonical checkout and retry dispatch |
 | `lane worktree is not clean` | Commit or stash lane changes |
+| `current worktree is not clean` | Commit or stash changes before `lane check` |
 | `canonical main checkout is not clean` | Commit or stash canonical changes |
 | `validation failed ... nothing merged` | Fix the lane and promote again |
 | `does not rebase cleanly` | Rebase manually and resolve the listed files |

@@ -19,6 +19,7 @@ const TABLE_COLUMNS = [
   ["STATUS", "status", 8],
   ["PANE", "pane", 9],
   ["GIT", "git", 10],
+  ["GATE", "gate", 17],
   ["REPORT", "report", 20],
   ["DEADLINE", "deadline", 12],
   ["TRIPWIRE", "tripwire", 14],
@@ -160,6 +161,8 @@ export function joinBoardRows({
       status: agent?.agent_status ?? "offline",
       pane: agent?.pane_id ?? "-",
       git: git.ahead === undefined ? "-" : `+${git.ahead}${git.dirty ? " DIRTY" : ""}`,
+      gate: git.gate ?? "-",
+      gateColor: git.gateColor,
       report: report.verdict === undefined
         ? "-"
         : report.verdict === "-" ? report.mtime : `${report.verdict}@${report.mtime}`,
@@ -193,6 +196,22 @@ function worktrees(repoRoot) {
   });
 }
 
+function gateState(checkout, head) {
+  if (checkout === undefined || head === undefined) return {};
+  try {
+    const report = JSON.parse(readFileSync(resolve(checkout, ".lane", "gate.json"), "utf8"));
+    if (typeof report.head !== "string") return {};
+    if (report.head !== head) return { gate: "STALE" };
+    if (!Number.isInteger(report.exit_code)) return {};
+    return {
+      gate: `exit=${report.exit_code} @${head.slice(0, 7)}`,
+      gateColor: report.exit_code === 0 ? "green" : "red",
+    };
+  } catch {
+    return {};
+  }
+}
+
 export function collectGitStates(repoRoot, main, registry, snapshot) {
   const states = new Map();
   const trees = worktrees(repoRoot);
@@ -203,7 +222,8 @@ export function collectGitStates(repoRoot, main, registry, snapshot) {
     if (counts === undefined) continue;
     const [ahead] = counts.split(/\s+/u).map(Number);
     const dirty = checkout === undefined ? false : (gitOutput(checkout, ["status", "--porcelain=v1"]) ?? "") !== "";
-    states.set(session.lane, { ahead, dirty, checkout });
+    const head = checkout === undefined ? undefined : gitOutput(checkout, ["rev-parse", "HEAD"]);
+    states.set(session.lane, { ahead, dirty, checkout, head, ...gateState(checkout, head) });
   }
   return states;
 }
@@ -253,10 +273,15 @@ export function tableLineEntries(rows, { width = Number.POSITIVE_INFINITY } = {}
   if (width >= 150) {
     const header = TABLE_COLUMNS.map(([title, , columnWidth]) => pad(title, columnWidth)).join(" ").trimEnd();
     const separator = TABLE_COLUMNS.map(([, , columnWidth]) => "-".repeat(columnWidth)).join(" ");
-    const body = rows.map((row, rowIndex) => ({
-      text: TABLE_COLUMNS.map(([, key, columnWidth]) => pad(row[key], columnWidth)).join(" ").trimEnd(),
-      rowIndex,
-    }));
+    const body = rows.map((row, rowIndex) => {
+      const gateText = truncate(row.gate, TABLE_COLUMNS.find(([, key]) => key === "gate")[2]);
+      return {
+        text: TABLE_COLUMNS.map(([, key, columnWidth]) => pad(row[key], columnWidth)).join(" ").trimEnd(),
+        rowIndex,
+        gateText,
+        gateColor: row.gateColor,
+      };
+    });
     return [{ text: header }, { text: separator }, ...body];
   }
 
@@ -278,6 +303,8 @@ export function tableLineEntries(rows, { width = Number.POSITIVE_INFINITY } = {}
       text: columns.map(([, key, columnWidth]) => pad(row[key], columnWidth)).join(" ").trimEnd(),
       rowIndex,
     });
+    const gateText = truncate(row.gate, usable - 5);
+    entries.push({ text: `gate ${gateText}`, rowIndex, gateText, gateColor: row.gateColor });
     entries.push({ text: `report ${truncate(row.report, usable - 7)}`, rowIndex });
     const deadline = truncate(row.deadline, 12);
     entries.push({

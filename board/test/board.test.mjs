@@ -67,7 +67,12 @@ test("registered sessions join live, git, report, deadline, and tripwire state",
   const rows = joinBoardRows({
     registry,
     snapshot,
-    gitStates: new Map([["api", { ahead: 2, dirty: true }]]),
+    gitStates: new Map([["api", {
+      ahead: 2,
+      dirty: true,
+      gate: "exit=0 @abcdef0",
+      gateColor: "green",
+    }]]),
     reportStates: new Map([["reports/api.md", { verdict: "PASS", mtime: "09-08 09:30" }]]),
     runtime: new Map([["w1:p2", { lastOutput: "finished proof", tripwire: "TRIPWIRE" }]]),
     now: new Date("2026-09-08T16:00:00Z"),
@@ -75,6 +80,8 @@ test("registered sessions join live, git, report, deadline, and tripwire state",
   assert.equal(rows[0].status, "working");
   assert.equal(rows[0].pane, "w1:p2");
   assert.equal(rows[0].git, "+2 DIRTY");
+  assert.equal(rows[0].gate, "exit=0 @abcdef0");
+  assert.equal(rows[0].gateColor, "green");
   assert.equal(rows[0].report, "PASS@09-08 09:30");
   assert.equal(rows[0].deadline, "OVERDUE");
   assert.equal(rows[0].tripwire, "TRIPWIRE");
@@ -114,13 +121,20 @@ test("subscriptions include status, last-line, and configured output matchers", 
 });
 
 test("plain rendering exposes the same board fields without ANSI", () => {
-  const [row] = joinBoardRows({ registry, snapshot, now: new Date("2026-09-08T16:00:00Z") });
+  const [row] = joinBoardRows({
+    registry,
+    snapshot,
+    gitStates: new Map([["api", { gate: "exit=0 @abcdef0", gateColor: "green" }]]),
+    now: new Date("2026-09-08T16:00:00Z"),
+  });
   const output = renderPlainBoard([row], {
     load: 1.25,
     freeMemory: "8.0 GiB",
     workers: { vitest: 1, cargo: 0, go: 2, rustc: 0 },
   });
   assert.match(output, /NAME\s+ROLE\s+LANE\s+STATUS\s+PANE/);
+  assert.match(output, /GATE/);
+  assert.match(output, /exit=0 @abcdef0/);
   assert.match(output, /api-agent\s+engineer\s+api\s+working\s+w1:p2/);
   assert.match(output, /load 1\.25.*free 8\.0 GiB.*vitest=1 cargo=0 go=2 rustc=0/);
   assert.doesNotMatch(output, /\u001b\[/);
@@ -132,6 +146,7 @@ test("narrow pane rendering keeps every line within the terminal width", () => {
   const lines = tableLines([row], { width: 80 });
   assert.ok(lines.every((line) => line.length <= 78));
   assert.match(lines.join("\n"), /report /);
+  assert.match(lines.join("\n"), /gate /);
   assert.match(lines.join("\n"), /deadline .*tripwire /);
   assert.match(lines.join("\n"), /output /);
   negativeControl("narrow board rendering");
@@ -176,7 +191,7 @@ test("marking done rejects a registry that is not an array", () => {
   }
 });
 
-test("git state prefers the repository worktree over protocol workspace metadata", () => {
+test("git and gate state use the repository worktree and its current HEAD", () => {
   const root = mkdtempSync(join(tmpdir(), "lane-board-checkout-"));
   const repo = join(root, "repo");
   const lanePath = join(root, "lane-api");
@@ -191,6 +206,12 @@ test("git state prefers the repository worktree over protocol workspace metadata
     git(repo, ["commit", "-m", "initial"], { stdio: "ignore" });
     git(repo, ["branch", "lane/api"]);
     git(repo, ["worktree", "add", lanePath, "lane/api"], { stdio: "ignore" });
+    const head = git(lanePath, ["rev-parse", "HEAD"]);
+    mkdirSync(join(lanePath, ".lane"));
+    writeFileSync(join(lanePath, ".lane", "gate.json"), `${JSON.stringify({
+      head,
+      exit_code: 5,
+    })}\n`);
     writeFileSync(join(lanePath, "dirty.txt"), "dirty\n");
 
     mkdirSync(unrelated);
@@ -217,7 +238,25 @@ test("git state prefers the repository worktree over protocol workspace metadata
     });
     assert.equal(realpathSync(states.get("api").checkout), realpathSync(lanePath));
     assert.equal(states.get("api").dirty, true);
-    negativeControl("repository worktree checkout selection");
+    assert.equal(states.get("api").gate, `exit=5 @${head.slice(0, 7)}`);
+    assert.equal(states.get("api").gateColor, "red");
+
+    writeFileSync(join(lanePath, ".lane", "gate.json"), `${JSON.stringify({
+      head,
+      exit_code: 0,
+    })}\n`);
+    const green = collectGitStates(repo, "main", registry, snapshot);
+    assert.equal(green.get("api").gate, `exit=0 @${head.slice(0, 7)}`);
+    assert.equal(green.get("api").gateColor, "green");
+
+    writeFileSync(join(lanePath, ".lane", "gate.json"), `${JSON.stringify({
+      head: "0".repeat(40),
+      exit_code: 0,
+    })}\n`);
+    const stale = collectGitStates(repo, "main", registry, snapshot);
+    assert.equal(stale.get("api").gate, "STALE");
+    assert.equal(stale.get("api").gateColor, undefined);
+    negativeControl("repository worktree gate selection");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

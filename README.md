@@ -86,6 +86,7 @@ rebases automatically when clean and refuses with a file list when conflicts exi
 | `lane dispatch <topic> [--route <name>] [options] [@brief \| prompt]` | Start and prompt its agent |
 | `lane routes` | List resolved named dispatch routes |
 | `lane status` | Show lane state and overlap |
+| `lane check [--cmd <validate command>]` | Record validation against this worktree's HEAD |
 | `lane promote <topic>` | Rebase, validate, and fast-forward local main |
 | `lane close <topic>` | Remove and delete or archive a lane |
 | `lane board [--once]` | Watch registered sessions, or print one plain snapshot |
@@ -114,7 +115,7 @@ lane board --once
 ```
 
 Run the interactive view in a Herdr pane; use `--once` for plain, scriptable
-output.
+output. A report is incomplete without the `GATE` line printed by `lane check`.
 
 See [the technical reference](docs/REFERENCE.md) for configuration, dispatch options,
 board fields, status fields, recovery, archived lanes, and unattended promotion. Use the

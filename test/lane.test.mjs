@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   appendFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -101,6 +102,19 @@ function commitFile(cwd, file, content, message) {
 
 function refExists(repo, ref) {
   return spawnSync(GIT, ["-C", repo, "rev-parse", "--verify", "--quiet", ref]).status === 0;
+}
+
+function ignoreLaneState(fixture) {
+  writeFileSync(join(fixture.repo, ".gitignore"), ".lane/\n");
+  git(fixture.repo, ["add", ".gitignore"]);
+  git(fixture.repo, ["commit", "-m", "ignore lane state"], { stdio: "ignore" });
+}
+
+function writeExecutable(fixture, name, body) {
+  const path = join(fixture.bin, name);
+  writeFileSync(path, `#!/bin/sh\n${body}\n`);
+  chmodSync(path, 0o755);
+  return path;
 }
 
 test("open creates a lane and refuses duplicate, invalid, and unresolved inputs", () => {
@@ -368,6 +382,89 @@ test("prepare runs needed steps and skips steps whose unless path exists", () =>
   }
 });
 
+test("check records configured validation against the current HEAD", () => {
+  const fixture = makeFixture({ main: "main", validate: "gate-pass configured" });
+  try {
+    ignoreLaneState(fixture);
+    writeExecutable(fixture, "gate-pass", "exit 0");
+    const path = openLane(fixture, "checked-topic");
+    const head = git(path, ["rev-parse", "HEAD"]);
+
+    const run = spawnSync(process.execPath, [LANE, "check"], {
+      cwd: path,
+      env: fixture.env,
+      encoding: "utf8",
+    });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, new RegExp(`^GATE ${head} exit=0 \\(\\d+(?:\\.\\d+)?s\\)\\n$`));
+    const gate = JSON.parse(readFileSync(join(path, ".lane", "gate.json"), "utf8"));
+    assert.equal(gate.head, head);
+    assert.equal(gate.branch, "lane/checked-topic");
+    assert.equal(gate.command, "gate-pass configured");
+    assert.equal(gate.exit_code, 0);
+    assert.equal(new Date(gate.started_at).toISOString(), gate.started_at);
+    assert.equal(new Date(gate.finished_at).toISOString(), gate.finished_at);
+    assert.ok(Date.parse(gate.finished_at) >= Date.parse(gate.started_at));
+    assert.equal(typeof gate.duration_s, "number");
+    assert.ok(gate.duration_s >= 0);
+    negativeControl("check configured validation record");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("check honors LANE_VALIDATE and --cmd precedence and returns a failed gate exit", () => {
+  const fixture = makeFixture({ main: "main", validate: "gate-configured" });
+  try {
+    ignoreLaneState(fixture);
+    writeExecutable(fixture, "gate-configured", "exit 2");
+    writeExecutable(fixture, "gate-environment", "exit 0");
+    writeExecutable(fixture, "gate-override", "exit 7");
+
+    fixture.env.LANE_VALIDATE = "gate-environment";
+    const environment = lane(fixture, ["check"]);
+    assert.equal(environment.status, 0, environment.stderr);
+    assert.equal(
+      JSON.parse(readFileSync(join(fixture.repo, ".lane", "gate.json"), "utf8")).command,
+      "gate-environment",
+    );
+
+    const command = "gate-override --record-verbatim";
+    const override = lane(fixture, ["check", "--cmd", command]);
+    assert.equal(override.status, 7, override.stderr);
+    assert.match(override.stdout, /GATE [0-9a-f]{40} exit=7/);
+    const gate = JSON.parse(readFileSync(join(fixture.repo, ".lane", "gate.json"), "utf8"));
+    assert.equal(gate.command, command);
+    assert.equal(gate.exit_code, 7);
+    negativeControl("check validation precedence and failed exit");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("check defaults to npm test and refuses a dirty current worktree", () => {
+  const fixture = makeFixture({ main: "main" });
+  try {
+    ignoreLaneState(fixture);
+    writeExecutable(fixture, "npm", "[ \"$1\" = test ] || exit 9\nexit 0");
+    const clean = lane(fixture, ["check"]);
+    assert.equal(clean.status, 0, clean.stderr);
+    const gatePath = join(fixture.repo, ".lane", "gate.json");
+    const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+    assert.equal(gate.command, "npm test");
+
+    const previous = readFileSync(gatePath, "utf8");
+    writeFileSync(join(fixture.repo, "dirty.txt"), "dirty\n");
+    const dirty = lane(fixture, ["check"]);
+    assert.equal(dirty.status, 1);
+    assert.match(dirty.stderr, /current worktree is not clean/);
+    assert.equal(readFileSync(gatePath, "utf8"), previous);
+    negativeControl("check default and dirty refusal");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("routes prints configured routes with resolved dispatch defaults", () => {
   const fixture = makeFixture({
     main: "main",
@@ -500,6 +597,7 @@ test("usage exits one with no command and with an unknown command", () => {
     const missing = lane(fixture, []);
     assert.equal(missing.status, 1);
     assert.match(missing.stdout, /^usage:/);
+    assert.match(missing.stdout, /check \[--cmd <validate command>\]/);
     const unknown = lane(fixture, ["not-a-command"]);
     assert.equal(unknown.status, 1);
     assert.match(unknown.stdout, /^usage:/);

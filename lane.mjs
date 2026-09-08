@@ -11,7 +11,7 @@
 // else. Configuration lives in <repo>/.lane.json (see README).
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
@@ -468,6 +468,49 @@ function prepareWorktree(path, { quiet = false } = {}) {
   }
 }
 
+function check(args) {
+  let command = process.env.LANE_VALIDATE ?? DEFAULT_VALIDATE;
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== "--cmd") {
+      fail(`usage: lane check [--cmd <validate command>] (unknown option: ${args[index]})`);
+    }
+    if (args[index + 1] === undefined || args[index + 1] === "") {
+      fail("usage: lane check [--cmd <validate command>]");
+    }
+    command = args[index + 1];
+    index += 1;
+  }
+
+  requireClean(REPO, "current worktree");
+  const head = git(["rev-parse", "HEAD"]);
+  const branch = git(["branch", "--show-current"]);
+  if (branch === "") fail("current checkout is detached; check requires a branch");
+
+  const startedAt = new Date();
+  const started = process.hrtime.bigint();
+  const run = spawnSync(command, { cwd: REPO, shell: true, stdio: "inherit" });
+  const finishedAt = new Date();
+  const durationS = Number(process.hrtime.bigint() - started) / 1_000_000_000;
+  const exitCode = run.status ?? 1;
+  const gate = {
+    head,
+    branch,
+    command,
+    exit_code: exitCode,
+    started_at: startedAt.toISOString(),
+    finished_at: finishedAt.toISOString(),
+    duration_s: durationS,
+  };
+  const directory = join(REPO, ".lane");
+  const path = join(directory, "gate.json");
+  const temporary = `${path}.${process.pid}.tmp`;
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(temporary, `${JSON.stringify(gate, null, 2)}\n`);
+  renameSync(temporary, path);
+  process.stdout.write(`GATE ${head} exit=${exitCode} (${durationS.toFixed(3)}s)\n`);
+  process.exit(exitCode);
+}
+
 function promote(topic) {
   const branch = laneBranch(topic);
   if (!branchExists(branch)) fail(`no such lane branch: ${branch}`);
@@ -571,6 +614,9 @@ function board(args) {
 
 const [command, topic, ...rest] = process.argv.slice(2);
 switch (command) {
+  case "check":
+    check([topic, ...rest].filter((argument) => argument !== undefined));
+    break;
   case "board":
     board([topic, ...rest].filter((argument) => argument !== undefined));
     break;
@@ -647,7 +693,7 @@ switch (command) {
     break;
   default:
     process.stdout.write(
-      "usage: lane <open|status|seams|routes|dispatch|prepare|rebase-check|verify-agent|promote|close|board> [topic] [base-ref]\n" +
+      "usage: lane <open|status|seams|routes|dispatch|prepare|check|rebase-check|verify-agent|promote|close|board> [topic] [base-ref]\n" +
         `  open <topic> [base]  cut lane/<topic> into a herdr worktree; base defaults to\n` +
         `                       ${MAIN} — pass a kept branch or archive/* tag to resume it\n` +
         "  seams [pattern]  list kept unfinished work (branches + archive tags)\n" +
@@ -659,6 +705,7 @@ switch (command) {
         "                   fresh worktree carries no gitignored state, and validation\n" +
         "                   then fails for environmental reasons that look real\n" +
         `  status           list open lanes vs ${MAIN}\n` +
+        "  check [--cmd <validate command>]  validate this clean worktree and record its HEAD gate\n" +
         "  board [--once]   watch registered lane sessions; --once prints plain text\n" +
         `  promote <topic>  validate then fast-forward ${MAIN} (clean + rebased + green only)\n` +
         "  close <topic>    remove worktree; delete merged branch or archive-tag unmerged\n",
