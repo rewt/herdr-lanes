@@ -1225,13 +1225,16 @@ function validateReviewRecord(record, expected) {
   }
   const sections = new Map(headers.map(([name, index], position) => {
     const end = position + 1 < headers.length ? headers[position + 1][1] : lines.length - 1;
-    return [name, lines.slice(index + 1, end).join("\n").replace(/^\n|\n$/gu, "")];
+    return [name, lines.slice(index + 1, end).join("\n").replace(/^\n|\n+$/gu, "")];
   }));
 
   const findings = sections.get("Findings");
   if (findings !== "None") {
     const findingLines = findings.split("\n");
     if (findingLines.length === 0) fail("Findings must be None or tagged entries");
+    if (findingLines.some((finding) => finding === "")) {
+      fail("Findings spacing must not contain blank lines between entries");
+    }
     for (const finding of findingLines) {
       const match = finding.match(/^- \[(Major|Moderate|Minor)\] (.+):([1-9][0-9]*) - (.+); Fix: (.+)$/u);
       if (match === null || isAbsolute(match[2]) || /^[A-Za-z]:[\\/]/u.test(match[2]) || match[2].split(/[\\/]/u).includes("..")) {
@@ -1446,13 +1449,17 @@ function sanitizeReviewProjection(parsed, expected) {
   };
   const modifiedExecutionFields = [];
   const sanitize = (value) => sanitizePublicString(value, context);
+  const findingPayloads = [];
   const findingLines = parsed.sections.get("Findings") === "None"
     ? ["None"]
     : parsed.sections.get("Findings").split("\n").map((line) => {
       const match = line.match(/^- \[(Major|Moderate|Minor)\] (.+):([1-9][0-9]*) - (.+); Fix: (.+)$/u);
       const location = `${match[2]}:${match[3]}`;
       assertProtectedPublicValue(location, aliases, "finding location", { payload: true });
-      return `- [${match[1]}] ${location} - ${sanitize(match[4])}; Fix: ${sanitize(match[5])}`;
+      const description = sanitize(match[4]);
+      const fix = sanitize(match[5]);
+      findingPayloads.push(description, fix);
+      return `- [${match[1]}] ${location} - ${description}; Fix: ${fix}`;
     });
   const executions = parsed.executions.map((execution, index) => {
     const projected = { ...execution };
@@ -1476,7 +1483,7 @@ function sanitizeReviewProjection(parsed, expected) {
   const unverified = bullets("Unverified");
 
   const payloads = [
-    ...findingLines.filter((line) => line !== "None").map((line) => line.replace(/^- \[(?:Major|Moderate|Minor)\] [^ ]+ - /u, "")),
+    ...findingPayloads,
     ...executions.flatMap((execution) => [
       execution.command, execution.result,
       ...(execution.witness === null ? [] : [execution.witness.command, execution.witness.result, execution.witness.observed_failure]),

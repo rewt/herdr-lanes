@@ -1797,6 +1797,75 @@ test("review preserves a final finding immediately before the next section headi
   }
 });
 
+test("review trims extra blank lines before the next section heading", () => {
+  const findings = [
+    "- [Major] first.txt:1 - first issue; Fix: fix the first issue",
+    "- [Moderate] second.txt:2 - second issue; Fix: fix the second issue",
+  ].join("\n") + "\n";
+  const review = makeReviewFixture("review-spaced-findings", {
+    verdict: "NEEDS-WORK", payload: { findings },
+  });
+  try {
+    const run = lane(review.fixture, [
+      "review", "review-spaced-findings", "--round", "1", "--brief", review.brief,
+    ]);
+    assert.equal(run.status, 1, run.stderr);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicRecord = readFileSync(join(
+      review.path, "docs", "reviews", "review-spaced-findings", `${head.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    assert.match(publicRecord, /first\.txt:1 - first issue/);
+    assert.match(publicRecord, /second\.txt:2 - second issue/);
+    negativeControl("extra finding section spacing");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
+test("review names invalid spacing between finding entries", () => {
+  const findings = [
+    "- [Major] first.txt:1 - first issue; Fix: fix the first issue",
+    "",
+    "- [Moderate] second.txt:2 - second issue; Fix: fix the second issue",
+  ].join("\n");
+  const review = makeReviewFixture("review-invalid-finding-spacing", {
+    verdict: "NEEDS-WORK", payload: { findings },
+  });
+  try {
+    const run = lane(review.fixture, [
+      "review", "review-invalid-finding-spacing", "--round", "1", "--brief", review.brief,
+    ]);
+    assert.equal(run.status, 2, run.stderr);
+    assert.equal(run.stdout, "");
+    assert.match(run.stderr, /Findings spacing/);
+    assert.doesNotMatch(run.stderr, /each finding/);
+    negativeControl("finding section spacing diagnostic");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
+test("review projects repository-relative finding locations containing spaces", () => {
+  const review = makeReviewFixture("review-spaced-location", {
+    verdict: "PASS",
+    payload: { findings: "- [Minor] docs/with space.md:7 - wording issue; Fix: clarify the wording" },
+  });
+  try {
+    const run = lane(review.fixture, [
+      "review", "review-spaced-location", "--round", "1", "--brief", review.brief,
+    ]);
+    assert.equal(run.status, 0, run.stderr);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicRecord = readFileSync(join(
+      review.path, "docs", "reviews", "review-spaced-location", `${head.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    assert.match(publicRecord, /docs\/with space\.md:7 - wording issue; Fix: clarify the wording/);
+    negativeControl("spaced repository-relative finding location");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
 test("review sanitizes deterministic aliases and path forms in a bounded public projection", () => {
   const review = makeReviewFixture("review-sanitize", { verdict: "PASS" });
   try {

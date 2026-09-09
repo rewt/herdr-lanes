@@ -517,3 +517,17 @@ Living log for agents maintaining this repository. Newest entry last.
 - No live reviewer/Herdr mutation, alternate host, push, promotion, archive, or change
   under `docs/reviews/` was performed. The post-commit lane check remains the final
   untracked verification step.
+
+## 2026-09-09 — foreground review round-three corrections
+
+- Trimmed trailing blank-line runs at review section boundaries, added a specific
+  Findings-spacing refusal for internal blank lines, and changed finding idempotence
+  checks to use the captured description and fix fields so relative locations with
+  spaces publish correctly.
+- Three focused expectations failed before implementation and passed afterward, each
+  with a deliberate control. Final `npm test` passed 88/88 in 52.668 seconds; all 88
+  deliberate controls failed with zero passes in 49.173 seconds; strict OpenSpec
+  validation passed 16/16. Every run followed a clear process probe and ran alone.
+- No live reviewer/Herdr mutation, alternate host, push, promotion, archive, or change
+  under `docs/reviews/` was performed. The post-commit lane check remains the final
+  conversation-only verification.

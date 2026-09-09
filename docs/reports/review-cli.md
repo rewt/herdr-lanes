@@ -145,3 +145,26 @@ No live reviewer or Herdr mutation, alternate operating system, permission failu
 concurrent writer, push, promotion, archive, or change under `docs/reviews/` was
 performed. The final post-commit lane gate is intentionally recorded only in the
 operator conversation.
+
+## Round 3 review corrections
+
+- Section extraction now trims a run of trailing separator blank lines, preserving
+  both the previously covered compact boundary and ordinary extra Markdown spacing.
+  A blank line between finding entries still refuses, with a Findings-spacing
+  diagnostic instead of blaming the finding schema.
+- Finding projection retains the sanitized description and fix fields captured by the
+  schema match and feeds those fields directly to the idempotence pass. It no longer
+  reparses a rendered finding with a no-space location pattern, so repository-relative
+  locations containing spaces remain protected and publish correctly.
+
+The three focused expectations failed before implementation and passed afterward,
+each with its own deliberate negative control. Baseline `npm test` passed 85/85 in
+42.132 seconds. Final `npm test` passed 88/88 in 52.668 seconds; the repository-wide
+negative-control run deliberately failed all 88 tests with zero passes in 49.173
+seconds. Strict OpenSpec validation passed 16/16 with telemetry disabled and
+concurrency one. All test and validation runs followed clear process probes and ran
+alone.
+
+No live reviewer or Herdr mutation, alternate operating system, concurrent writer,
+push, promotion, archive, or change under `docs/reviews/` was performed. The final
+post-commit gate remains conversation-only evidence.
