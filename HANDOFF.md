@@ -214,3 +214,36 @@ Living log for agents maintaining this repository. Newest entry last.
   and git 2.54.0; the post-commit GATE is reported after the final commit. No live
   Herdr event, real-TTY Ink color sequence, Linux host, or Windows host was tested.
   No push was performed.
+
+## 2026-09-08 — roots, live board, and idea-dispatch specification
+
+- Added a minimal OpenSpec configuration/workflow, a current lane-safety spec, and
+  nine proposed product changes spanning root configuration/identity, automatic
+  session metadata, a CLI board interface, machine discovery, message previews,
+  terminal UX, idea dispatch, and a composer. Each change has one complete
+  engineer-route lane brief; an optional two-hour mouse research brief is separate.
+- Added docs/SPEC-20260908.md with framework comparison, phase acceptance, route/
+  effort/dependency table, four decision recommendations, exact proposed contract
+  amendments, rollout checklist, and remaining evidence gaps. Linked the workflow
+  from README. No product code, tests, package files, or AGENTS.md contract changed.
+- Folded in the drafted roots brief and prior board/check reviews. Preserved the
+  existing environment-root meaning, proposed canonical config/identity handling,
+  collision-safe display records, honest partial failures, and CLI-only UI actions.
+  Kept operator configuration and raw private source briefs/reviews out of git.
+- Baseline HEAD equaled main at c9d829c. One direct npm test passed 49/49, zero
+  failures/skips, in 5.290 s. Runtime/test/package files remain identical to main.
+  No product behavior changed, so no product failing test or negative-control suite
+  was added/run. The required post-final-commit lane check uses the unchanged npm
+  test validator; its exact current-HEAD GATE is reported outside tracked files.
+- OpenSpec 1.6.0 strict validation passed all 10 items (nine changes and one current
+  spec), with concurrency 1. An initial spec-less research change failed validation;
+  inspection showed the installed tool lacks upstream skip_specs support. The final
+  research brief is outside product changes, without a fabricated capability.
+- Document links, requirement/scenario structure, unchecked task count, and
+  public-source text were audited; git diff --check passed. Validation/build/test
+  commands were serialized. Verified Node.js 20.19.4, npm 10.8.2, git 2.54.0 and
+  read-only Herdr protocol-20 schema/help. No additional framework/package install.
+- No implementation agent was dispatched and no live focus, TTY/editor/mouse
+  interaction, root rollout, minimum-version host, Linux, or Windows behavior was
+  exercised. All implementation and proposed contract approvals remain future work.
+  No push performed.

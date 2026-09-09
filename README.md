@@ -125,3 +125,6 @@ board fields, status fields, recovery, archived lanes, and unattended promotion.
 [brief template](docs/BRIEF_TEMPLATE.md) when dispatching work.
 
 Run this repository's offline tests with `npm test`. License: MIT.
+
+The [specification workflow](openspec/README.md) describes planned changes and how
+to take an independently promotable engineering brief.
