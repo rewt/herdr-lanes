@@ -531,3 +531,21 @@ Living log for agents maintaining this repository. Newest entry last.
 - No live reviewer/Herdr mutation, alternate host, push, promotion, archive, or change
   under `docs/reviews/` was performed. The post-commit lane check remains the final
   conversation-only verification.
+
+## 2026-09-09 — foreground review round-four corrections
+
+- Unified private-record and section newline normalization across completion and
+  validation, including last-non-empty-line marker detection. A 39-run boundary
+  matrix covers zero, one, and two blank lines throughout the record; the separately
+  tested refusal for blank lines between Findings entries is now documented.
+- Contained unexpected top-level review failures with exit 2, empty stdout, and one
+  path-free diagnostic; a vanished post-dispatch worktree regression verifies that
+  late private evidence is retained without leaking Git's raw error.
+- Three of four focused expectations failed before implementation; the fourth
+  confirmed the retained Findings-spacing rule. Final `npm test` passed 90/90 in
+  71.879 seconds; all 90 deliberate controls failed with zero passes in 74.921
+  seconds; strict OpenSpec validation passed 16/16. Runs were serialized after clear
+  load probes.
+- No live reviewer/Herdr mutation, alternate host, push, promotion, archive, or
+  `docs/reviews/` change was performed. The post-commit lane check remains the final
+  conversation-only verification.

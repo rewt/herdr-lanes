@@ -387,8 +387,10 @@ function config() {
 }
 
 function git(args, options = {}) {
+  const stdio = options.silent ? ["ignore", "pipe", "pipe"] : undefined;
   return execFileSync("git", ["-C", options.cwd ?? REPO, ...args], {
     encoding: "utf8",
+    ...(stdio === undefined ? {} : { stdio }),
   }).trim();
 }
 
@@ -1196,8 +1198,12 @@ function parseJsonFence(content, label) {
   }
 }
 
+function normalizeReviewNewlineBoundaries(value) {
+  return value.replace(/^\n+|\n+$/gu, "");
+}
+
 function validateReviewRecord(record, expected) {
-  const normalized = record.endsWith("\n") ? record.slice(0, -1) : record;
+  const normalized = normalizeReviewNewlineBoundaries(record);
   const lines = normalized.split("\n");
   const verdictMatch = lines[0]?.match(/^\*\*(PASS|NEEDS-WORK|FAIL)\*\*$/u);
   if (verdictMatch === null) fail("private review first line must be **PASS**, **NEEDS-WORK**, or **FAIL**");
@@ -1218,14 +1224,17 @@ function validateReviewRecord(record, expected) {
     if (lines.filter((line) => line.startsWith(`${name}:`)).length !== 1) fail(`private review has duplicate ${name}`);
   }
   if (lines[8] !== "") fail("private review metadata must be followed by a blank line");
-  if (lines.at(-1) !== REVIEW_COMPLETE_MARKER) fail("private review completion marker must be the final line");
+  const lastNonemptyLine = lines.findLast((line) => line !== "");
+  if (lastNonemptyLine !== REVIEW_COMPLETE_MARKER) {
+    fail("private review completion marker must be the last nonempty line");
+  }
   const headers = lines.map((line, index) => line.startsWith("## ") ? [line.slice(3), index] : undefined).filter(Boolean);
   if (JSON.stringify(headers.map(([name]) => name)) !== JSON.stringify(REVIEW_SECTIONS)) {
     fail("private review sections are missing, duplicated, unknown, or out of order");
   }
   const sections = new Map(headers.map(([name, index], position) => {
     const end = position + 1 < headers.length ? headers[position + 1][1] : lines.length - 1;
-    return [name, lines.slice(index + 1, end).join("\n").replace(/^\n|\n+$/gu, "")];
+    return [name, normalizeReviewNewlineBoundaries(lines.slice(index + 1, end).join("\n"))];
   }));
 
   const findings = sections.get("Findings");
@@ -1566,7 +1575,9 @@ async function waitForPrivateReview(path, deadline, interrupted, session) {
       } catch {
         fail("private review output is not valid UTF-8");
       }
-      if (text.trimEnd().endsWith(REVIEW_COMPLETE_MARKER)) return text;
+      const normalized = normalizeReviewNewlineBoundaries(text);
+      const lastNonemptyLine = normalized.split("\n").findLast((line) => line !== "");
+      if (lastNonemptyLine === REVIEW_COMPLETE_MARKER) return text;
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, Math.min(250, Math.max(1, deadline - Date.now()))));
   }
@@ -1637,10 +1648,10 @@ async function review(topic, args) {
     const parsed = validateReviewRecord(record, {
       head, topic, round: options.round, reviewId, baseBranch: MAIN, baseCommit,
     });
-    const currentHead = git(["rev-parse", "HEAD"], { cwd: path });
-    const afterBranch = tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: path });
+    const currentHead = git(["rev-parse", "HEAD"], { cwd: path, silent: true });
+    const afterBranch = tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: path, silent: true });
     if (currentHead !== head || afterBranch !== branch) fail("review target HEAD or branch moved; private evidence was retained");
-    if (git(["status", "--porcelain=v1"], { cwd: path }) !== "") {
+    if (git(["status", "--porcelain=v1"], { cwd: path, silent: true }) !== "") {
       fail("review target worktree changed; private evidence and work were retained");
     }
     if (Date.now() > deadline) fail("review timed out before public projection; private evidence was retained");
@@ -1659,9 +1670,9 @@ async function review(topic, args) {
     // Yield once so a concurrent filesystem mutation that races publication can
     // become visible before the final Git integrity check.
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
-    const finalHead = git(["rev-parse", "HEAD"], { cwd: path });
-    const finalBranch = tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: path });
-    const finalStatus = git(["status", "--porcelain=v1", "--untracked-files=all"], { cwd: path });
+    const finalHead = git(["rev-parse", "HEAD"], { cwd: path, silent: true });
+    const finalBranch = tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: path, silent: true });
+    const finalStatus = git(["status", "--porcelain=v1", "--untracked-files=all"], { cwd: path, silent: true });
     if (finalHead !== head || finalBranch !== branch || finalStatus !== `?? ${publicRelative.split(sep).join("/")}`) {
       fail("mutation after public review creation caused late publication failure; inspect retained evidence before recovery");
     }
@@ -1909,7 +1920,12 @@ switch (command) {
     break;
   }
   case "review":
-    await review(topic, rest);
+    try {
+      await review(topic, rest);
+    } catch {
+      process.stderr.write("lane review: unexpected failure; private evidence may have been retained\n");
+      process.exit(2);
+    }
     break;
   case "rebase-check": {
     // Control for the promote auto-rebase: exit 0 iff <topic> rebases cleanly

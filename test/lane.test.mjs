@@ -173,7 +173,7 @@ function writeFakeHerdr(fixture, options = {}) {
   const state = join(fixture.root, "herdr-state.json");
 const source = `#!${process.execPath}
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 const args = process.argv.slice(2);
 const log = process.env.FAKE_HERDR_LOG;
@@ -286,7 +286,7 @@ if (args[0] === "workspace" && args[1] === "list") {
       ? "- [Unknown] shared.txt:1 - unclear; Fix: change it"
       : "None");
     const marker = process.env.FAKE_REVIEW_MODE === "incomplete" ? "" : "\\n<!-- lane-review-complete -->";
-    const record = [
+    let record = [
       "**" + process.env.FAKE_REVIEW_VERDICT + "**",
       "Schema: lane-review/v1",
       "Reviewed commit: " + reviewed,
@@ -319,6 +319,41 @@ if (args[0] === "workspace" && args[1] === "list") {
       (payload.analysis || "Fixture review evidence.") + marker,
       "",
     ].join("\\n");
+    if (payload.spacing) {
+      const blankLines = (boundary, fallback) => Array(
+        payload.spacing.boundary === boundary ? payload.spacing.blankLines : fallback,
+      ).fill("");
+      const sections = [
+        ["Findings", finding.split("\\n")],
+        ["Re-executed", ["\`\`\`json", JSON.stringify(reexecuted), "\`\`\`"]],
+        ["Non-claims", (payload.nonclaims || "None").split("\\n")],
+        ["Unverified", (payload.unverified || "- Live reviewer behavior was not exercised.").split("\\n")],
+        ["Private identifiers", ["\`\`\`json", JSON.stringify(payload.identifiers || []), "\`\`\`"]],
+        ["Analysis", [payload.analysis || "Fixture review evidence."]],
+      ];
+      const recordLines = [
+        ...blankLines("record-start", 0),
+        "**" + process.env.FAKE_REVIEW_VERDICT + "**",
+        "Schema: lane-review/v1",
+        "Reviewed commit: " + reviewed,
+        "Topic: " + field("Topic"),
+        "Round: " + field("Round"),
+        "Review ID: " + (process.env.FAKE_REVIEW_MODE === "review-id-mismatch" ? "lr-wrong" : field("Review ID")),
+        "Base branch: " + field("Base branch"),
+        "Base commit: " + field("Base commit"),
+        "",
+      ];
+      for (let index = 0; index < sections.length; index += 1) {
+        const [name, body] = sections[index];
+        recordLines.push("## " + name, ...blankLines("after-" + name, 0), ...body);
+        if (index + 1 < sections.length) {
+          recordLines.push(...blankLines("before-" + sections[index + 1][0], 1));
+        }
+      }
+      if (process.env.FAKE_REVIEW_MODE !== "incomplete") recordLines.push("", "<!-- lane-review-complete -->");
+      recordLines.push(...blankLines("after-marker", 0));
+      record = recordLines.join("\\n") + "\\n";
+    }
     mkdirSync(dirname(privatePath), { recursive: true });
     writeFileSync(privatePath, process.env.FAKE_REVIEW_MODE === "oversized" ? "x".repeat(1024 * 1024 + 1) : record);
     if (process.env.FAKE_REVIEW_MODE === "dirty-public") {
@@ -333,6 +368,8 @@ if (args[0] === "workspace" && args[1] === "list") {
       writeFileSync(process.env.FAKE_HERDR_LANE_PATH + "/moved.txt", "moved\\n");
       execFileSync("git", ["-C", process.env.FAKE_HERDR_LANE_PATH, "add", "moved.txt"]);
       execFileSync("git", ["-C", process.env.FAKE_HERDR_LANE_PATH, "commit", "-m", "move review head"]);
+    } else if (process.env.FAKE_REVIEW_MODE === "remove-worktree") {
+      rmSync(process.env.FAKE_HERDR_LANE_PATH, { recursive: true, force: true });
     }
   }
   result("cli:agent:prompt", { type: "agent_prompt", name: args[2] });
@@ -1797,51 +1834,79 @@ test("review preserves a final finding immediately before the next section headi
   }
 });
 
-test("review trims extra blank lines before the next section heading", () => {
+test("review normalizes zero, one, and two blank lines at every record and section boundary", () => {
+  const sections = ["Findings", "Re-executed", "Non-claims", "Unverified", "Private identifiers", "Analysis"];
+  const boundaries = [
+    "record-start",
+    ...sections.map((name) => `after-${name}`),
+    ...sections.slice(1).map((name) => `before-${name}`),
+    "after-marker",
+  ];
   const findings = [
     "- [Major] first.txt:1 - first issue; Fix: fix the first issue",
     "- [Moderate] second.txt:2 - second issue; Fix: fix the second issue",
-  ].join("\n") + "\n";
-  const review = makeReviewFixture("review-spaced-findings", {
-    verdict: "NEEDS-WORK", payload: { findings },
-  });
+  ].join("\n");
+  const fixtures = [];
+  const failures = [];
   try {
-    const run = lane(review.fixture, [
-      "review", "review-spaced-findings", "--round", "1", "--brief", review.brief,
-    ]);
-    assert.equal(run.status, 1, run.stderr);
-    const head = git(review.path, ["rev-parse", "HEAD"]);
-    const publicRecord = readFileSync(join(
-      review.path, "docs", "reviews", "review-spaced-findings", `${head.slice(0, 7)}-r1.md`,
-    ), "utf8");
-    assert.match(publicRecord, /first\.txt:1 - first issue/);
-    assert.match(publicRecord, /second\.txt:2 - second issue/);
-    negativeControl("extra finding section spacing");
+    for (const [boundaryIndex, boundary] of boundaries.entries()) {
+      for (const blankLines of [0, 1, 2]) {
+        const topic = `review-spacing-${boundaryIndex}-${blankLines}`;
+        const review = makeReviewFixture(topic, {
+          verdict: "NEEDS-WORK", payload: { findings, spacing: { boundary, blankLines } },
+        });
+        fixtures.push(review.fixture);
+        const run = lane(review.fixture, [
+          "review", topic, "--round", "1", "--brief", review.brief,
+        ]);
+        const head = git(review.path, ["rev-parse", "HEAD"]);
+        const publicPath = join(review.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`);
+        const publicRecord = existsSync(publicPath) ? readFileSync(publicPath, "utf8") : "";
+        if (run.status !== 1 || !publicRecord.includes("first.txt:1 - first issue") ||
+            !publicRecord.includes("second.txt:2 - second issue")) {
+          failures.push({ boundary, blankLines, status: run.status, stderr: run.stderr });
+        }
+      }
+    }
+    assert.deepEqual(failures, []);
+    negativeControl("review record boundary normalization matrix");
   } finally {
-    review.fixture.cleanup();
+    for (const fixture of fixtures) fixture.cleanup();
   }
 });
 
-test("review names invalid spacing between finding entries", () => {
-  const findings = [
-    "- [Major] first.txt:1 - first issue; Fix: fix the first issue",
-    "",
-    "- [Moderate] second.txt:2 - second issue; Fix: fix the second issue",
-  ].join("\n");
-  const review = makeReviewFixture("review-invalid-finding-spacing", {
-    verdict: "NEEDS-WORK", payload: { findings },
-  });
+test("review requires consecutive finding entries across the blank-line matrix", () => {
+  const fixtures = [];
+  const outcomes = [];
   try {
-    const run = lane(review.fixture, [
-      "review", "review-invalid-finding-spacing", "--round", "1", "--brief", review.brief,
+    for (const blankLines of [0, 1, 2]) {
+      const topic = `review-finding-gap-${blankLines}`;
+      const findings = [
+        "- [Major] first.txt:1 - first issue; Fix: fix the first issue",
+        ...Array(blankLines).fill(""),
+        "- [Moderate] second.txt:2 - second issue; Fix: fix the second issue",
+      ].join("\n");
+      const review = makeReviewFixture(topic, { verdict: "NEEDS-WORK", payload: { findings } });
+      fixtures.push(review.fixture);
+      const run = lane(review.fixture, [
+        "review", topic, "--round", "1", "--brief", review.brief,
+      ]);
+      outcomes.push({
+        blankLines,
+        status: run.status,
+        emptyStdout: run.stdout === "",
+        spacingDiagnostic: /Findings spacing/.test(run.stderr),
+        findingDiagnostic: /each finding/.test(run.stderr),
+      });
+    }
+    assert.deepEqual(outcomes, [
+      { blankLines: 0, status: 1, emptyStdout: false, spacingDiagnostic: false, findingDiagnostic: false },
+      { blankLines: 1, status: 2, emptyStdout: true, spacingDiagnostic: true, findingDiagnostic: false },
+      { blankLines: 2, status: 2, emptyStdout: true, spacingDiagnostic: true, findingDiagnostic: false },
     ]);
-    assert.equal(run.status, 2, run.stderr);
-    assert.equal(run.stdout, "");
-    assert.match(run.stderr, /Findings spacing/);
-    assert.doesNotMatch(run.stderr, /each finding/);
-    negativeControl("finding section spacing diagnostic");
+    negativeControl("consecutive finding entry spacing");
   } finally {
-    review.fixture.cleanup();
+    for (const fixture of fixtures) fixture.cleanup();
   }
 });
 
@@ -2172,6 +2237,29 @@ test("review refuses malformed private evidence, incomplete output, timeout, and
   }
 });
 
+test("review contains unexpected errors when the target disappears after dispatch", () => {
+  const review = makeReviewFixture("review-removed-worktree", {
+    verdict: "PASS", mode: "remove-worktree",
+  });
+  try {
+    const capturedHead = git(review.path, ["rev-parse", "HEAD"]);
+    const run = lane(review.fixture, [
+      "review", "review-removed-worktree", "--round", "1", "--brief", review.brief,
+    ]);
+    assert.equal(run.status, 2, run.stderr);
+    assert.equal(run.stdout, "");
+    assert.match(run.stderr, /lane review: unexpected failure; private evidence may have been retained/);
+    assert.doesNotMatch(run.stderr, /(?:Error:|\n\s+at )/);
+    assert.doesNotMatch(run.stderr, new RegExp(review.fixture.root.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")));
+    assert.ok(existsSync(join(
+      review.fixture.repo, ".lane", "reviews", "review-removed-worktree", `${capturedHead.slice(0, 7)}-r1.md`,
+    )));
+    negativeControl("unexpected review error boundary");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
 test("review interruption exits 2 without a verdict or follow-up lifecycle action", async () => {
   const review = makeReviewFixture("review-interrupt");
   try {
@@ -2210,6 +2298,28 @@ test("review reference describes the shipped public path and protected-location 
   assert.match(reference, /same command creates the public record after the\s+unchanged-lane check/);
   assert.match(reference, /reserved placeholders[^.]*finding locations/iu);
   negativeControl("review reference publication and location wording");
+});
+
+test("review protocol documents normalized boundaries and consecutive findings", () => {
+  const reference = readFileSync(join(HERE, "..", "docs", "REFERENCE.md"), "utf8");
+  const template = readFileSync(join(HERE, "..", "docs", "REVIEW_TEMPLATE.md"), "utf8");
+  const design = readFileSync(join(HERE, "..", "openspec", "changes", "review-cli", "design.md"), "utf8");
+  const currentSpec = readFileSync(join(
+    HERE, "..", "openspec", "specs", "foreground-lane-review", "spec.md",
+  ), "utf8");
+  const deltaSpec = readFileSync(join(
+    HERE, "..", "openspec", "changes", "review-cli", "specs", "foreground-lane-review", "spec.md",
+  ), "utf8");
+  for (const document of [reference, template, design]) {
+    assert.match(document, /leading and trailing (?:blank-line|newline)\s+runs/iu);
+    assert.match(document, /Findings entries[^.]*consecutive lines[^.]*no blank\s+line/iu);
+  }
+  assert.doesNotMatch(design, /first physical line/iu);
+  for (const spec of [currentSpec, deltaSpec]) {
+    assert.match(spec, /boundary blank lines/iu);
+    assert.match(spec, /first nonempty line/iu);
+  }
+  negativeControl("review boundary protocol documentation");
 });
 
 test("review preflight requires ignored private and trackable absent public paths", () => {

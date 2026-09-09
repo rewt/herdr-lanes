@@ -168,3 +168,36 @@ alone.
 No live reviewer or Herdr mutation, alternate operating system, concurrent writer,
 push, promotion, archive, or change under `docs/reviews/` was performed. The final
 post-commit gate remains conversation-only evidence.
+
+## Round 4 review corrections
+
+- One newline-boundary normalizer now serves both private-review completion detection
+  and schema validation. It removes leading and trailing newline runs from the whole
+  record and from every section, and completion uses the last non-empty line.
+- A table-driven regression exercises zero, one, and two blank lines at all 13 record
+  and section boundaries (39 review runs), retaining and projecting both findings in
+  every accepted variant. A separate zero/one/two table preserves the deliberate
+  refusal for blank lines between Findings entries, now documented in the template
+  and REFERENCE.
+- The awaited top-level review call now contains unexpected post-dispatch failures,
+  returns exit 2 with empty stdout and one path-free diagnostic, and preserves any
+  private evidence already written. Post-dispatch Git probes suppress their own raw
+  diagnostics so a vanished worktree cannot expose an absolute path first.
+- The remaining review-path newline splits and trims were audited. Source-block and
+  supplement trimming is confined to literal prompt composition; schema line splits,
+  finding parsing, bullet parsing, prose checks, and size accounting operate after
+  normalized section extraction and introduce no additional boundary convention.
+
+The four focused expectations initially produced one pass and three failures: the
+existing internal-Findings-spacing rule already held, while the boundary matrix,
+unexpected-error containment, and documentation assertions failed. All focused tests
+passed after implementation, and every new assertion has a deliberate negative
+control. Baseline `npm test` passed 88/88 in 50.666 seconds. Final `npm test` passed
+90/90 in 71.879 seconds; `LANE_TEST_NEGATIVE_CONTROL=1 npm test` deliberately failed
+all 90 tests with zero passes in 74.921 seconds. Strict OpenSpec validation passed
+16/16 with telemetry disabled and concurrency one. Every test and validation run
+followed a clear process probe and ran alone.
+
+No live reviewer or Herdr mutation, alternate operating system, concurrent writer,
+push, promotion, archive, or change under `docs/reviews/` was performed. The final
+post-commit lane gate remains conversation-only evidence.

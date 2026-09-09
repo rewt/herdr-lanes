@@ -357,14 +357,16 @@ for a clear machine-load probe and runs alone; the CLI passes the budget but exe
 none of it.
 
 The private record is valid UTF-8, at most 1 MiB, ends with
-`<!-- lane-review-complete -->`, and begins with exactly `**PASS**`,
-`**NEEDS-WORK**`, or `**FAIL**`. It uses `Schema: lane-review/v1`, the captured full
-SHA/topic/round/review ID/base, and the unique ordered sections Findings, Re-executed,
-Non-claims, Unverified, Private identifiers, and Analysis. Findings are `None` or
-`[Major]`, `[Moderate]`, or `[Minor]` bullets with a repository-relative positive
-`file:line`, the structural ASCII ` - ` separator, and `Fix:`. Non-claims and
-Unverified are `None` or bullets. Private identifiers is a JSON array of nonempty
-strings; Analysis is private and may be empty.
+`<!-- lane-review-complete -->`, and has exactly `**PASS**`, `**NEEDS-WORK**`, or
+`**FAIL**` as its first nonempty line. Leading and trailing blank-line runs around the
+whole record and each section are ignored symmetrically. It uses `Schema:
+lane-review/v1`, the captured full SHA/topic/round/review ID/base, and the unique
+ordered sections Findings, Re-executed, Non-claims, Unverified, Private identifiers,
+and Analysis. Findings are `None` or `[Major]`, `[Moderate]`, or `[Minor]` bullets
+with a repository-relative positive `file:line`, the structural ASCII ` - ` separator,
+and `Fix:`. Findings entries occupy consecutive lines with no blank line between them.
+Non-claims and Unverified are `None` or bullets. Private identifiers is a JSON array
+of nonempty strings; Analysis is private and may be empty.
 
 Re-executed is one JSON fenced array. Every object has exactly `command`, `cwd`
 (`lane` or `scratch`), integer `exit_code`, nonempty `result`, boolean `tests_pass`,

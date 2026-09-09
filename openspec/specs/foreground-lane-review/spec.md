@@ -33,12 +33,15 @@ a finite check budget plus the one-build/test machine rule.
 - **THEN** commands including negative controls stay within the finite budget after a clear load probe, all fixtures/copies use cleaned system-temp paths, and nothing is created or modified in the lane worktree, tracked or untracked.
 
 ### Requirement: Machine-checkable review evidence
-New private records SHALL use the design's v1 envelope with a fixed first-line
+New private records SHALL use the design's v1 envelope with a fixed first nonempty line
 PASS, NEEDS-WORK or FAIL verdict, full Reviewed commit, explicit round, tagged
 findings and mandatory Re-executed, Non-claims and Unverified sections.
 #### Scenario: Missing witness or malformed schema
 - **WHEN** a tests-pass entry has no observed negative-control/mutation witness, or required metadata/sections/tags are invalid
 - **THEN** the completed record is refused with exit 2 and no public evidence or verdict is emitted.
+#### Scenario: Boundary blank lines
+- **WHEN** zero, one or two blank lines occur at the start of the record, after a section heading, before the next heading, or after the completion marker
+- **THEN** leading and trailing newline runs are normalized symmetrically and every valid finding reaches the public projection.
 #### Scenario: Mismatched reviewed SHA
 - **WHEN** Reviewed commit differs from captured or current HEAD, even with the same abbreviation
 - **THEN** the review is refused, private evidence is retained and no public record is created.

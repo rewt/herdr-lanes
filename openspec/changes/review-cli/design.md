@@ -101,11 +101,14 @@ budget instead of generic engineering baseline/commit instructions. Before each
 build/test, wait for an explicit clear machine load probe; never stop another
 session's work. A timeout or unavailable slot is a limit, not permission to overrun.
 
-New records use a strict v1 Markdown envelope. The first physical line is exactly
-one of **PASS**, **NEEDS-WORK**, **FAIL** (including the Markdown double asterisks,
-no prefix/title/blank line). These spellings match the existing board parser.
-No other bold verdict tokens are allowed; historical records are not rewritten.
-Use mandatory, unique header lines followed by the exact sections below:
+New records use a strict v1 Markdown envelope. After leading and trailing blank-line
+runs are stripped from the whole record and each section symmetrically, the first
+nonempty line is exactly one of **PASS**, **NEEDS-WORK**, **FAIL** (including the
+Markdown double asterisks, with no prefix or title). These spellings match the existing
+board parser after public projection. Findings entries occupy consecutive lines with
+no blank line between them. No other bold verdict tokens are allowed; historical
+records are not rewritten. Use mandatory, unique header lines followed by the exact
+sections below:
 
 ```text
 **PASS**
