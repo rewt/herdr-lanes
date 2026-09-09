@@ -25,13 +25,35 @@ const GIT = execFileSync("/bin/sh", ["-c", "command -v git"], { encoding: "utf8"
 const HEAD = execFileSync("/bin/sh", ["-c", "command -v head"], { encoding: "utf8" }).trim();
 const HAS_HERDR = spawnSync("/bin/sh", ["-c", "command -v herdr"], { stdio: "ignore" }).status === 0;
 const NEGATIVE_CONTROL = process.env.LANE_TEST_NEGATIVE_CONTROL === "1";
+const GIT_ENV_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "herdr-lanes-git-env-test-")));
+const GIT_GLOBAL_CONFIG = join(GIT_ENV_ROOT, "global.gitconfig");
+writeFileSync(GIT_GLOBAL_CONFIG, "");
+test.after(() => rmSync(GIT_ENV_ROOT, { recursive: true, force: true }));
 
 function negativeControl(name) {
   if (NEGATIVE_CONTROL) assert.fail(`deliberately broken expectation: ${name}`);
 }
 
+function hermeticGitEnvironment(source = process.env) {
+  const env = { ...source };
+  for (const key of Object.keys(env)) {
+    if (key === "GIT_CONFIG" || key.startsWith("GIT_CONFIG_") ||
+        key.startsWith("GIT_AUTHOR_") || key.startsWith("GIT_COMMITTER_") || key === "EMAIL") {
+      delete env[key];
+    }
+  }
+  env.GIT_CONFIG_GLOBAL = GIT_GLOBAL_CONFIG;
+  env.GIT_CONFIG_NOSYSTEM = "1";
+  return env;
+}
+
+function gitExec(args, options = {}) {
+  const { env = process.env, ...rest } = options;
+  return execFileSync(GIT, args, { ...rest, env: hermeticGitEnvironment(env) });
+}
+
 function git(cwd, args, options = {}) {
-  const output = execFileSync(GIT, ["-C", cwd, ...args], {
+  const output = gitExec(["-C", cwd, ...args], {
     encoding: "utf8",
     ...options,
   });
@@ -48,7 +70,7 @@ function makeFixture(config = { main: "main", validate: "true" }, { repoParts = 
   mkdirSync(bin);
   symlinkSync(GIT, join(bin, "git"));
   symlinkSync(HEAD, join(bin, "head"));
-  execFileSync(GIT, ["init", "-b", "main", repo], { stdio: "ignore" });
+  gitExec(["init", "-b", "main", repo], { stdio: "ignore" });
   git(repo, ["config", "user.name", "Lane Tests"]);
   git(repo, ["config", "user.email", "lane-tests@example.invalid"]);
   writeFileSync(join(repo, "shared.txt"), "base\n");
@@ -62,7 +84,7 @@ function makeFixture(config = { main: "main", validate: "true" }, { repoParts = 
     configPath,
     bin,
     env: {
-      ...process.env,
+      ...hermeticGitEnvironment(),
       PATH: bin,
       LANE_CONFIG: configPath,
       LANE_WORKTREE_ROOT: worktrees,
@@ -82,7 +104,7 @@ function writeConfig(fixture, config) {
 function lane(fixture, args, options = {}) {
   return spawnSync(process.execPath, [LANE, ...args], {
     cwd: options.cwd ?? fixture.repo,
-    env: options.env ?? fixture.env,
+    env: hermeticGitEnvironment(options.env ?? fixture.env),
     encoding: "utf8",
   });
 }
@@ -118,7 +140,9 @@ function commitFile(cwd, file, content, message) {
 }
 
 function refExists(repo, ref) {
-  return spawnSync(GIT, ["-C", repo, "rev-parse", "--verify", "--quiet", ref]).status === 0;
+  return spawnSync(GIT, ["-C", repo, "rev-parse", "--verify", "--quiet", ref], {
+    env: hermeticGitEnvironment(),
+  }).status === 0;
 }
 
 function ignoreLaneState(fixture) {
@@ -997,8 +1021,8 @@ test("bare repositories with only linked worktrees allow reads and refuse mutati
   try {
     const bare = join(fixture.root, "repository.git");
     const linked = join(fixture.root, "linked-checkout");
-    execFileSync(GIT, ["clone", "--bare", fixture.repo, bare], { stdio: "ignore" });
-    execFileSync(GIT, ["--git-dir", bare, "worktree", "add", linked, "main"], { stdio: "ignore" });
+    gitExec(["clone", "--bare", fixture.repo, bare], { stdio: "ignore" });
+    gitExec(["--git-dir", bare, "worktree", "add", linked, "main"], { stdio: "ignore" });
     const linkedFixture = { ...fixture, repo: linked };
 
     const explained = lane(linkedFixture, ["config"]);
@@ -1160,7 +1184,7 @@ test("open refuses symlink escapes and destinations inside repository checkouts 
     const foreign = makeFixture();
     fixtures.push(foreign);
     const other = join(foreign.root, "other-repository");
-    execFileSync(GIT, ["init", "-b", "main", other], { stdio: "ignore" });
+    gitExec(["init", "-b", "main", other], { stdio: "ignore" });
     foreign.env.LANE_WORKTREE_ROOT = join(other, "nested-worktrees");
     const otherRepo = lane(foreign, ["open", "foreign-descendant"]);
     assert.equal(otherRepo.status, 1);
@@ -1179,7 +1203,7 @@ test("registered paths are rejected when their on-disk repository identity chang
     const original = `${path}-original`;
     execFileSync("mv", [path, original]);
     const foreign = join(fixture.root, "foreign-checkout");
-    execFileSync(GIT, ["init", "-b", "main", foreign], { stdio: "ignore" });
+    gitExec(["init", "-b", "main", foreign], { stdio: "ignore" });
     symlinkSync(foreign, path);
     const run = lane(fixture, ["status"]);
     assert.equal(run.status, 1);
@@ -1289,7 +1313,7 @@ test("a repository with a separate git directory retains its canonical checkout 
   mkdirSync(bin);
   symlinkSync(GIT, join(bin, "git"));
   symlinkSync(HEAD, join(bin, "head"));
-  execFileSync(GIT, ["init", "-b", "main", "--separate-git-dir", gitDirectory, repo], { stdio: "ignore" });
+  gitExec(["init", "-b", "main", "--separate-git-dir", gitDirectory, repo], { stdio: "ignore" });
   git(repo, ["config", "user.name", "Lane Tests"]);
   git(repo, ["config", "user.email", "lane-tests@example.invalid"]);
   writeFileSync(join(repo, "shared.txt"), "base\n");
@@ -1298,7 +1322,7 @@ test("a repository with a separate git directory retains its canonical checkout 
   writeFileSync(configPath, `${JSON.stringify({ main: "main", validate: "true" })}\n`);
   const fixture = {
     root, repo, bin, configPath, worktrees,
-    env: { ...process.env, PATH: bin, LANE_CONFIG: configPath, LANE_WORKTREE_ROOT: worktrees },
+    env: { ...hermeticGitEnvironment(), PATH: bin, LANE_CONFIG: configPath, LANE_WORKTREE_ROOT: worktrees },
   };
   try {
     const opened = lane(fixture, ["open", "separate-directory"]);
@@ -1379,7 +1403,7 @@ test("open refuses ordinary and foreign-worktree destinations without creating b
     delete fixture.env.LANE_WORKTREE_ROOT;
     const foreignRepo = join(fixture.root, "foreign-repo");
     const foreignPath = join(fixture.root, "shared-base", "repo", "lane-foreign-worktree");
-    execFileSync(GIT, ["init", "-b", "main", foreignRepo], { stdio: "ignore" });
+    gitExec(["init", "-b", "main", foreignRepo], { stdio: "ignore" });
     git(foreignRepo, ["config", "user.name", "Lane Tests"]);
     git(foreignRepo, ["config", "user.email", "lane-tests@example.invalid"]);
     writeFileSync(join(foreignRepo, "foreign.txt"), "foreign\n");

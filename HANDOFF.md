@@ -431,3 +431,17 @@ Living log for agents maintaining this repository. Newest entry last.
   No live Herdr mutation, forced digest/name collision, real TTY, linked separate-Git-
   directory invocation, Linux, or Windows run was performed. Promotion and archival
   remain operator actions; nothing was pushed or changed under `docs/reviews/`.
+
+## 2026-09-09 — repository-safe roots identity promotion-test correction
+
+- Reproduced the promotion failure by injecting `user.name=Leaked` through Git's
+  environment-level configuration: 68/69 tests passed and the repository-identity
+  fixture alone failed because the injected name overrode its local test identity.
+- Kept the correction test-only. Fixture Git and lane children now remove inherited
+  `GIT_CONFIG_*`, author, committer, and `EMAIL` variables, then use an empty
+  system-temp global config with system configuration disabled. Audited the new
+  identity, HOME-boundary, bare/linked, separate-Git-dir, and direct-Git fixtures.
+- The identical injected-config run then passed 69/69 in 13.277 seconds. Ordinary
+  `npm test` passed 69/69 in 18.821 seconds, and all 69 deliberate negative controls
+  failed with zero passes in 21.115 seconds. Tests waited for clear process probes;
+  no product code or review record changed, and nothing was pushed.
