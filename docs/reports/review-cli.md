@@ -114,3 +114,34 @@ were not available on this host. The mechanical sanitizer cannot prove absence o
 undeclared human name or arbitrary secret. No alternate host, permission race, live
 concurrent private writer, push, promotion, archive, or facilitator-owned review record
 was exercised or changed.
+
+## Round 2 review corrections
+
+- Section extraction now ends at the next heading's own line, so a finding immediately
+  before that heading is retained and the existing trailing trim removes only the
+  separator. The compact-section regression verifies both findings in the public
+  projection.
+- Protected finding locations now receive the same ASCII, reserved-placeholder,
+  markup, and encoded-payload checks as other public fields before the existing
+  alias/path protection. REFERENCE now describes that uniform refusal policy and the
+  shipped publication boundary.
+- Template rendering resolves and validates metadata before inserting literal source
+  and supplemental-brief blocks. Uppercase brace tokens in either source remain
+  literal and cannot be mistaken for unresolved template metadata.
+- The free-prose test-claim guard no longer scans private Analysis and accepts explicit
+  negation or unavailable-witness language in Unverified while still refusing an
+  affirmative unwitnessed claim. Timeout and interruption errors identify the
+  dispatched reviewer agent and tab so late evidence can be recovered.
+
+All seven focused Round 2 expectations failed before the behavior changes and passed
+afterward; each test includes a deliberate negative control. Baseline `npm test` passed
+81/81 in 35.503 seconds. Final `npm test` passed 85/85 in 42.164 seconds, and
+`LANE_TEST_NEGATIVE_CONTROL=1 npm test` deliberately failed all 85 tests with zero
+passes in 42.452 seconds. Strict OpenSpec validation passed 16/16 with telemetry off
+and concurrency one. Verification used Node.js v20.19.4, npm 10.8.2, Git 2.54.0, and
+OpenSpec 1.6.0, with every test/validation run serialized after a clear process probe.
+
+No live reviewer or Herdr mutation, alternate operating system, permission failure,
+concurrent writer, push, promotion, archive, or change under `docs/reviews/` was
+performed. The final post-commit lane gate is intentionally recorded only in the
+operator conversation.

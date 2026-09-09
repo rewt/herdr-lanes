@@ -298,7 +298,7 @@ if (args[0] === "workspace" && args[1] === "list") {
       "",
       "## Findings",
       finding,
-      "",
+      ...(process.env.FAKE_REVIEW_MODE === "compact-findings" ? [] : [""]),
       "## Re-executed",
       "\`\`\`json",
       JSON.stringify(reexecuted),
@@ -1772,6 +1772,31 @@ test("review dispatches once and publishes all canonical verdicts after private 
   }
 });
 
+test("review preserves a final finding immediately before the next section heading", () => {
+  const findings = [
+    "- [Major] first.txt:1 - first issue; Fix: fix the first issue",
+    "- [Moderate] second.txt:2 - second issue; Fix: fix the second issue",
+  ].join("\n");
+  const review = makeReviewFixture("review-compact-findings", {
+    verdict: "NEEDS-WORK", mode: "compact-findings", payload: { findings },
+  });
+  try {
+    const run = lane(review.fixture, [
+      "review", "review-compact-findings", "--round", "1", "--brief", review.brief,
+    ]);
+    assert.equal(run.status, 1, run.stderr);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicRecord = readFileSync(join(
+      review.path, "docs", "reviews", "review-compact-findings", `${head.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    assert.match(publicRecord, /first\.txt:1 - first issue/);
+    assert.match(publicRecord, /second\.txt:2 - second issue/);
+    negativeControl("compact finding section boundary");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
 test("review sanitizes deterministic aliases and path forms in a bounded public projection", () => {
   const review = makeReviewFixture("review-sanitize", { verdict: "PASS" });
   try {
@@ -1835,6 +1860,12 @@ test("review sanitization preserves unrelated words and fails closed on ambiguou
     const cases = [
       ["alias-ambiguity", { identifiers: ["Ann", "Anna"] }],
       ["protected-location", { findings: "- [Major] shared.txt:1 - issue; Fix: change it", identifiers: ["shared"] }],
+      ["location-backtick", { findings: "- [Major] `shared`.txt:1 - issue; Fix: change it" }],
+      ["location-angle", { findings: "- [Major] <shared>.txt:1 - issue; Fix: change it" }],
+      ["location-bracket", { findings: "- [Major] [shared].txt:1 - issue; Fix: change it" }],
+      ["location-emphasis", { findings: "- [Major] **shared**.txt:1 - issue; Fix: change it" }],
+      ["location-placeholder", { findings: "- [Major] [USER].txt:1 - issue; Fix: change it" }],
+      ["location-encoded", { findings: "- [Major] shared%2Fsecret.txt:1 - issue; Fix: change it", identifiers: ["secret"] }],
       ["non-ascii", { findings: "- [Minor] shared.txt:1 - caf\u00e9 issue; Fix: use ASCII" }],
       ["markup", { findings: "- [Minor] shared.txt:1 - `inline` issue; Fix: remove markup" }],
       ["encoded", { unverified: "- Percent path %2Fsecret remains." }],
@@ -1971,6 +2002,68 @@ test("review renders OpenSpec, supplemental literal input, gate, and captured co
   }
 });
 
+test("review keeps uppercase brace tokens literal in briefs and tracked source files", () => {
+  const fixtures = [];
+  try {
+    const briefReview = makeReviewFixture("review-brief-token", {
+      verdict: "PASS", brief: "Treat {{BRIEF_TOKEN}} as literal source text.\n",
+    });
+    fixtures.push(briefReview.fixture);
+    const briefRun = lane(briefReview.fixture, [
+      "review", "review-brief-token", "--round", "1", "--brief", briefReview.brief,
+    ]);
+    assert.equal(briefRun.status, 0, briefRun.stderr);
+    const briefPrompt = briefReview.fake.calls().find((args) => args[0] === "agent" && args[1] === "prompt")?.[3] ?? "";
+    assert.match(briefPrompt, /\{\{BRIEF_TOKEN\}\}/);
+
+    const trackedReview = makeReviewFixture("review-tracked-token", { verdict: "PASS" });
+    fixtures.push(trackedReview.fixture);
+    writeFileSync(join(trackedReview.path, "AGENTS.md"), "Treat {{TRACKED_TOKEN}} as literal source text.\n");
+    git(trackedReview.path, ["add", "AGENTS.md"]);
+    git(trackedReview.path, ["commit", "-m", "add literal review source"], { stdio: "ignore" });
+    const trackedRun = lane(trackedReview.fixture, [
+      "review", "review-tracked-token", "--round", "1", "--brief", trackedReview.brief,
+    ]);
+    assert.equal(trackedRun.status, 0, trackedRun.stderr);
+    const trackedPrompt = trackedReview.fake.calls().find((args) => args[0] === "agent" && args[1] === "prompt")?.[3] ?? "";
+    assert.match(trackedPrompt, /\{\{TRACKED_TOKEN\}\}/);
+    negativeControl("literal source brace tokens");
+  } finally {
+    for (const fixture of fixtures) fixture.cleanup();
+  }
+});
+
+test("review accepts negated test-pass limits but still refuses affirmative prose claims", () => {
+  const fixtures = [];
+  try {
+    const limited = makeReviewFixture("review-negated-claim", {
+      verdict: "PASS",
+      payload: {
+        unverified: "- Tests passed was not claimed.\n- The tests passed witness is unavailable.",
+        analysis: "Tests passed appears only in private analysis.",
+      },
+    });
+    fixtures.push(limited.fixture);
+    const limitedRun = lane(limited.fixture, [
+      "review", "review-negated-claim", "--round", "1", "--brief", limited.brief,
+    ]);
+    assert.equal(limitedRun.status, 0, limitedRun.stderr);
+
+    const affirmative = makeReviewFixture("review-affirmative-claim", {
+      verdict: "PASS", payload: { unverified: "- Tests passed in the suite." },
+    });
+    fixtures.push(affirmative.fixture);
+    const affirmativeRun = lane(affirmative.fixture, [
+      "review", "review-affirmative-claim", "--round", "1", "--brief", affirmative.brief,
+    ]);
+    assert.equal(affirmativeRun.status, 2, affirmativeRun.stderr);
+    assert.equal(affirmativeRun.stdout, "");
+    negativeControl("negated and affirmative test-pass prose");
+  } finally {
+    for (const fixture of fixtures) fixture.cleanup();
+  }
+});
+
 test("review refuses malformed private evidence, incomplete output, timeout, and lane mutation", () => {
   const cases = [
     ["sha-mismatch", "PASS", 2],
@@ -1999,6 +2092,9 @@ test("review refuses malformed private evidence, incomplete output, timeout, and
       assert.equal(run.stdout, "");
       const privatePath = join(review.fixture.repo, ".lane", "reviews", topic, `${capturedHead.slice(0, 7)}-r1.md`);
       if (verdict !== undefined) assert.ok(existsSync(privatePath));
+      if (mode === "missing") {
+        assert.match(run.stderr, /review timed out; reviewer agent '[a-z0-9_-]+' in tab w-lane:t2/);
+      }
       assert.ok(review.fake.calls().filter((args) => args[0] === "agent" && args[1] === "prompt").length === 1);
     }
     negativeControl("review evidence and unchanged-lane refusals");
@@ -2029,7 +2125,7 @@ test("review interruption exits 2 without a verdict or follow-up lifecycle actio
     const result = await new Promise((resolvePromise) => child.once("close", (code, signal) => resolvePromise({ code, signal })));
     assert.equal(result.code, 2, `signal=${result.signal}\n${stderr}`);
     assert.equal(stdout, "");
-    assert.match(stderr, /review interrupted; the Herdr reviewer may still write late evidence/);
+    assert.match(stderr, /review interrupted; reviewer agent '[a-z0-9_-]+' in tab w-lane:t2 may still write late evidence/);
     const calls = review.fake.calls();
     assert.equal(calls.filter((args) => args[0] === "agent" && args[1] === "prompt").length, 1);
     assert.ok(!calls.some((args) => ["close", "remove"].includes(args[1])));
@@ -2037,6 +2133,14 @@ test("review interruption exits 2 without a verdict or follow-up lifecycle actio
   } finally {
     review.fixture.cleanup();
   }
+});
+
+test("review reference describes the shipped public path and protected-location policy", () => {
+  const reference = readFileSync(join(HERE, "..", "docs", "REFERENCE.md"), "utf8");
+  assert.doesNotMatch(reference, /even though this first slice does not write it/);
+  assert.match(reference, /same command creates the public record after the\s+unchanged-lane check/);
+  assert.match(reference, /reserved placeholders[^.]*finding locations/iu);
+  negativeControl("review reference publication and location wording");
 });
 
 test("review preflight requires ignored private and trackable absent public paths", () => {

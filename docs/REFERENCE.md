@@ -342,9 +342,10 @@ canonical-checkout private file:
 
 That path must be gitignored, untracked, absent, and free of symlink escapes. The
 corresponding `docs/reviews/<topic>/<head7>-r<N>.md` path must be absent, untracked,
-trackable, and not ignored even though this first slice does not write it. Matching
-abbreviations tied to another full SHA refuse as ambiguous. The CLI never overwrites,
-stages, commits, resets, cleans, fixes, retries, or selects another round.
+trackable, and not ignored; the same command creates the public record after the
+unchanged-lane check. Matching abbreviations tied to another full SHA refuse as
+ambiguous. The CLI never overwrites, stages, commits, resets, cleans, fixes, retries,
+or selects another round.
 
 The reviewer cannot write anywhere in the lane worktree, including ignored scratch,
 cache, dependency, or build paths. Test and mutation copies belong in cleaned system
@@ -401,10 +402,12 @@ the longest-first rule.
 
 The Sanitization section records counts for absolute-path, user, host, private, and
 repository-relative conversions, including zero, plus modified execution fields by
-array index/name without original values. Generated placeholders are reserved and
-cannot be supplied by the reviewer. The checker refuses aliases in protected
-file:line or captured metadata, ambiguous paths, controls/newlines, non-ASCII residue,
-backticks, angle/square brackets, emphasis sequences, percent/HTML/backslash-encoded
+array index/name without original values. Generated placeholders are reserved;
+reviewer-supplied reserved placeholders and other unsupported payload syntax are
+refused in every projected field, including protected finding locations. The checker
+also refuses aliases in protected file:line or captured metadata, ambiguous paths,
+controls/newlines, non-ASCII residue, backticks, angle/square brackets, emphasis
+sequences, percent/HTML/backslash-encoded
 text, residual paths/aliases, and any non-idempotent second pass. Reviewer payloads
 are intentionally plain ASCII; schema tags, JSON fences and CLI placeholders are
 structural. The mechanical policy cannot prove that arbitrary prose contains no

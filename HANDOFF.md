@@ -501,3 +501,19 @@ Living log for agents maintaining this repository. Newest entry last.
   The combined change task is complete. No live reviewer/Herdr mutation, alternate
   host, semantic secret proof, push, promotion, archive, or `docs/reviews/` change was
   performed.
+
+## 2026-09-09 — foreground review round-two corrections
+
+- Fixed compact section extraction, applied all public payload restrictions to finding
+  locations, delayed literal source insertion until metadata validation, narrowed the
+  unwitnessed test-claim guard, and added reviewer agent/tab identifiers to timeout and
+  interruption recovery messages. REFERENCE now describes the shipped public boundary
+  and the finding-location policy.
+- Seven focused expectations failed before the changes and passed afterward, each with
+  a deliberate control. Final `npm test` passed 85/85 in 42.164 seconds; all 85
+  deliberate controls failed with zero passes in 42.452 seconds; strict OpenSpec
+  validation passed 16/16. Runs were serialized after clear process probes using
+  Node.js v20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+- No live reviewer/Herdr mutation, alternate host, push, promotion, archive, or change
+  under `docs/reviews/` was performed. The post-commit lane check remains the final
+  untracked verification step.

@@ -1159,9 +1159,24 @@ function reviewGate(path, head, branch) {
 
 function replaceReviewTemplate(template, values) {
   let rendered = template;
-  for (const [name, value] of Object.entries(values)) rendered = rendered.replaceAll(`{{${name}}}`, value);
-  if (/\{\{[A-Z_]+\}\}/u.test(rendered)) fail("review template contains an unresolved placeholder");
-  return rendered;
+  const literalSlots = new Map([
+    ["SOURCE_MATERIAL", "\0lane-source-material\0"],
+    ["SUPPLEMENTAL_BRIEF", "\0lane-supplemental-brief\0"],
+  ]);
+  for (const [name, slot] of literalSlots) {
+    if (rendered.split(`{{${name}}}`).length !== 2) {
+      fail(`review template must contain exactly one {{${name}}} placeholder`);
+    }
+    rendered = rendered.replace(`{{${name}}}`, slot);
+  }
+  for (const [name, value] of Object.entries(values)) {
+    if (!literalSlots.has(name)) rendered = rendered.replaceAll(`{{${name}}}`, () => value);
+  }
+  if (/\{\{[A-Z_]+\}\}/u.test(rendered)) {
+    fail("review template contains an unresolved metadata placeholder");
+  }
+  return rendered.replace(/\0lane-(source-material|supplemental-brief)\0/gu, (_, slot) =>
+    values[slot === "source-material" ? "SOURCE_MATERIAL" : "SUPPLEMENTAL_BRIEF"]);
 }
 
 function exactObjectKeys(value, expected, label) {
@@ -1209,7 +1224,7 @@ function validateReviewRecord(record, expected) {
     fail("private review sections are missing, duplicated, unknown, or out of order");
   }
   const sections = new Map(headers.map(([name, index], position) => {
-    const end = position + 1 < headers.length ? headers[position + 1][1] - 1 : lines.length - 1;
+    const end = position + 1 < headers.length ? headers[position + 1][1] : lines.length - 1;
     return [name, lines.slice(index + 1, end).join("\n").replace(/^\n|\n$/gu, "")];
   }));
 
@@ -1261,8 +1276,17 @@ function validateReviewRecord(record, expected) {
   if (!Array.isArray(identifiers) || identifiers.some((value) => typeof value !== "string" || value === "")) {
     fail("Private identifiers must be an array of nonempty strings");
   }
-  const prose = [findings, sections.get("Non-claims"), sections.get("Unverified"), sections.get("Analysis")].join("\n");
-  if (/tests? pass(?:ed|ing)?/iu.test(prose)) fail("tests-pass claims are allowed only in witnessed Re-executed entries");
+  const prose = [findings, sections.get("Non-claims"), sections.get("Unverified")].join("\n");
+  for (const line of prose.split("\n")) {
+    for (const match of line.matchAll(/\btests? pass(?:ed|ing)?\b/giu)) {
+      const before = line.slice(0, match.index);
+      const after = line.slice(match.index + match[0].length);
+      const negated = /\b(?:no|not|never)\s*$/iu.test(before) ||
+        /^(?:(?![.;]).){0,80}\b(?:not|never)\s+(?:claimed|verified|supported)\b/iu.test(after) ||
+        /^(?:(?![.;]).){0,80}\b(?:claim|witness)\b(?:(?![.;]).){0,40}\b(?:absent|missing|unavailable)\b/iu.test(after);
+      if (!negated) fail("tests-pass claims are allowed only in witnessed Re-executed entries");
+    }
+  }
   return { verdict: verdictMatch[1], sections, executions, identifiers, record: normalized };
 }
 
@@ -1337,6 +1361,26 @@ function absolutePathPattern() {
   return /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]*/giu;
 }
 
+function assertPublicPayloadRestrictions(value, label, { allowGenerated = false } = {}) {
+  if (!allowGenerated && REVIEW_PLACEHOLDER_PATTERN.test(value)) {
+    REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
+    fail(`${label} contains a reserved sanitizer placeholder`);
+  }
+  REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
+  if (/[\u0000-\u001f\u007f\n\r]/u.test(value)) fail(`${label} must be single-line text`);
+  const withoutPlaceholders = allowGenerated ? value.replace(REVIEW_PLACEHOLDER_PATTERN, "") : value;
+  REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
+  if ([...withoutPlaceholders].some((character) => character.codePointAt(0) < 0x20 || character.codePointAt(0) > 0x7e)) {
+    fail(`${label} contains unsupported non-ASCII text`);
+  }
+  const markup = /[`<>\[\]]|\*\*|__/u.test(withoutPlaceholders);
+  const encoded = /%[0-9A-Fa-f]{2}|&(?:#?[A-Za-z0-9]+);|\\x[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}/u
+    .test(withoutPlaceholders);
+  if (markup || encoded) {
+    fail(`${label} contains unsupported markup or encoded text`);
+  }
+}
+
 function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
   let value = input.normalize("NFC");
   if (!allowGenerated && REVIEW_PLACEHOLDER_PATTERN.test(value)) fail("projected payload contains a reserved sanitizer placeholder");
@@ -1370,21 +1414,17 @@ function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
     }));
   }
 
+  assertPublicPayloadRestrictions(value, "projected payload", { allowGenerated: true });
   const withoutPlaceholders = value.replace(REVIEW_PLACEHOLDER_PATTERN, "");
   REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
-  if ([...withoutPlaceholders].some((character) => character.codePointAt(0) < 0x20 || character.codePointAt(0) > 0x7e)) {
-    fail("projected payload contains unsupported non-ASCII text");
-  }
-  if (/[`<>\[\]]|\*\*|__/u.test(withoutPlaceholders) || /%[0-9A-Fa-f]{2}|&(?:#?[A-Za-z0-9]+);|\\x[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}/u.test(withoutPlaceholders)) {
-    fail("projected payload contains unsupported markup or encoded text");
-  }
   if (absolutePathPattern().test(withoutPlaceholders) || containsAlias(withoutPlaceholders, context.aliases)) {
     fail("projected payload retains private path or alias content");
   }
   return value;
 }
 
-function assertProtectedPublicValue(value, aliases, label) {
+function assertProtectedPublicValue(value, aliases, label, { payload = false } = {}) {
+  if (payload) assertPublicPayloadRestrictions(value.normalize("NFC"), label);
   if (containsAlias(value, aliases) || absolutePathPattern().test(value)) {
     fail(`${label} contains a private alias or absolute path and cannot be rewritten safely`);
   }
@@ -1411,7 +1451,7 @@ function sanitizeReviewProjection(parsed, expected) {
     : parsed.sections.get("Findings").split("\n").map((line) => {
       const match = line.match(/^- \[(Major|Moderate|Minor)\] (.+):([1-9][0-9]*) - (.+); Fix: (.+)$/u);
       const location = `${match[2]}:${match[3]}`;
-      assertProtectedPublicValue(location, aliases, "finding location");
+      assertProtectedPublicValue(location, aliases, "finding location", { payload: true });
       return `- [${match[1]}] ${location} - ${sanitize(match[4])}; Fix: ${sanitize(match[5])}`;
     });
   const executions = parsed.executions.map((execution, index) => {
@@ -1501,9 +1541,14 @@ function sanitizeReviewProjection(parsed, expected) {
   return record;
 }
 
-async function waitForPrivateReview(path, deadline, interrupted) {
+async function waitForPrivateReview(path, deadline, interrupted, session) {
   while (Date.now() <= deadline) {
-    if (interrupted.value) fail(`review interrupted; the Herdr reviewer may still write late evidence to ${path}`);
+    if (interrupted.value) {
+      fail(
+        `review interrupted; reviewer agent '${session.agentName}' in tab ${session.tabId} ` +
+        `may still write late evidence to ${path}`,
+      );
+    }
     if (entryExists(path)) {
       const entry = lstatSync(path);
       if (entry.isSymbolicLink() || !entry.isFile()) fail("private review output must be a regular file");
@@ -1518,7 +1563,10 @@ async function waitForPrivateReview(path, deadline, interrupted) {
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, Math.min(250, Math.max(1, deadline - Date.now()))));
   }
-  fail(`review timed out; the Herdr reviewer may still write late evidence to ${path}`);
+  fail(
+    `review timed out; reviewer agent '${session.agentName}' in tab ${session.tabId} ` +
+    `may still write late evidence to ${path}`,
+  );
 }
 
 async function review(topic, args) {
@@ -1578,7 +1626,7 @@ async function review(topic, args) {
     } catch (error) {
       fail(`review dispatch failed: ${error.code === "ETIMEDOUT" ? "timeout" : "Herdr command error"}`);
     }
-    const record = await waitForPrivateReview(privatePath, deadline, interrupted);
+    const record = await waitForPrivateReview(privatePath, deadline, interrupted, session);
     const parsed = validateReviewRecord(record, {
       head, topic, round: options.round, reviewId, baseBranch: MAIN, baseCommit,
     });
