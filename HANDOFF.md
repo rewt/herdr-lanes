@@ -240,10 +240,22 @@ Living log for agents maintaining this repository. Newest entry last.
   inspection showed the installed tool lacks upstream skip_specs support. The final
   research brief is outside product changes, without a fabricated capability.
 - Document links, requirement/scenario structure, unchecked task count, and
-  public-source text were audited; git diff --check passed. Validation/build/test
-  commands were serialized. Verified Node.js 20.19.4, npm 10.8.2, git 2.54.0 and
+  public-source text were audited; git diff --check passed. This lane's own
+  validation commands were serialized. Verified Node.js 20.19.4, npm 10.8.2, git 2.54.0 and
   read-only Herdr protocol-20 schema/help. No additional framework/package install.
 - No implementation agent was dispatched and no live focus, TTY/editor/mouse
   interaction, root rollout, minimum-version host, Linux, or Windows behavior was
   exercised. All implementation and proposed contract approvals remain future work.
   No push performed.
+
+## 2026-09-08 — specification verification load correction
+
+- The first post-commit lane check at 46eceb6 passed 49/49 in 6.601 s, but the
+  orchestration mistakenly ran it after a nonzero load probe identified an active
+  build elsewhere on the machine. This violated the requested one-build/test rule;
+  the passing result does not establish machine-exclusive verification.
+- Updated the specification report and this handoff to record that limitation.
+  No runtime or test files changed. git diff --check passed.
+- Commit this correction, wait until the build/test process probe is clear, then
+  run the ordinary lane check once against the final commit and report its exact
+  GATE in the conversation. Do not stop or control the other session's processes.
