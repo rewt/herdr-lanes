@@ -14,17 +14,19 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, writeFileSync,
 } from "node:fs";
 import { constants as osConstants, homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+const IS_REVIEW_COMMAND = process.argv[2] === "review";
+
 // Unix readers such as `head` routinely close a pipeline before the producer
 // is finished. Treat that as successful early consumption, not a crash.
 process.stdout.on("error", (error) => {
-  if (error.code === "EPIPE") process.exit(0);
+  if (error.code === "EPIPE") process.exit(IS_REVIEW_COMMAND ? 2 : 0);
   throw error;
 });
 
@@ -33,8 +35,8 @@ const REPO = (() => {
   try {
     return realpathSync(execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim());
   } catch {
-    process.stderr.write("lane: not inside a git repository\n");
-    process.exit(1);
+    process.stderr.write(`${IS_REVIEW_COMMAND ? "lane review" : "lane"}: not inside a git repository\n`);
+    process.exit(IS_REVIEW_COMMAND ? 2 : 1);
   }
 })();
 const REPO_IDENTITY = (() => {
@@ -309,8 +311,8 @@ const DEFAULT_VALIDATE = CONFIG.validate ?? "npm test";
 const TOOL_ROOT = dirname(fileURLToPath(import.meta.url));
 
 function fail(message) {
-  process.stderr.write(`lane: ${message}\n`);
-  process.exit(1);
+  process.stderr.write(`${IS_REVIEW_COMMAND ? "lane review" : "lane"}: ${message}\n`);
+  process.exit(IS_REVIEW_COMMAND ? 2 : 1);
 }
 
 function configuredRoutes() {
@@ -569,8 +571,11 @@ function assertSafeNewWorktreePathAfterCreation(path) {
 // herdr helpers. Every herdr CLI call prints one JSON document; a failure is a
 // missing server, a refusal, or malformed output, and callers decide whether
 // that is fatal.
-function herdrJson(args) {
-  const run = spawnSync("herdr", args, { encoding: "utf8" });
+function herdrJson(args, { deadline } = {}) {
+  const run = spawnSync("herdr", args, {
+    encoding: "utf8",
+    ...(deadline === undefined ? {} : { timeout: Math.max(1, deadline - Date.now()) }),
+  });
   if (run.status !== 0) return undefined;
   try {
     const parsed = JSON.parse(run.stdout);
@@ -593,13 +598,13 @@ function parentWorkspaceId(workspaces) {
   return workspaces?.find((workspace) => workspaceMatches(workspace, REPO_ROOT, false))?.workspace_id;
 }
 
-function openWorkspaceIdFor(path, { refuseStale = true, onMismatch, workspaces } = {}) {
+function openWorkspaceIdFor(path, { refuseStale = true, onMismatch, workspaces, deadline } = {}) {
   const mismatch = (message) => {
     if (refuseStale) fail(message);
     onMismatch?.();
     return undefined;
   };
-  const listed = herdrJson(["worktree", "list", "--cwd", REPO_ROOT]);
+  const listed = herdrJson(["worktree", "list", "--cwd", REPO_ROOT], { deadline });
   if (listed === undefined) return undefined;
   if (!samePath(listed.source?.repo_key, REPO_IDENTITY) ||
       !samePath(listed.source?.repo_root, REPO_ROOT) ||
@@ -608,7 +613,7 @@ function openWorkspaceIdFor(path, { refuseStale = true, onMismatch, workspaces }
   }
   const item = listed.worktrees.find((worktree) => samePath(worktree.path, path));
   if (item?.open_workspace_id === undefined) return undefined;
-  const availableWorkspaces = workspaces ?? herdrJson(["workspace", "list"])?.workspaces;
+  const availableWorkspaces = workspaces ?? herdrJson(["workspace", "list"], { deadline })?.workspaces;
   const workspace = availableWorkspaces?.find((entry) => entry.workspace_id === item.open_workspace_id);
   if (!workspaceMatches(workspace, path, true)) {
     return mismatch(`Herdr workspace ${item.open_workspace_id} for ${path} has a repository identity mismatch; refusing stale metadata`);
@@ -621,17 +626,17 @@ function openWorkspaceIdFor(path, { refuseStale = true, onMismatch, workspaces }
 // workspace"), so a lane opened from another lane gets a git worktree and no
 // herdr workspace. Repair that by opening from the parent workspace explicitly,
 // retaining opaque IDs and verifying the returned path and repository identity.
-function ensureHerdrWorkspace(path, label, workspaces) {
+function ensureHerdrWorkspace(path, label, workspaces, deadline) {
   // Worktree creation/opening and workspace discovery are separate Herdr
   // snapshots. Refetch here so newly visible metadata is never judged against
   // the caller's pre-creation listing.
-  let id = openWorkspaceIdFor(path);
+  let id = openWorkspaceIdFor(path, { deadline });
   if (id !== undefined) return id;
   const parent = parentWorkspaceId(workspaces);
   if (parent === undefined) return undefined;
-  herdrJson(["worktree", "open", "--workspace", parent, "--path", path, "--label", label, "--no-focus"]);
-  const refreshed = herdrJson(["workspace", "list"])?.workspaces;
-  return openWorkspaceIdFor(path, { workspaces: refreshed });
+  herdrJson(["worktree", "open", "--workspace", parent, "--path", path, "--label", label, "--no-focus"], { deadline });
+  const refreshed = herdrJson(["workspace", "list"], { deadline })?.workspaces;
+  return openWorkspaceIdFor(path, { workspaces: refreshed, deadline });
 }
 
 const GRAPHEME_SEGMENTER = new Intl.Segmenter("en", { granularity: "grapheme" });
@@ -697,13 +702,13 @@ function newAgentName(topic, reserved = new Set()) {
   fail(`cannot produce a unique Herdr agent name for ${topic}`);
 }
 
-function agentRecord(agentName) {
-  const listed = herdrJson(["agent", "list"]);
+function agentRecord(agentName, deadline) {
+  const listed = herdrJson(["agent", "list"], { deadline });
   return listed?.agents?.find((a) => a.name === agentName);
 }
 
-function agentOnPane(pane) {
-  const listed = herdrJson(["agent", "list"]);
+function agentOnPane(pane, deadline) {
+  const listed = herdrJson(["agent", "list"], { deadline });
   return listed?.agents?.find((a) => a.pane_id === pane);
 }
 
@@ -715,8 +720,8 @@ function sleepMs(ms) {
 // that instant; started during shell init the agent lands in the wrong
 // directory and runs its brief there. Refuse to prompt unless herdr reports
 // the agent's cwd as the lane worktree.
-function verifyAgentCwd(agentName, path) {
-  const record = agentRecord(agentName);
+function verifyAgentCwd(agentName, path, deadline) {
+  const record = agentRecord(agentName, deadline);
   if (record === undefined) return { ok: false, cwd: undefined };
   return { ok: samePath(record.cwd, path), cwd: record.cwd };
 }
@@ -871,23 +876,26 @@ function dispatch(topic, promptText, options = {}) {
   const resolved = resolveDispatch(options);
   const path = worktreeFor(branch);
   if (path === undefined) fail(`lane ${branch} has no worktree; open it first`);
-  const workspaces = herdrJson(["workspace", "list"])?.workspaces;
+  const workspaces = herdrJson(["workspace", "list"], { deadline: options.deadline })?.workspaces;
   if (workspaces === undefined) fail("herdr is unavailable; dispatch requires the herdr server");
   const label = workspaceLabel(topic, path, workspaces);
-  const workspaceId = ensureHerdrWorkspace(path, label, workspaces);
+  const workspaceId = ensureHerdrWorkspace(path, label, workspaces, options.deadline);
   if (workspaceId === undefined) {
     fail(`herdr shows no open workspace for ${path} and could not open one from the ${REPO_ROOT} workspace`);
   }
   const tabArgs = ["tab", "create", "--workspace", workspaceId, "--label", `agent:${topic}`];
   for (const pair of resolved.env) tabArgs.push("--env", pair);
-  const created = JSON.parse(execFileSync("herdr", tabArgs, { encoding: "utf8" }));
+  const created = JSON.parse(execFileSync("herdr", tabArgs, {
+    encoding: "utf8",
+    ...(options.deadline === undefined ? {} : { timeout: Math.max(1, options.deadline - Date.now()) }),
+  }));
   const pane = created.result.root_pane.pane_id;
   const tabId = created.result.tab.tab_id;
   let paneCwd;
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    paneCwd = herdrJson(["pane", "get", pane])?.pane?.foreground_cwd;
+    paneCwd = herdrJson(["pane", "get", pane], { deadline: options.deadline })?.pane?.foreground_cwd;
     if (samePath(paneCwd, path)) break;
-    sleepMs(500);
+    sleepMs(Math.min(500, Math.max(1, (options.deadline ?? (Date.now() + 500)) - Date.now())));
   }
   if (!samePath(paneCwd, path)) {
     spawnSync("herdr", ["tab", "close", tabId], { encoding: "utf8" });
@@ -897,7 +905,7 @@ function dispatch(topic, promptText, options = {}) {
   // keep names distinct across equal topics and retry leftovers. Herdr limits
   // names to 32 characters and [a-z][a-z0-9_-]*.
   const liveAgentNames = new Set(
-    (herdrJson(["agent", "list"])?.agents ?? []).map((agent) => agent.name),
+    (herdrJson(["agent", "list"], { deadline: options.deadline })?.agents ?? []).map((agent) => agent.name),
   );
   let agentName = newAgentName(topic, liveAgentNames);
   // Dispatch is model-agnostic: the tier policy is the operator's, and the
@@ -922,20 +930,23 @@ function dispatch(topic, promptText, options = {}) {
     // reports as failed can still have launched the agent in the pane: use a
     // fresh name per attempt and adopt whatever is already running there.
     if (attempt > 0) agentName = newAgentName(topic, liveAgentNames);
-    const run = spawnSync("herdr", startArgsFor(agentName), { encoding: "utf8" });
+    const run = spawnSync("herdr", startArgsFor(agentName), {
+      encoding: "utf8",
+      ...(options.deadline === undefined ? {} : { timeout: Math.max(1, options.deadline - Date.now()) }),
+    });
     if (run.status === 0 && !`${run.stdout}${run.stderr}`.includes('"error"')) {
       started = true;
       break;
     }
     liveAgentNames.add(agentName);
     lastError = `${run.stdout}${run.stderr}`.trim();
-    const running = agentOnPane(pane);
+    const running = agentOnPane(pane, options.deadline);
     if (running !== undefined) {
       agentName = running.name;
       started = true;
       break;
     }
-    sleepMs(500);
+    sleepMs(Math.min(500, Math.max(1, (options.deadline ?? (Date.now() + 500)) - Date.now())));
   }
   if (!started) {
     spawnSync("herdr", ["tab", "close", tabId], { encoding: "utf8" });
@@ -945,27 +956,411 @@ function dispatch(topic, promptText, options = {}) {
   // "Yes, continue" — the directory is this repository's own worktree.
   for (let attempt = 0; attempt < 30; attempt += 1) {
     const visible = spawnSync("herdr", ["agent", "read", agentName, "--source", "visible"], { encoding: "utf8" }).stdout ?? "";
-    const status = agentRecord(agentName)?.agent_status;
+    const status = agentRecord(agentName, options.deadline)?.agent_status;
     if (visible.includes("Do you trust the contents of this directory")) {
       spawnSync("herdr", ["agent", "send-keys", agentName, "Enter"], { encoding: "utf8" });
     } else if (status === "idle" || status === "done" || status === "working") {
       break;
     }
-    sleepMs(1000);
+    sleepMs(Math.min(1000, Math.max(1, (options.deadline ?? (Date.now() + 1000)) - Date.now())));
   }
-  const cwdCheck = verifyAgentCwd(agentName, path);
+  const cwdCheck = verifyAgentCwd(agentName, path, options.deadline);
   if (!cwdCheck.ok) {
     spawnSync("herdr", ["tab", "close", tabId], { encoding: "utf8" });
     fail(`agent '${agentName}' is running in '${cwdCheck.cwd}', not the lane worktree ${path}; tab closed, brief NOT sent`);
   }
   if (promptText !== undefined && promptText.trim() !== "") {
-    execFileSync("herdr", ["agent", "prompt", agentName, promptText], { stdio: "inherit" });
+    execFileSync("herdr", ["agent", "prompt", agentName, promptText], {
+      stdio: options.silent ? ["ignore", "ignore", "pipe"] : "inherit",
+      ...(options.deadline === undefined ? {} : { timeout: Math.max(1, options.deadline - Date.now()) }),
+    });
   }
-  process.stdout.write(
-    `dispatched '${agentName}' in herdr workspace ${workspaceId} (pane ${pane})\n` +
-      `  watch:  herdr agent read ${agentName}\n` +
-      `  steer:  herdr agent attach ${agentName}\n`,
-  );
+  if (!options.silent) {
+    process.stdout.write(
+      `dispatched '${agentName}' in herdr workspace ${workspaceId} (pane ${pane})\n` +
+        `  watch:  herdr agent read ${agentName}\n` +
+        `  steer:  herdr agent attach ${agentName}\n`,
+    );
+  }
+  return { agentName, pane, tabId, workspaceId };
+}
+
+const REVIEW_MAX_PRIVATE_BYTES = 1024 * 1024;
+const REVIEW_COMPLETE_MARKER = "<!-- lane-review-complete -->";
+const REVIEW_SECTIONS = [
+  "Findings", "Re-executed", "Non-claims", "Unverified", "Private identifiers", "Analysis",
+];
+
+function parseReviewOptions(args) {
+  const options = { route: "review", timeout: 1800 };
+  const seen = new Set();
+  for (let index = 0; index < args.length; index += 1) {
+    const flag = args[index];
+    if (!["--round", "--brief", "--change", "--route", "--timeout"].includes(flag)) {
+      fail(`usage: lane review <topic> --round N [--brief <path>] [--change <name>] [--route <name>] [--timeout <seconds>] (unknown operand: ${flag})`);
+    }
+    if (seen.has(flag)) fail(`duplicate review option: ${flag}`);
+    seen.add(flag);
+    const value = args[(index += 1)];
+    if (value === undefined || value === "" || value.startsWith("--")) fail(`missing value for ${flag}`);
+    if (flag === "--round") options.round = Number(value);
+    else if (flag === "--timeout") options.timeout = Number(value);
+    else options[flag.slice(2)] = value;
+  }
+  if (!Number.isSafeInteger(options.round) || options.round < 1) fail("--round must be a positive safe integer");
+  if (!Number.isInteger(options.timeout) || options.timeout < 1 || options.timeout > 7200) {
+    fail("--timeout must be an integer from 1 through 7200 seconds");
+  }
+  if (options.change === undefined && options.brief === undefined) fail("review requires --change or --brief");
+  if (typeof options.route !== "string" || options.route === "") fail("--route must not be empty");
+  return options;
+}
+
+function assertReviewOutputPath(root, relativePath, { ignored, label }) {
+  const realRoot = realpathSync(root);
+  const path = resolve(root, relativePath);
+  if (!within(path, realRoot)) fail(`${label} escapes its repository checkout`);
+  let cursor = dirname(path);
+  while (cursor !== realRoot) {
+    if (entryExists(cursor)) {
+      const entry = lstatSync(cursor);
+      if (entry.isSymbolicLink()) fail(`${label} has a symlink ancestor: ${cursor}`);
+      if (!entry.isDirectory()) fail(`${label} has a non-directory ancestor: ${cursor}`);
+      if (!within(realpathSync(cursor), realRoot)) fail(`${label} resolves outside its repository checkout`);
+    }
+    const parent = dirname(cursor);
+    if (parent === cursor) fail(`${label} has no repository ancestor`);
+    cursor = parent;
+  }
+  if (entryExists(path)) fail(`${label} already exists; refusing to overwrite round output`);
+  const tracked = spawnSync("git", ["-C", root, "ls-files", "--error-unmatch", "--", relativePath], {
+    stdio: "ignore",
+  }).status === 0;
+  if (tracked) fail(`${label} is already tracked; review records are never overwritten`);
+  const isIgnored = spawnSync("git", ["-C", root, "check-ignore", "-q", "--no-index", "--", relativePath], {
+    stdio: "ignore",
+  }).status === 0;
+  if (ignored && !isIgnored) fail(`${label} must be gitignored before review dispatch`);
+  if (!ignored && isIgnored) fail(`${label} must be trackable and not gitignored`);
+  return path;
+}
+
+function assertUnambiguousReviewPrefix(directory, head7, head) {
+  if (!entryExists(directory)) return;
+  const entry = lstatSync(directory);
+  if (entry.isSymbolicLink() || !entry.isDirectory()) fail("review output directory must be a real directory");
+  for (const name of readdirSync(directory)) {
+    if (!name.startsWith(`${head7}-r`) || !name.endsWith(".md")) continue;
+    const path = join(directory, name);
+    if (!lstatSync(path).isFile()) fail("review prefix collision is not a regular file");
+    const match = readFileSync(path, "utf8").match(/^Reviewed commit: ([0-9a-f]{40})$/mu);
+    if (match !== null && match[1] !== head) {
+      fail(`review abbreviation ${head7} is ambiguous with an existing record`);
+    }
+  }
+}
+
+function regularTextFile(path, label, maximum = REVIEW_MAX_PRIVATE_BYTES) {
+  let entry;
+  try {
+    entry = lstatSync(path);
+  } catch {
+    fail(`${label} does not exist: ${path}`);
+  }
+  if (entry.isSymbolicLink() || !entry.isFile()) fail(`${label} must be a regular file: ${path}`);
+  if (entry.size > maximum) fail(`${label} exceeds ${maximum} bytes`);
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(path));
+  } catch {
+    fail(`${label} is not valid UTF-8`);
+  }
+}
+
+function collectMarkdownFiles(root) {
+  const files = [];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isSymbolicLink()) fail(`review source contains a symlink: ${path}`);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile() && entry.name.endsWith(".md")) files.push(path);
+    }
+  };
+  visit(root);
+  return files.sort();
+}
+
+function reviewSources(path, topic, options) {
+  const sources = [];
+  const add = (file, label = relative(path, file)) => {
+    const content = regularTextFile(file, `review source ${label}`);
+    sources.push(`### Source: ${label}\n${content.trimEnd()}`);
+  };
+  const agents = join(path, "AGENTS.md");
+  if (entryExists(agents)) add(agents, "AGENTS.md");
+  else sources.push("### Source: AGENTS.md\nAbsent.");
+  const shared = join(path, "openspec", "README.md");
+  if (entryExists(shared)) add(shared, "openspec/README.md");
+  else sources.push("### Source: openspec/README.md\nAbsent.");
+
+  if (options.change !== undefined) {
+    if (!/^[a-z0-9][a-z0-9-]{0,60}$/u.test(options.change)) fail(`invalid OpenSpec change name: ${options.change}`);
+    const changeRoot = join(path, "openspec", "changes", options.change);
+    if (!entryExists(changeRoot) || !lstatSync(changeRoot).isDirectory() || lstatSync(changeRoot).isSymbolicLink()) {
+      fail(`OpenSpec change does not exist: ${options.change}`);
+    }
+    for (const required of ["proposal.md", "design.md", "tasks.md"]) add(join(changeRoot, required));
+    const deltaRoot = join(changeRoot, "specs");
+    if (!entryExists(deltaRoot) || !lstatSync(deltaRoot).isDirectory()) fail(`OpenSpec change has no delta specs: ${options.change}`);
+    const deltas = collectMarkdownFiles(deltaRoot);
+    if (deltas.length === 0) fail(`OpenSpec change has no delta specs: ${options.change}`);
+    for (const delta of deltas) {
+      add(delta);
+      const capability = relative(deltaRoot, delta).split(sep)[0];
+      const current = join(path, "openspec", "specs", capability, "spec.md");
+      if (entryExists(current) && !sources.some((value) => value.startsWith(`### Source: ${relative(path, current)}\n`))) add(current);
+    }
+  }
+
+  const report = join(path, "docs", "reports", `${topic}.md`);
+  if (entryExists(report)) add(report);
+  else sources.push("### Source: engineer report\nAbsent.");
+  const handoff = join(path, "HANDOFF.md");
+  if (entryExists(handoff)) {
+    const text = regularTextFile(handoff, "HANDOFF.md");
+    const start = text.lastIndexOf("\n## ");
+    sources.push(`### Source: latest HANDOFF entry\n${(start === -1 ? text : text.slice(start + 1)).trimEnd()}`);
+  } else {
+    sources.push("### Source: latest HANDOFF entry\nAbsent.");
+  }
+  return sources.join("\n\n");
+}
+
+function reviewGate(path, head, branch) {
+  const gatePath = join(path, ".lane", "gate.json");
+  if (!entryExists(gatePath)) return { prompt: "No usable gate at captured HEAD (missing).", diagnostic: "missing" };
+  try {
+    const gate = JSON.parse(regularTextFile(gatePath, "lane gate"));
+    if (gate.head !== head || gate.branch !== branch) {
+      return { prompt: "No usable gate at captured HEAD (stale).", diagnostic: "stale" };
+    }
+    if (!Number.isInteger(gate.exit_code) || typeof gate.command !== "string" ||
+        typeof gate.started_at !== "string" || typeof gate.finished_at !== "string") {
+      return { prompt: "No usable gate at captured HEAD (unusable).", diagnostic: "unusable" };
+    }
+    return {
+      prompt: `Gate at captured HEAD: exit=${gate.exit_code}; signal=${gate.signal ?? "none"}; command=${gate.command}; started=${gate.started_at}; finished=${gate.finished_at}`,
+      diagnostic: `exit=${gate.exit_code}`,
+    };
+  } catch {
+    return { prompt: "No usable gate at captured HEAD (unusable).", diagnostic: "unusable" };
+  }
+}
+
+function replaceReviewTemplate(template, values) {
+  let rendered = template;
+  for (const [name, value] of Object.entries(values)) rendered = rendered.replaceAll(`{{${name}}}`, value);
+  if (/\{\{[A-Z_]+\}\}/u.test(rendered)) fail("review template contains an unresolved placeholder");
+  return rendered;
+}
+
+function exactObjectKeys(value, expected, label) {
+  if (!isRecord(value)) fail(`${label} must be an object`);
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  if (JSON.stringify(actual) !== JSON.stringify(wanted)) fail(`${label} has invalid fields`);
+}
+
+function parseJsonFence(content, label) {
+  const match = content.match(/^```json\n([\s\S]+)\n```$/u);
+  if (match === null) fail(`${label} must contain one JSON fenced block`);
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    fail(`${label} contains invalid JSON`);
+  }
+}
+
+function validateReviewRecord(record, expected) {
+  const normalized = record.endsWith("\n") ? record.slice(0, -1) : record;
+  const lines = normalized.split("\n");
+  const verdictMatch = lines[0]?.match(/^\*\*(PASS|NEEDS-WORK|FAIL)\*\*$/u);
+  if (verdictMatch === null) fail("private review first line must be **PASS**, **NEEDS-WORK**, or **FAIL**");
+  const boldVerdicts = normalized.match(/\*\*(?:PASS|NEEDS-WORK|FAIL)\*\*/gu) ?? [];
+  if (boldVerdicts.length !== 1) fail("private review contains an extra bold verdict token");
+  const metadata = [
+    ["Schema", "lane-review/v1"],
+    ["Reviewed commit", expected.head],
+    ["Topic", expected.topic],
+    ["Round", String(expected.round)],
+    ["Review ID", expected.reviewId],
+    ["Base branch", expected.baseBranch],
+    ["Base commit", expected.baseCommit],
+  ];
+  for (let index = 0; index < metadata.length; index += 1) {
+    const [name, value] = metadata[index];
+    if (lines[index + 1] !== `${name}: ${value}`) fail(`private review ${name} does not match the captured review`);
+    if (lines.filter((line) => line.startsWith(`${name}:`)).length !== 1) fail(`private review has duplicate ${name}`);
+  }
+  if (lines[8] !== "") fail("private review metadata must be followed by a blank line");
+  if (lines.at(-1) !== REVIEW_COMPLETE_MARKER) fail("private review completion marker must be the final line");
+  const headers = lines.map((line, index) => line.startsWith("## ") ? [line.slice(3), index] : undefined).filter(Boolean);
+  if (JSON.stringify(headers.map(([name]) => name)) !== JSON.stringify(REVIEW_SECTIONS)) {
+    fail("private review sections are missing, duplicated, unknown, or out of order");
+  }
+  const sections = new Map(headers.map(([name, index], position) => {
+    const end = position + 1 < headers.length ? headers[position + 1][1] - 1 : lines.length - 1;
+    return [name, lines.slice(index + 1, end).join("\n").replace(/^\n|\n$/gu, "")];
+  }));
+
+  const findings = sections.get("Findings");
+  if (findings !== "None") {
+    const findingLines = findings.split("\n");
+    if (findingLines.length === 0) fail("Findings must be None or tagged entries");
+    for (const finding of findingLines) {
+      const match = finding.match(/^- \[(Major|Moderate|Minor)\] (.+):([1-9][0-9]*) - (.+); Fix: (.+)$/u);
+      if (match === null || isAbsolute(match[2]) || /^[A-Za-z]:[\\/]/u.test(match[2]) || match[2].split(/[\\/]/u).includes("..")) {
+        fail("each finding must have an allowed tag, repository-relative file:line, and concrete Fix");
+      }
+    }
+  }
+
+  const executions = parseJsonFence(sections.get("Re-executed"), "Re-executed");
+  if (!Array.isArray(executions)) fail("Re-executed JSON must be an array");
+  const executionKeys = ["command", "cwd", "exit_code", "result", "tests_pass", "witness"];
+  const witnessKeys = ["kind", "command", "cwd", "exit_code", "result", "observed_failure"];
+  for (let index = 0; index < executions.length; index += 1) {
+    const execution = executions[index];
+    exactObjectKeys(execution, executionKeys, `Re-executed[${index}]`);
+    if (typeof execution.command !== "string" || execution.command === "" ||
+        !["lane", "scratch"].includes(execution.cwd) || !Number.isInteger(execution.exit_code) ||
+        typeof execution.result !== "string" || execution.result === "" || typeof execution.tests_pass !== "boolean") {
+      fail(`Re-executed[${index}] has invalid values`);
+    }
+    if (execution.witness !== null) {
+      exactObjectKeys(execution.witness, witnessKeys, `Re-executed[${index}].witness`);
+      const witness = execution.witness;
+      if (!["negative-control", "mutation"].includes(witness.kind) || typeof witness.command !== "string" || witness.command === "" ||
+          !["lane", "scratch"].includes(witness.cwd) || !Number.isInteger(witness.exit_code) || typeof witness.result !== "string" ||
+          witness.result === "" || typeof witness.observed_failure !== "string" || witness.observed_failure === "") {
+        fail(`Re-executed[${index}].witness has invalid values`);
+      }
+    }
+    if (execution.tests_pass && (execution.exit_code !== 0 || execution.witness === null)) {
+      fail(`Re-executed[${index}] tests_pass requires exit 0 and an observed witness`);
+    }
+  }
+
+  for (const name of ["Non-claims", "Unverified"]) {
+    const content = sections.get(name);
+    if (content !== "None" && !content.split("\n").every((line) => /^- \S/u.test(line))) {
+      fail(`${name} must be None or nonempty bullet entries`);
+    }
+  }
+  const identifiers = parseJsonFence(sections.get("Private identifiers"), "Private identifiers");
+  if (!Array.isArray(identifiers) || identifiers.some((value) => typeof value !== "string" || value === "")) {
+    fail("Private identifiers must be an array of nonempty strings");
+  }
+  const prose = [findings, sections.get("Non-claims"), sections.get("Unverified"), sections.get("Analysis")].join("\n");
+  if (/tests? pass(?:ed|ing)?/iu.test(prose)) fail("tests-pass claims are allowed only in witnessed Re-executed entries");
+  return { verdict: verdictMatch[1], sections, executions, identifiers, record: normalized };
+}
+
+async function waitForPrivateReview(path, deadline, interrupted) {
+  while (Date.now() <= deadline) {
+    if (interrupted.value) fail(`review interrupted; the Herdr reviewer may still write late evidence to ${path}`);
+    if (entryExists(path)) {
+      const entry = lstatSync(path);
+      if (entry.isSymbolicLink() || !entry.isFile()) fail("private review output must be a regular file");
+      if (entry.size > REVIEW_MAX_PRIVATE_BYTES) fail("private review output exceeds 1 MiB");
+      let text;
+      try {
+        text = new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(path));
+      } catch {
+        fail("private review output is not valid UTF-8");
+      }
+      if (text.trimEnd().endsWith(REVIEW_COMPLETE_MARKER)) return text;
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, Math.min(250, Math.max(1, deadline - Date.now()))));
+  }
+  fail(`review timed out; the Herdr reviewer may still write late evidence to ${path}`);
+}
+
+async function review(topic, args) {
+  repositoryRoot({ requiredBy: "review" });
+  if (topic === undefined) fail("usage: lane review <topic> --round N [--brief <path>] [--change <name>] [--route <name>] [--timeout <seconds>]");
+  const options = parseReviewOptions(args);
+  const branch = laneBranch(topic);
+  const path = worktreeFor(branch);
+  if (path === undefined) fail(`lane ${branch} has no worktree; open it first`);
+  requireClean(path, "lane worktree");
+  const head = git(["rev-parse", "HEAD"], { cwd: path });
+  const head7 = head.slice(0, 7);
+  const currentBranch = git(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: path });
+  if (currentBranch !== branch) fail(`review target branch is ${currentBranch}, expected ${branch}`);
+  const baseHead = tryGit(["rev-parse", "--verify", `${MAIN}^{commit}`]);
+  if (baseHead === undefined) fail(`configured base branch does not resolve: ${MAIN}`);
+  const baseCommit = tryGit(["merge-base", head, baseHead]);
+  if (baseCommit === undefined) fail(`review target has no merge base with ${MAIN}`);
+  const privateRelative = join(".lane", "reviews", topic, `${head7}-r${options.round}.md`);
+  const publicRelative = join("docs", "reviews", topic, `${head7}-r${options.round}.md`);
+  assertUnambiguousReviewPrefix(join(REPO_ROOT, ".lane", "reviews", topic), head7, head);
+  assertUnambiguousReviewPrefix(join(path, "docs", "reviews", topic), head7, head);
+  const privatePath = assertReviewOutputPath(REPO_ROOT, privateRelative, { ignored: true, label: "private review output" });
+  const publicPath = assertReviewOutputPath(path, publicRelative, { ignored: false, label: "public review output" });
+  const sourceText = reviewSources(path, topic, options);
+  let supplement = "No supplemental brief was supplied. Review run budget: zero build/test/prepare/install/check commands.";
+  if (options.brief !== undefined) supplement = regularTextFile(resolve(process.cwd(), options.brief), "review brief");
+  const gate = reviewGate(path, head, branch);
+  process.stderr.write(`lane review: gate ${gate.diagnostic} at ${head}\n`);
+  const reviewId = `lr-${randomBytes(16).toString("hex")}`;
+  const template = regularTextFile(join(TOOL_ROOT, "docs", "REVIEW_TEMPLATE.md"), "review template");
+  const prompt = replaceReviewTemplate(template, {
+    TOPIC: topic,
+    ROUND: String(options.round),
+    REVIEW_ID: reviewId,
+    REVIEWED_COMMIT: head,
+    BASE_BRANCH: MAIN,
+    BASE_HEAD: baseHead,
+    BASE_COMMIT: baseCommit,
+    PRIVATE_RECORD_FILE: privatePath,
+    PUBLIC_RECORD_FILE: publicPath,
+    ROUTE: options.route,
+    TIMEOUT_SECONDS: String(options.timeout),
+    GATE: gate.prompt,
+    SOURCE_MATERIAL: sourceText,
+    SUPPLEMENTAL_BRIEF: supplement.trimEnd(),
+  });
+  const deadline = Date.now() + options.timeout * 1000;
+  const interrupted = { value: false };
+  const onInterrupt = () => { interrupted.value = true; };
+  process.once("SIGINT", onInterrupt);
+  process.once("SIGTERM", onInterrupt);
+  let session;
+  try {
+    try {
+      session = dispatch(topic, prompt, { route: options.route, silent: true, deadline });
+    } catch (error) {
+      fail(`review dispatch failed: ${error.code === "ETIMEDOUT" ? "timeout" : "Herdr command error"}`);
+    }
+    const record = await waitForPrivateReview(privatePath, deadline, interrupted);
+    const parsed = validateReviewRecord(record, {
+      head, topic, round: options.round, reviewId, baseBranch: MAIN, baseCommit,
+    });
+    const currentHead = git(["rev-parse", "HEAD"], { cwd: path });
+    const afterBranch = tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: path });
+    if (currentHead !== head || afterBranch !== branch) fail("review target HEAD or branch moved; private evidence was retained");
+    if (git(["status", "--porcelain=v1"], { cwd: path }) !== "") {
+      fail("review target worktree changed; private evidence and work were retained");
+    }
+    process.stderr.write(`lane review: private review: ${privatePath}\n`);
+    process.stdout.write(`${parsed.verdict}\n`);
+    process.exitCode = parsed.verdict === "PASS" ? 0 : 1;
+  } finally {
+    process.removeListener("SIGINT", onInterrupt);
+    process.removeListener("SIGTERM", onInterrupt);
+    void session;
+  }
 }
 
 // A fresh worktree carries no gitignored state: no `node_modules`, no built
@@ -1199,6 +1594,9 @@ switch (command) {
     dispatch(topic, promptText, options);
     break;
   }
+  case "review":
+    await review(topic, rest);
+    break;
   case "rebase-check": {
     // Control for the promote auto-rebase: exit 0 iff <topic> rebases cleanly
     // onto --against (default main); prints the conflicting files otherwise.
@@ -1237,7 +1635,7 @@ switch (command) {
     break;
   default:
     process.stdout.write(
-      "usage: lane <open|status|seams|routes|config|dispatch|prepare|check|rebase-check|verify-agent|promote|close|board> [topic] [base-ref]\n" +
+      "usage: lane <open|status|seams|routes|config|dispatch|review|prepare|check|rebase-check|verify-agent|promote|close|board> [topic] [base-ref]\n" +
         `  open <topic> [base]  cut lane/<topic> into a herdr worktree; base defaults to\n` +
         `                       ${MAIN} — pass a kept branch or archive/* tag to resume it\n` +
         "  seams [pattern]  list kept unfinished work (branches + archive tags)\n" +
@@ -1246,6 +1644,10 @@ switch (command) {
         "  dispatch <topic> [--route <name>] [--kind <agent>] [--model <m>] [@brief-file | prompt]\n" +
         "                   start a visible agent session (any herdr kind) in the\n" +
         "                   lane's workspace; defaults in .lane.json routes/dispatch\n" +
+        "  review <topic> --round N [--brief <path>] [--change <name>]\n" +
+        "                   [--route <name>] [--timeout <seconds>]\n" +
+        "                   run one foreground independent review; route defaults to\n" +
+        "                   review and timeout defaults to 1800 seconds\n" +
         "  prepare <topic>  run .lane.json prepare steps in the lane worktree; a\n" +
         "                   fresh worktree carries no gitignored state, and validation\n" +
         "                   then fails for environmental reasons that look real\n" +

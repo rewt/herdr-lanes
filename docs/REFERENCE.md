@@ -307,6 +307,93 @@ agent names use a readable topic stem plus repository-identity and random hexade
 suffixes, while staying within Herdr's 32-character naming grammar. Lane never writes
 Git author name, email, signing, or other identity configuration.
 
+## Foreground review (private evidence slice)
+
+```sh
+lane review <topic> --round N [--change <name>] [--brief <path>] \
+  [--route <name>] [--timeout <seconds>]
+```
+
+`--round` is required and accepts positive safe integers. Supply `--change` for an
+OpenSpec-origin lane even when the change name differs from the topic; it loads that
+change's proposal, design, tasks, every delta spec, and any corresponding current
+spec. `--brief` names a literal supplemental or standalone source and resolves from
+the invoking directory. At least one source is required and both may be used. The
+route defaults to `review`; configure that named route before use until built-in
+defaults ship. `--timeout` is an end-to-end foreground deadline in whole seconds,
+defaults to 1800, and accepts 1 through 7200. Duplicate, missing, empty, unknown, or
+invalid options refuse before dispatch.
+
+Review locates `lane/<topic>` through Git worktree metadata from any checkout of the
+same repository and verifies its branch and canonical common-directory identity. It
+captures the full HEAD, configured base HEAD and merge base, requires a completely
+clean target, and passes source text as literal data. A matching `.lane/gate.json` is
+disclosed as inherited evidence. A missing, malformed, or mismatched gate is reported
+as unavailable at this HEAD and review continues; the command never runs prepare,
+check, validation, or a framework executable and never turns a gate into a verdict.
+
+The installed [review template](REVIEW_TEMPLATE.md) overrides generic engineering
+instructions with a review-only role. The reviewer may write exactly the designated
+canonical-checkout private file:
+
+```text
+.lane/reviews/<topic>/<head7>-r<N>.md
+```
+
+That path must be gitignored, untracked, absent, and free of symlink escapes. The
+corresponding `docs/reviews/<topic>/<head7>-r<N>.md` path must be absent, untracked,
+trackable, and not ignored even though this first slice does not write it. Matching
+abbreviations tied to another full SHA refuse as ambiguous. The CLI never overwrites,
+stages, commits, resets, cleans, fixes, retries, or selects another round.
+
+The reviewer cannot write anywhere in the lane worktree, including ignored scratch,
+cache, dependency, or build paths. Test and mutation copies belong in cleaned system
+temporary directories. The only repository write it may make is the required private
+record. Without an unambiguous supplemental `Review run budget`, the budget is zero
+build/test/prepare/install/check commands. An authorized budget names exact commands
+and a finite count for each command and witness. Every authorized build or test waits
+for a clear machine-load probe and runs alone; the CLI passes the budget but executes
+none of it.
+
+The private record is valid UTF-8, at most 1 MiB, ends with
+`<!-- lane-review-complete -->`, and begins with exactly `**PASS**`,
+`**NEEDS-WORK**`, or `**FAIL**`. It uses `Schema: lane-review/v1`, the captured full
+SHA/topic/round/review ID/base, and the unique ordered sections Findings, Re-executed,
+Non-claims, Unverified, Private identifiers, and Analysis. Findings are `None` or
+`[Major]`, `[Moderate]`, or `[Minor]` bullets with a repository-relative positive
+`file:line`, the structural ASCII ` - ` separator, and `Fix:`. Non-claims and
+Unverified are `None` or bullets. Private identifiers is a JSON array of nonempty
+strings; Analysis is private and may be empty.
+
+Re-executed is one JSON fenced array. Every object has exactly `command`, `cwd`
+(`lane` or `scratch`), integer `exit_code`, nonempty `result`, boolean `tests_pass`,
+and `witness`. A witness is null or an object with exactly `kind`
+(`negative-control` or `mutation`), `command`, `cwd`, integer `exit_code`, nonempty
+`result`, and nonempty `observed_failure`. A tests-pass entry requires exit zero and
+an observed witness. Free prose cannot claim tests passed; inherited gates are not
+fresh Re-executed evidence.
+
+After completion, the command validates that schema and rechecks the exact HEAD,
+branch, and a completely clean lane before accepting the verdict. It polls only the
+selected private path with foreground timers. It does not infer completion from chat
+or an agent footer, send follow-up actions, kill the reviewer, delete partial/late
+evidence, or leave a watcher behind.
+
+For this private-only R-i slice, stdout is exactly `PASS` with exit 0 or
+`NEEDS-WORK`/`FAIL` with exit 1; stderr names the private record. Every preflight,
+dispatch, timeout, incomplete/oversized/invalid record, moved/dirty target, signal,
+or pipe refusal exits exactly 2 with no verdict. A late reviewer may still finish the
+private file after timeout or interruption. Inspect and retain that evidence. To reuse
+the same HEAD and round, separately authorize removal only after ensuring the old
+reviewer cannot write; otherwise choose an explicit fresh round.
+
+Public review records remain manual operator artifacts until R-ii adds verified
+sanitization and the after-check publication boundary. Do not treat private text as
+public-safe. Round 3 or later should explicitly select an operator-configured
+`review-xhigh` route for adversarial, cryptographic, or semantic work, or `review-max`
+after repeated NEEDS-WORK. This is advice only: review never advances a round, changes
+routes, loops, fixes, commits, promotes, or pushes.
+
 ## Model routing guidance
 
 Operators should map stable role names to models using the vendors' own current

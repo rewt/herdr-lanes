@@ -46,6 +46,19 @@ lane config
 lane status
 ```
 
+Before built-in routes ship, configure a named `review` route in `.lane.json`. Then
+run one independent review of a fixed lane commit with the packaged
+[review template](docs/REVIEW_TEMPLATE.md):
+
+```sh
+lane review api-change --round 1 --change api-change
+lane review docs-change --round 1 --brief /absolute/path/to/review-questions.md
+```
+
+The current private-evidence slice validates the reviewer's gitignored record and
+prints only PASS, NEEDS-WORK, or FAIL. Until the public-projection slice lands, a
+public review record is a manual operator artifact; `lane review` does not create it.
+
 The agents now run concurrently in separate branches, worktrees, and Herdr
 workspaces. Each agent should test and commit only in its own lane.
 
@@ -96,6 +109,7 @@ rebases automatically when clean and refuses with a file list when conflicts exi
 | --- | --- |
 | `lane open <topic> [base-ref]` | Create a lane |
 | `lane dispatch <topic> [--route <name>] [options] [@brief \| prompt]` | Start and prompt its agent |
+| `lane review <topic> --round N [--change <name>] [--brief <path>] [--route <name>] [--timeout <seconds>]` | Run one foreground independent review (private evidence only for now) |
 | `lane routes` | List resolved named dispatch routes |
 | `lane config` | Print resolved configuration values and sources |
 | `lane status` | Show lane state and overlap |

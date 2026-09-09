@@ -22,6 +22,7 @@ user request defines the work; the handoff provides state and prior verification
 - `.lane.json.example`: portable target-repository configuration.
 - `contrib/promote-safely.sh`: serialized wrapper for unattended promotion.
 - `docs/BRIEF_TEMPLATE.md`: reusable input for `lane dispatch`.
+- `docs/REVIEW_TEMPLATE.md`: mandatory read-only protocol for `lane review`.
 - `docs/REFERENCE.md`: detailed configuration, command, and recovery reference.
 - `README.md`: public quick start for using lanes with agents in Herdr.
 - `HANDOFF.md`: chronological maintenance and verification record.

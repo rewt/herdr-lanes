@@ -458,3 +458,23 @@ Living log for agents maintaining this repository. Newest entry last.
 - Baseline `npm test` passed 69/69. Final `npm test` passed 71/71 after a clear load
   probe, and `git diff --check` passed. No live Herdr mutation was performed, no
   review feature work is included in this correction, and nothing was pushed.
+
+## 2026-09-09 — foreground review R-i private evidence
+
+- Added one foreground `lane review` dispatch with explicit source/round, captured
+  full HEAD/base/gate context, route and deadline handling, private-path safeguards,
+  strict `lane-review/v1` validation, unchanged-lane enforcement, and exact PASS,
+  NEEDS-WORK, FAIL, or refusal outcomes. R-i creates no public record.
+- Added the packaged plain-ASCII review-only template and documented its mandatory
+  private write, zero-or-finite command budget, witnessed test claims, system-temp
+  fixtures, forbidden lane/public/commit actions, and canonical verdict vocabulary.
+  Usage, README, REFERENCE, shared guide, repository map, implementation report and
+  current R-i OpenSpec requirements are synchronized. The combined task is unchecked.
+- Five focused groups failed before implementation. Final `npm test` passed 77/77 in
+  23.952 seconds; all 77 deliberate controls failed with zero passes in 25.125
+  seconds; strict OpenSpec validation passed 16/16. Each run followed a clear load
+  probe and ran alone.
+- No real reviewer/live Herdr mutation, alternate host, filesystem race, semantic
+  evidence verification, sanitizer, public projection, or publication boundary was
+  exercised. Public review evidence remains a manual operator artifact until R-ii.
+  Nothing was pushed, promoted, archived, or written under `docs/reviews/`.

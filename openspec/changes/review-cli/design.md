@@ -118,7 +118,7 @@ Base branch: <branch>
 Base commit: <full SHA>
 
 ## Findings
-- [Major] <repository-relative file>:<positive line> — <finding>; Fix: <concrete change>
+- [Major] <repository-relative file>:<positive line> - <finding>; Fix: <concrete change>
 
 ## Re-executed
 <one JSON fenced block containing the execution array described below>
