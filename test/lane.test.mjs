@@ -608,7 +608,10 @@ test("config layers the nearest parent and canonical repository with attributed 
     const repoConfig = join(fixture.repo, ".lane.json");
     const shouldNotRun = join(fixture.root, "config-command-ran");
     writeFileSync(join(home, ".lane.json"), `${JSON.stringify({ main: "home-main" })}\n`);
-    writeFileSync(join(grandparent, ".lane.json"), `${JSON.stringify({ main: "grandparent-main" })}\n`);
+    writeFileSync(join(grandparent, ".lane.json"), `${JSON.stringify({
+      main: "grandparent-main",
+      seams_doc: "grandparent-seams.md",
+    })}\n`);
     writeFileSync(parentConfig, `${JSON.stringify({
       main: "parent-main",
       registry: "parent-sessions.json",
@@ -638,6 +641,7 @@ test("config layers the nearest parent and canonical repository with attributed 
     const rows = configRows(run.stdout);
     assert.deepEqual(rows.get("main"), { value: "main", source: repoConfig });
     assert.deepEqual(rows.get("registry"), { value: "parent-sessions.json", source: parentConfig });
+    assert.deepEqual(rows.get("seams_doc"), { value: null, source: "default" });
     assert.deepEqual(rows.get("prepare"), {
       value: [{ unless: "repo.marker", run: `touch '${shouldNotRun}'` }],
       source: repoConfig,
@@ -665,6 +669,25 @@ test("config layers the nearest parent and canonical repository with attributed 
     assert.equal(opened.status, 0, opened.stderr);
     assert.ok(existsSync(join(fixture.repo, "repo-trees", "repo", "lane-repository-root-lane")));
     negativeControl("layered config attribution and replacement");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("config escapes route names so every TSV record remains one line with three fields", () => {
+  const fixture = makeFixture({
+    routes: {
+      "review\tline\nnext\\path": { kind: "claude" },
+    },
+  });
+  try {
+    const run = lane(fixture, ["config"]);
+    assert.equal(run.status, 0, run.stderr);
+    const routeRows = run.stdout.trim().split("\n").filter((line) => line.startsWith("routes."));
+    assert.deepEqual(routeRows, [
+      `routes.review\\tline\\nnext\\\\path\t{"kind":"claude"}\t${fixture.configPath}`,
+    ]);
+    negativeControl("config TSV route-key escaping");
   } finally {
     fixture.cleanup();
   }
@@ -757,14 +780,16 @@ test("LANE_CONFIG selects one caller-relative file and bypasses discovered layer
   const fixture = makeFixture();
   try {
     const caller = join(fixture.repo, "caller");
+    const home = join(fixture.root, "home");
     mkdirSync(caller);
+    mkdirSync(home);
     const parentConfig = join(fixture.root, ".lane.json");
     const repoConfig = join(fixture.repo, ".lane.json");
     const selected = join(caller, "selected.json");
     writeFileSync(parentConfig, `${JSON.stringify({ main: "parent-main", validate: "parent" })}\n`);
     writeFileSync(repoConfig, `${JSON.stringify({ main: "repo-main", validate: "repo" })}\n`);
     writeFileSync(selected, `${JSON.stringify({ validate: "selected", worktree_root: "selected-trees" })}\n`);
-    const env = discoveredEnv(fixture, { LANE_CONFIG: "selected.json" });
+    const env = discoveredEnv(fixture, { HOME: home, LANE_CONFIG: "selected.json" });
     const run = lane(fixture, ["config"], { cwd: caller, env });
     assert.equal(run.status, 0, run.stderr);
     const rows = configRows(run.stdout);
@@ -783,6 +808,12 @@ test("LANE_CONFIG selects one caller-relative file and bypasses discovered layer
       value: "environment-validate",
       source: "env",
     });
+    writeFileSync(selected, `${JSON.stringify({ validate: "selected" })}\n`);
+    const legacyRoot = lane(fixture, ["config"], { cwd: caller, env });
+    assert.equal(legacyRoot.status, 0, legacyRoot.stderr);
+    const worktreeRoot = configRows(legacyRoot.stdout).get("worktree_root");
+    assert.equal(worktreeRoot.value, join(home, ".herdr", "worktrees", "repo"));
+    assert.equal(worktreeRoot.source, "default");
     negativeControl("explicit config bypass");
   } finally {
     fixture.cleanup();

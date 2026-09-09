@@ -13,9 +13,9 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, renameSync, writeFileSync,
 } from "node:fs";
-import { constants as osConstants, homedir, tmpdir } from "node:os";
+import { constants as osConstants, homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -282,7 +282,13 @@ function config() {
   }
   rows.sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
   for (const [key, value, source] of rows) {
-    process.stdout.write(`${key}\t${JSON.stringify(value)}\t${source}\n`);
+    const escapedKey = key.replace(/[\\\t\r\n]/gu, (character) => ({
+      "\\": "\\\\",
+      "\t": "\\t",
+      "\r": "\\r",
+      "\n": "\\n",
+    })[character]);
+    process.stdout.write(`${escapedKey}\t${JSON.stringify(value)}\t${source}\n`);
   }
 }
 
@@ -761,31 +767,25 @@ function board(args) {
   if (!args.includes("--once") && !existsSync(join(boardRoot, "node_modules", "ink"))) {
     fail(`install board dependencies first: npm --prefix ${boardRoot} ci`);
   }
-  // The isolated board entrypoints read one file. Give them the already-resolved
-  // canonical settings they consume, without exposing route environment values.
-  const temporaryDirectory = mkdtempSync(join(tmpdir(), "herdr-lanes-board-config-"));
-  const temporaryConfig = join(temporaryDirectory, "config.json");
-  writeFileSync(temporaryConfig, `${JSON.stringify({
-    main: MAIN,
-    registry: CONFIG.registry ?? ".lane/sessions.json",
-  })}\n`, { mode: 0o600 });
-  const boardEnvironment = { ...process.env, LANE_CONFIG: temporaryConfig };
-  let run;
-  try {
-    run = args.includes("--once")
-      ? spawnSync(process.execPath, [join(boardRoot, "cli.mjs"), "--repo", REPO_ROOT, "--once"], {
-        cwd: REPO_ROOT,
-        env: boardEnvironment,
-        stdio: "inherit",
-      })
-      : spawnSync("npm", ["--prefix", boardRoot, "run", "--silent", "start", "--", "--repo", REPO_ROOT], {
-        cwd: REPO_ROOT,
-        env: boardEnvironment,
-        stdio: "inherit",
-      });
-  } finally {
-    rmSync(temporaryDirectory, { recursive: true, force: true });
-  }
+  const boardArgs = [
+    "--repo", REPO_ROOT,
+    "--main", MAIN,
+    "--registry", CONFIG.registry ?? ".lane/sessions.json",
+  ];
+  const boardEnvironment = EXPLICIT_CONFIG
+    ? { ...process.env, LANE_CONFIG: CONFIG_LAYERS[0].file }
+    : process.env;
+  const run = args.includes("--once")
+    ? spawnSync(process.execPath, [join(boardRoot, "cli.mjs"), ...boardArgs, "--once"], {
+      cwd: REPO_ROOT,
+      env: boardEnvironment,
+      stdio: "inherit",
+    })
+    : spawnSync("npm", ["--prefix", boardRoot, "run", "--silent", "start", "--", ...boardArgs], {
+      cwd: REPO_ROOT,
+      env: boardEnvironment,
+      stdio: "inherit",
+    });
   if (run.error?.code === "ENOENT") fail("npm is required to start the interactive board");
   if (run.status !== 0) {
     process.exit(run.status ?? 1);

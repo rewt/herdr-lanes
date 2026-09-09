@@ -1,9 +1,18 @@
 import { resolve } from "node:path";
 
-export function repoRootFromArgs(args, cwd = process.cwd()) {
-  const repoIndex = args.indexOf("--repo");
-  if (repoIndex >= 0 && (args[repoIndex + 1] === undefined || args[repoIndex + 1].startsWith("--"))) {
-    throw new Error("--repo requires a path");
+function optionValue(args, name, requirement = "a value") {
+  const index = args.indexOf(name);
+  if (index >= 0 && (args[index + 1] === undefined || args[index + 1].startsWith("--"))) {
+    throw new Error(`${name} requires ${requirement}`);
   }
-  return resolve(repoIndex >= 0 ? args[repoIndex + 1] : cwd);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+export function boardOptionsFromArgs(args, cwd = process.cwd()) {
+  const repo = optionValue(args, "--repo", "a path");
+  return {
+    repoRoot: resolve(repo ?? cwd),
+    main: optionValue(args, "--main"),
+    registry: optionValue(args, "--registry"),
+  };
 }

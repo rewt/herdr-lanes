@@ -305,3 +305,31 @@ Living log for agents maintaining this repository. Newest entry last.
   root labels/accounts, workspace-label changes, and migrations remain out of scope.
   No contract amendment or additional approval is needed for roots-config; no push,
   promotion, archive, or independent review was performed.
+
+## 2026-09-09 — development-root configuration review corrections
+
+- Replaced the board's temporary `LANE_CONFIG` file with explicit resolved `--main`
+  and `--registry` flags consumed by both isolated board entrypoints. Linked-worktree
+  board runs still target the canonical checkout and inherited registry, while future
+  descendant lane commands retain layered configuration resolution; no signal-cleanup
+  path remains necessary because no temporary config is created.
+- Strengthened offline coverage for the nearest-parent cutoff and explicit
+  `LANE_CONFIG` without `worktree_root`. Added an explicit board-option regression and
+  escaped control characters in `lane config` route keys so TSV rows stay three-field
+  and single-line.
+- Documented the canonical board retarget, trusted parent shell-command boundary,
+  route-key escaping, and unsupported Git-submodule identity. Corrected the report's
+  preservation-control wording and recorded the READY review of `1ebcc02`; the
+  facilitator-owned review record was not modified.
+- Before Round 2 code changes, the focused 51-test suite passed 49 and failed exactly
+  the board-option and TSV-key regressions. The nearest-parent and explicit-config
+  assertions already passed and serve as coverage-only controls.
+- Final `npm test` passed 60/60 in 8.727 seconds. All 60 deliberate negative controls
+  failed in 9.990 seconds. With Herdr removed from `PATH`, 59 passed and the single
+  live-Herdr guard skipped with its explicit reason in 12.924 seconds. Strict OpenSpec
+  validation passed 12/12 with telemetry disabled and concurrency one.
+- Verified with Node.js 20.19.4, npm 10.8.2, git 2.54.0, and OpenSpec 1.6.0. Tests were
+  serialized; the unavailable run waited for three unrelated Vitest workers to exit.
+  No live dispatch, interactive TTY board, submodule checkout, Linux/Windows host,
+  permission-denial model, or path-creation race was exercised. No new approval is
+  needed; promotion and archival remain operator actions, and nothing was pushed.

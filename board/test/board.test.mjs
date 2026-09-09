@@ -328,3 +328,50 @@ test("board CLI reports a missing --repo value without a stack trace", () => {
   assert.equal(run.stdout, "");
   negativeControl("board repo argument validation");
 });
+
+test("board CLI explicit main and registry flags override its local config file", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-options-")));
+  const repo = join(root, "repo");
+  const registryPath = join(repo, ".lane", "sessions.json");
+  try {
+    mkdirSync(repo);
+    git(repo, ["init", "-b", "main"]);
+    git(repo, ["config", "user.name", "Lane Tests"]);
+    git(repo, ["config", "user.email", "lane-tests@example.invalid"]);
+    writeFileSync(join(repo, "base.txt"), "base\n");
+    git(repo, ["add", "base.txt"]);
+    git(repo, ["commit", "-m", "initial"], { stdio: "ignore" });
+    git(repo, ["branch", "lane/flagged"]);
+    mkdirSync(join(repo, ".lane"));
+    writeFileSync(join(repo, ".lane.json"), `${JSON.stringify({
+      main: "wrong-main",
+      registry: ".lane/wrong-sessions.json",
+    })}\n`);
+    writeFileSync(registryPath, `${JSON.stringify([{
+      name: "flagged-agent",
+      workspace: "lane-flagged",
+      lane: "flagged",
+      role: "engineer",
+      report: "reports/flagged.md",
+      deadline: null,
+      done: false,
+    }])}\n`);
+
+    const run = spawnSync(process.execPath, [
+      BOARD_CLI,
+      "--repo", repo,
+      "--main", "main",
+      "--registry", ".lane/sessions.json",
+      "--once",
+    ], {
+      env: { ...process.env, HERDR_SOCKET_PATH: join(root, "missing.sock") },
+      encoding: "utf8",
+    });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /flagged-agent\s+engineer\s+flagged\s+offline/);
+    assert.match(run.stdout, /\+0/);
+    negativeControl("board explicit main and registry options");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -80,6 +80,14 @@ known key the wrong type stop the command before git, validation, setup, or Herd
 actions. Optional absent discovered files are allowed. Configuration is parsed as JSON
 only; values are not interpolated or executed during loading or `lane config`.
 
+Because `validate` and `prepare[].run` are trusted shell commands, place shared parent
+configuration only in directories controlled by the operator.
+
+Canonical-checkout derivation does not yet support repositories used as Git
+submodules: their common directory can resolve inside the superproject's
+`.git/modules`, producing the wrong configuration root and repository name. Use lane
+with top-level repositories until canonical submodule identity is addressed.
+
 ### Worktree-root precedence
 
 `worktree_root` is a shared base. A relative value is resolved from the directory of
@@ -123,7 +131,9 @@ route. Rows are sorted by key; JSON values stay on one line. Each source is `env
 `default`, or the absolute defining file path. A parent-derived `.worktrees` default
 names that parent file as its source. `LANE_VALIDATE` and `LANE_WORKTREE_ROOT` appear
 with source `env`; `LANE_CONFIG`-selected values name the selected file. The command
-does not run prepare/validate commands or contact Herdr.
+does not run prepare/validate commands or contact Herdr. In route keys, backslashes,
+tabs, carriage returns, and newlines are escaped as `\\`, `\t`, `\r`, and `\n` so
+each TSV record remains one line with three fields.
 
 ## Check
 
@@ -171,6 +181,10 @@ Install the isolated Ink package once with `npm --prefix board ci`. `lane
 board` starts that package as a child process, so `lane.mjs` remains dependency-free.
 `lane board --once` uses only Node.js built-ins and prints the same columns without
 ANSI styling.
+
+From a linked worktree, `lane board` retargets the canonical checkout and passes the
+resolved main branch and inherited registry explicitly, while descendant lane commands
+retain normal layered configuration resolution.
 
 The configured registry is a JSON array. Every entry has string fields `name`
 (the Herdr agent name), `workspace` (workspace ID or label), `lane` (topic or

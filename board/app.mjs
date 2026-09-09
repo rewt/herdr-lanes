@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Text, render, useApp, useInput } from "ink";
 
-import { repoRootFromArgs } from "./args.mjs";
+import { boardOptionsFromArgs } from "./args.mjs";
 import {
   applyHerdrEvent,
   buildSubscriptions,
@@ -172,13 +172,14 @@ if (!process.stdin.isTTY) {
 }
 
 const args = process.argv.slice(2);
-let repoRoot;
+let options;
 try {
-  repoRoot = repoRootFromArgs(args);
+  options = boardOptionsFromArgs(args);
 } catch (error) {
   process.stderr.write(`lane board: ${error.message}\n`);
   process.exit(1);
 }
+const { repoRoot } = options;
 const configPath = process.env.LANE_CONFIG ?? resolve(repoRoot, ".lane.json");
 let config = {};
 try {
@@ -186,5 +187,7 @@ try {
 } catch {
   // Every lane configuration key is optional.
 }
+if (options.main !== undefined) config.main = options.main;
+if (options.registry !== undefined) config.registry = options.registry;
 
 render(h(BoardApp, { repoRoot, config }));

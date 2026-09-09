@@ -2,17 +2,18 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { repoRootFromArgs } from "./args.mjs";
+import { boardOptionsFromArgs } from "./args.mjs";
 import { runOnce } from "./board.mjs";
 
 const args = process.argv.slice(2);
-let repoRoot;
+let options;
 try {
-  repoRoot = repoRootFromArgs(args);
+  options = boardOptionsFromArgs(args);
 } catch (error) {
   process.stderr.write(`lane board: ${error.message}\n`);
   process.exit(1);
 }
+const { repoRoot } = options;
 const configPath = process.env.LANE_CONFIG ?? resolve(repoRoot, ".lane.json");
 let config = {};
 try {
@@ -20,6 +21,8 @@ try {
 } catch {
   // Every lane configuration key is optional.
 }
+if (options.main !== undefined) config.main = options.main;
+if (options.registry !== undefined) config.registry = options.registry;
 
 if (args.includes("--once")) {
   try {
