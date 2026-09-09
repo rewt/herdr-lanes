@@ -86,27 +86,51 @@ function candidateIsCanonicalCheckout(path) {
 // The checkout this script runs from may itself be a lane worktree. Resolve
 // the primary checkout whose git directory is the common directory so every
 // Herdr child is attached to the repository workspace, not the caller lane.
-const REPO_ROOT = (() => {
-  if (CURRENT_GIT_DIRECTORY === REPO_IDENTITY) return REPO;
+// Keep the missing-primary case non-fatal until an operation needs to mutate
+// the repository; read-only commands can still inspect a bare-plus-linked
+// layout from the invoking checkout.
+let canonicalCheckoutResolved = false;
+let canonicalCheckout;
+function repositoryRoot({ requiredBy } = {}) {
+  if (canonicalCheckoutResolved) {
+    if (canonicalCheckout === undefined && requiredBy !== undefined) {
+      fail(`cannot resolve canonical non-linked checkout for git common directory ${REPO_IDENTITY}; ${requiredBy} requires a canonical checkout`);
+    }
+    return canonicalCheckout ?? REPO;
+  }
+  canonicalCheckoutResolved = true;
+  if (CURRENT_GIT_DIRECTORY === REPO_IDENTITY) {
+    canonicalCheckout = REPO;
+    return canonicalCheckout;
+  }
   let listed;
   try {
     listed = execFileSync(
-      "git", ["-C", REPO, "-c", "core.quotePath=false", "worktree", "list", "--porcelain"],
+      "git", ["-C", REPO, "worktree", "list", "--porcelain"],
       { encoding: "utf8" },
     );
   } catch {
-    fail(`cannot list worktrees for canonical git common directory ${REPO_IDENTITY}`);
+    if (requiredBy !== undefined) {
+      fail(`cannot list worktrees for canonical git common directory ${REPO_IDENTITY}; ${requiredBy} requires a canonical checkout`);
+    }
+    return REPO;
   }
   for (const entry of listed.split("\n\n")) {
     const line = entry.split("\n").find((value) => value.startsWith("worktree "));
     if (line === undefined) continue;
     const candidate = line.slice("worktree ".length);
     if (!samePath(candidate, REPO_IDENTITY) && candidateIsCanonicalCheckout(candidate)) {
-      return realpathSync(candidate);
+      canonicalCheckout = realpathSync(candidate);
+      return canonicalCheckout;
     }
   }
-  fail(`cannot resolve canonical non-linked checkout for git common directory ${REPO_IDENTITY}`);
-})();
+  if (requiredBy !== undefined) {
+    fail(`cannot resolve canonical non-linked checkout for git common directory ${REPO_IDENTITY}; ${requiredBy} requires a canonical checkout`);
+  }
+  return REPO;
+}
+
+const REPO_ROOT = repositoryRoot();
 // Configuration comes from the nearest eligible parent .lane.json followed by
 // the canonical checkout's .lane.json. $LANE_CONFIG selects exactly one file.
 // Every key is optional.
@@ -386,7 +410,7 @@ function branchExists(branch) {
 }
 
 function worktreeEntries() {
-  return git(["-c", "core.quotePath=false", "worktree", "list", "--porcelain"])
+  return git(["worktree", "list", "--porcelain"])
     .split("\n\n")
     .map((entry) => {
       const fields = new Map(entry.split("\n").filter(Boolean).map((line) => {
@@ -416,6 +440,9 @@ function gitIdentityForPath(path) {
 }
 
 function verifyRegisteredWorktree(path, branch) {
+  if (!entryExists(path)) {
+    fail(`registered worktree ${path} for ${branch} is missing; run git worktree prune`);
+  }
   const identity = gitIdentityForPath(path);
   if (identity !== REPO_IDENTITY) {
     fail(`registered worktree ${path} for ${branch} does not belong to canonical git common directory ${REPO_IDENTITY}`);
@@ -562,28 +589,29 @@ function workspaceMatches(workspace, path, linked) {
     worktree.is_linked_worktree === linked;
 }
 
-function parentWorkspaceId(workspaces = herdrJson(["workspace", "list"])?.workspaces) {
+function parentWorkspaceId(workspaces) {
   return workspaces?.find((workspace) => workspaceMatches(workspace, REPO_ROOT, false))?.workspace_id;
 }
 
-function openWorkspaceIdFor(path, { refuseStale = true } = {}) {
+function openWorkspaceIdFor(path, { refuseStale = true, onMismatch, workspaces } = {}) {
+  const mismatch = (message) => {
+    if (refuseStale) fail(message);
+    onMismatch?.();
+    return undefined;
+  };
   const listed = herdrJson(["worktree", "list", "--cwd", REPO_ROOT]);
   if (listed === undefined) return undefined;
   if (!samePath(listed.source?.repo_key, REPO_IDENTITY) ||
       !samePath(listed.source?.repo_root, REPO_ROOT) ||
       !samePath(listed.source?.source_checkout_path, REPO_ROOT)) {
-    if (refuseStale) fail(`Herdr worktree source has a repository identity mismatch for ${REPO_ROOT}`);
-    return undefined;
+    return mismatch(`Herdr worktree source has a repository identity mismatch for ${REPO_ROOT}`);
   }
   const item = listed.worktrees.find((worktree) => samePath(worktree.path, path));
   if (item?.open_workspace_id === undefined) return undefined;
-  const workspaces = herdrJson(["workspace", "list"])?.workspaces;
-  const workspace = workspaces?.find((entry) => entry.workspace_id === item.open_workspace_id);
+  const availableWorkspaces = workspaces ?? herdrJson(["workspace", "list"])?.workspaces;
+  const workspace = availableWorkspaces?.find((entry) => entry.workspace_id === item.open_workspace_id);
   if (!workspaceMatches(workspace, path, true)) {
-    if (refuseStale) {
-      fail(`Herdr workspace ${item.open_workspace_id} for ${path} has a repository identity mismatch; refusing stale metadata`);
-    }
-    return undefined;
+    return mismatch(`Herdr workspace ${item.open_workspace_id} for ${path} has a repository identity mismatch; refusing stale metadata`);
   }
   return item.open_workspace_id;
 }
@@ -593,13 +621,14 @@ function openWorkspaceIdFor(path, { refuseStale = true } = {}) {
 // workspace"), so a lane opened from another lane gets a git worktree and no
 // herdr workspace. Repair that by opening from the parent workspace explicitly,
 // retaining opaque IDs and verifying the returned path and repository identity.
-function ensureHerdrWorkspace(path, label) {
-  let id = openWorkspaceIdFor(path);
+function ensureHerdrWorkspace(path, label, workspaces) {
+  let id = openWorkspaceIdFor(path, { workspaces });
   if (id !== undefined) return id;
-  const parent = parentWorkspaceId();
+  const parent = parentWorkspaceId(workspaces);
   if (parent === undefined) return undefined;
   herdrJson(["worktree", "open", "--workspace", parent, "--path", path, "--label", label, "--no-focus"]);
-  return openWorkspaceIdFor(path);
+  const refreshed = herdrJson(["workspace", "list"])?.workspaces;
+  return openWorkspaceIdFor(path, { workspaces: refreshed });
 }
 
 const GRAPHEME_SEGMENTER = new Intl.Segmenter("en", { granularity: "grapheme" });
@@ -641,9 +670,8 @@ function compactWorkspaceLabel(topic, digestLength) {
     `~${laneIdentityDigest(topic, digestLength)}`;
 }
 
-function workspaceLabel(topic, path) {
+function workspaceLabel(topic, path, workspaces = []) {
   const readable = `${basename(ROOT_IDENTITY)}/${REPO_NAME}:lane-${topic}`;
-  const workspaces = herdrJson(["workspace", "list"])?.workspaces ?? [];
   const collides = (label) => workspaces.some((workspace) =>
     workspace.label === label && !workspaceMatches(workspace, path, true));
   if (codePointLength(readable) <= 64 && !collides(readable)) return readable;
@@ -654,12 +682,16 @@ function workspaceLabel(topic, path) {
   fail(`cannot produce a unique Herdr workspace label for ${path}`);
 }
 
-function newAgentName(topic) {
+function newAgentName(topic, reserved = new Set()) {
   const identity = laneIdentityDigest(topic, 6);
-  const random = randomBytes(3).toString("hex");
-  const stem = `lane-${topic}`.slice(0, 18);
-  const available = 32 - identity.length - random.length - 2;
-  return `${stem.slice(0, available)}-${identity}-${random}`;
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const random = randomBytes(3).toString("hex");
+    const available = 32 - identity.length - random.length - 2;
+    const stem = `lane-${topic}`.slice(0, available);
+    const name = `${stem}-${identity}-${random}`;
+    if (!reserved.has(name)) return name;
+  }
+  fail(`cannot produce a unique Herdr agent name for ${topic}`);
 }
 
 function agentRecord(agentName) {
@@ -710,6 +742,7 @@ function requireClean(path, what) {
 }
 
 function open(topic, base = MAIN) {
+  repositoryRoot({ requiredBy: "open" });
   const branch = laneBranch(topic);
   if (branchExists(branch)) fail(`branch ${branch} already exists; use status/promote/close`);
   if (tryGit(["rev-parse", "--verify", "--quiet", `${base}^{commit}`]) === undefined) {
@@ -717,8 +750,9 @@ function open(topic, base = MAIN) {
   }
   const path = join(WORKTREE_ROOT, `lane-${topic}`);
   assertSafeNewWorktreePath(path);
-  const label = workspaceLabel(topic, path);
-  const parent = parentWorkspaceId();
+  let workspaces = herdrJson(["workspace", "list"])?.workspaces ?? [];
+  const label = workspaceLabel(topic, path, workspaces);
+  const parent = parentWorkspaceId(workspaces);
   const herdr = spawnSync(
     "herdr",
     [
@@ -731,9 +765,11 @@ function open(topic, base = MAIN) {
   if (herdr.status !== 0 || !existsSync(path)) {
     git(["worktree", "add", "-b", branch, path, base]);
     process.stdout.write("(herdr refused or is unavailable; created via git worktree)\n");
+  } else {
+    workspaces = herdrJson(["workspace", "list"])?.workspaces ?? [];
   }
   assertCreatedWorktree(path, branch);
-  const workspaceId = ensureHerdrWorkspace(path, label);
+  const workspaceId = ensureHerdrWorkspace(path, label, workspaces);
   process.stdout.write(
     `lane open: ${branch}\n` +
     `  worktree: ${path}\n` +
@@ -827,13 +863,15 @@ function seams(pattern) {
 // CLAUDE.md (a one-line `@AGENTS.md` import keeps them one file); brief other
 // kinds to read the repository's instructions.
 function dispatch(topic, promptText, options = {}) {
+  repositoryRoot({ requiredBy: "dispatch" });
   const branch = laneBranch(topic);
   const resolved = resolveDispatch(options);
   const path = worktreeFor(branch);
   if (path === undefined) fail(`lane ${branch} has no worktree; open it first`);
-  if (herdrJson(["workspace", "list"]) === undefined) fail("herdr is unavailable; dispatch requires the herdr server");
-  const label = workspaceLabel(topic, path);
-  const workspaceId = ensureHerdrWorkspace(path, label);
+  const workspaces = herdrJson(["workspace", "list"])?.workspaces;
+  if (workspaces === undefined) fail("herdr is unavailable; dispatch requires the herdr server");
+  const label = workspaceLabel(topic, path, workspaces);
+  const workspaceId = ensureHerdrWorkspace(path, label, workspaces);
   if (workspaceId === undefined) {
     fail(`herdr shows no open workspace for ${path} and could not open one from the ${REPO_ROOT} workspace`);
   }
@@ -855,7 +893,10 @@ function dispatch(topic, promptText, options = {}) {
   // The stem remains readable, while repository identity and random suffixes
   // keep names distinct across equal topics and retry leftovers. Herdr limits
   // names to 32 characters and [a-z][a-z0-9_-]*.
-  let agentName = newAgentName(topic);
+  const liveAgentNames = new Set(
+    (herdrJson(["agent", "list"])?.agents ?? []).map((agent) => agent.name),
+  );
+  let agentName = newAgentName(topic, liveAgentNames);
   // Dispatch is model-agnostic: the tier policy is the operator's, and the
   // operator-owned role->agent mappings live in .lane.json "routes". Flags
   // override a selected route and global dispatch defaults; extra agent-CLI
@@ -877,12 +918,13 @@ function dispatch(topic, promptText, options = {}) {
     // A failed start can leave the name registered, and a start that herdr
     // reports as failed can still have launched the agent in the pane: use a
     // fresh name per attempt and adopt whatever is already running there.
-    if (attempt > 0) agentName = newAgentName(topic);
+    if (attempt > 0) agentName = newAgentName(topic, liveAgentNames);
     const run = spawnSync("herdr", startArgsFor(agentName), { encoding: "utf8" });
     if (run.status === 0 && !`${run.stdout}${run.stderr}`.includes('"error"')) {
       started = true;
       break;
     }
+    liveAgentNames.add(agentName);
     lastError = `${run.stdout}${run.stderr}`.trim();
     const running = agentOnPane(pane);
     if (running !== undefined) {
@@ -941,6 +983,7 @@ function prepareWorktree(path, { quiet = false } = {}) {
 }
 
 function check(args) {
+  repositoryRoot({ requiredBy: "check" });
   let command = process.env.LANE_VALIDATE ?? DEFAULT_VALIDATE;
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] !== "--cmd") {
@@ -988,6 +1031,7 @@ function check(args) {
 }
 
 function promote(topic) {
+  repositoryRoot({ requiredBy: "promote" });
   const branch = laneBranch(topic);
   if (!branchExists(branch)) fail(`no such lane branch: ${branch}`);
   const path = worktreeFor(branch);
@@ -1022,6 +1066,7 @@ function promote(topic) {
 }
 
 function close(topic) {
+  repositoryRoot({ requiredBy: "close" });
   const branch = laneBranch(topic);
   if (!branchExists(branch)) fail(`no such lane branch: ${branch}`);
   const path = worktreeFor(branch);
@@ -1030,8 +1075,12 @@ function close(topic) {
     // Prefer herdr-native removal so the console workspace retires with the
     // worktree; a git-only removal leaves a ghost workspace behind.
     let removed = false;
+    let mismatchedMetadata = false;
     try {
-      const workspaceId = openWorkspaceIdFor(path, { refuseStale: false });
+      const workspaceId = openWorkspaceIdFor(path, {
+        refuseStale: false,
+        onMismatch: () => { mismatchedMetadata = true; },
+      });
       if (workspaceId !== undefined) {
         const run = spawnSync("herdr", ["worktree", "remove", "--workspace", workspaceId], {
           encoding: "utf8",
@@ -1041,7 +1090,12 @@ function close(topic) {
     } catch {
       // herdr unavailable; fall back to git below
     }
-    if (!removed) git(["worktree", "remove", path]);
+    if (!removed) {
+      git(["worktree", "remove", path]);
+      if (mismatchedMetadata) {
+        process.stderr.write(`lane: note: Herdr metadata for ${path} does not match this repository; removed the worktree with git only\n`);
+      }
+    }
     process.stdout.write(`removed worktree ${path}\n`);
   }
   const merged = tryGit(["merge-base", "--is-ancestor", branch, MAIN]) !== undefined;
@@ -1061,6 +1115,7 @@ function close(topic) {
 function board(args) {
   const unknown = args.filter((argument) => argument !== "--once");
   if (unknown.length > 0) fail(`usage: lane board [--once] (unknown option: ${unknown[0]})`);
+  if (!args.includes("--once")) repositoryRoot({ requiredBy: "interactive board" });
   const boardRoot = join(TOOL_ROOT, "board");
   if (!args.includes("--once") && !process.stdin.isTTY) {
     fail("interactive board requires a TTY; use `lane board --once`");
@@ -1161,6 +1216,7 @@ switch (command) {
   }
   case "prepare": {
     if (topic === undefined) fail("usage: lane.mjs prepare <topic>");
+    repositoryRoot({ requiredBy: "prepare" });
     const branch = laneBranch(topic);
     const path = worktreeFor(branch);
     if (path === undefined) fail(`lane ${branch} has no worktree`);

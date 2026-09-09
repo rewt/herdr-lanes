@@ -87,9 +87,10 @@ Repository identity is the real absolute path returned by Git for its common
 directory. The canonical checkout is the non-linked checkout whose own Git directory
 is that common directory; when invoked in the primary checkout, this also supports a
 Git directory stored separately from the working tree. A bare repository or a linked
-invocation for which Git cannot identify that primary checkout fails before lane
-mutation. Repository basenames, remotes, workspace labels, and author settings are
-never treated as ownership.
+invocation for which Git cannot identify that primary checkout can still run read-only
+`config` and `status` inspection from the linked checkout, but fails clearly before a
+lane mutation. Repository basenames, remotes, workspace labels, and author settings
+are never treated as ownership.
 
 ### Worktree-root precedence
 
@@ -110,6 +111,9 @@ per-repository directory, so no repository segment is appended. A relative value
 resolved from the invoking directory. When `LANE_CONFIG` is explicit and its one file
 omits `worktree_root`, the legacy home default applies; the selected file's directory
 does not count as discovered parent configuration.
+
+The legacy default is refused when home is inside a checkout; set `worktree_root` or
+`LANE_WORKTREE_ROOT` to a directory outside any repository.
 
 Only `worktree_root` is relative to its defining configuration file. `registry` and
 `seams_doc` remain relative to the canonical repository, and `prepare[].unless`
@@ -270,9 +274,10 @@ bound. Existing open workspace labels are not renamed.
 
 Workspace controls use opaque Herdr IDs only after `repo_key`, `repo_root`,
 `checkout_path`, and linked-worktree metadata match Git's canonical identity and real
-path. A stale or foreign match is not used. New workspaces are created or opened from
-the canonical non-linked repository workspace even when `lane open` runs in a linked
-checkout.
+path. A stale or foreign match is not used. When `close` encounters that mismatch, it
+reports that Herdr was skipped and removes the worktree through Git only. New
+workspaces are created or opened from the canonical non-linked repository workspace
+even when `lane open` runs in a linked checkout.
 
 ## Dispatch options
 
@@ -383,6 +388,7 @@ lane open resumed-task archive/lane/old-task
 | `worktree path already exists` | Choose another root/topic, or move the occupant yourself only after verifying ownership |
 | `unsafe worktree path` | Move the configured base outside checkouts and remove symlink escapes; no fallback path is selected |
 | `worktree path belongs to another repository` | Give the repositories distinct worktree bases |
+| `registered worktree ... is missing` | Run `git worktree prune`, then reopen or recover the lane as appropriate |
 | `repository identity mismatch` | Treat the Herdr entry as stale; reopen the correct canonical repository workspace |
 | `herdr workspace: none` | Start Herdr in the canonical checkout and retry dispatch |
 | `lane worktree is not clean` | Commit or stash lane changes |

@@ -28,7 +28,7 @@ an automatic temporary-directory fallback.
 ### Requirement: Canonical parent and unambiguous labels
 New lane Herdr workspaces SHALL be children of their canonical repository workspace
 and use the design's root/repository/topic labels. Controls SHALL resolve by IDs and
-verified git paths. Agent names SHALL meet Herdr length and uniqueness rules.
+verified paths. Agent names SHALL meet Herdr length and uniqueness rules.
 New workspace labels SHALL be at most 64 Unicode code points, preserve whole
 graphemes, and disambiguate truncated labels using the design's identity suffix.
 #### Scenario: Open invoked from another lane

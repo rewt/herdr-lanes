@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -991,6 +992,32 @@ test("linked invocations use canonical repository config for explanation, check,
   }
 });
 
+test("bare repositories with only linked worktrees allow reads and refuse mutations clearly", () => {
+  const fixture = makeFixture();
+  try {
+    const bare = join(fixture.root, "repository.git");
+    const linked = join(fixture.root, "linked-checkout");
+    execFileSync(GIT, ["clone", "--bare", fixture.repo, bare], { stdio: "ignore" });
+    execFileSync(GIT, ["--git-dir", bare, "worktree", "add", linked, "main"], { stdio: "ignore" });
+    const linkedFixture = { ...fixture, repo: linked };
+
+    const explained = lane(linkedFixture, ["config"]);
+    assert.equal(explained.status, 0, explained.stderr);
+    assert.deepEqual(configRows(explained.stdout).get("main"), { value: "main", source: fixture.configPath });
+    const listed = lane(linkedFixture, ["status"]);
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.match(listed.stdout, /no open lanes/);
+
+    const opened = lane(linkedFixture, ["open", "needs-primary"]);
+    assert.equal(opened.status, 1);
+    assert.match(opened.stderr, /cannot resolve canonical non-linked checkout.*open requires a canonical checkout/);
+    assert.ok(!refExists(linked, "refs/heads/lane/needs-primary"));
+    negativeControl("bare linked reads and mutation refusal");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("same-named repositories in equal-labeled roots keep distinct paths, labels, agents, and git identities", () => {
   const fixtures = [
     makeFixture(undefined, { repoParts: ["development-a", "same-root", "same-repo"] }),
@@ -1041,6 +1068,9 @@ test("same-named repositories in equal-labeled roots keep distinct paths, labels
       const label = create[create.indexOf("--label") + 1];
       const start = calls.find((args) => args[0] === "agent" && args[1] === "start");
       const agent = start[2];
+      const firstAgentList = calls.findIndex((args) => args[0] === "agent" && args[1] === "list");
+      const firstAgentStart = calls.findIndex((args) => args[0] === "agent" && args[1] === "start");
+      assert.ok(firstAgentList >= 0 && firstAgentList < firstAgentStart);
       assert.match(label, /^same-root\/same-repo:lane-shared-topic~[0-9a-f]{8}$/);
       assert.ok(label.endsWith(identityDigest(rootIdentity, identity, "shared-topic")));
       assert.match(agent, /^[a-z][a-z0-9_-]{0,31}$/);
@@ -1160,6 +1190,21 @@ test("registered paths are rejected when their on-disk repository identity chang
   }
 });
 
+test("a missing registered worktree names git worktree prune", () => {
+  const fixture = makeFixture();
+  try {
+    const path = openLane(fixture, "missing-registration");
+    renameSync(path, `${path}-moved`);
+    const run = lane(fixture, ["status"]);
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /registered worktree .* is missing; run git worktree prune/);
+    assert.doesNotMatch(run.stderr, /does not belong to canonical git common directory/);
+    negativeControl("missing registered worktree guidance");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("stale Herdr checkout metadata is not used for dispatch or close", () => {
   const dispatchFixture = makeFixture();
   const closeFixture = makeFixture();
@@ -1189,6 +1234,10 @@ test("stale Herdr checkout metadata is not used for dispatch or close", () => {
     });
     const closed = lane(closeFixture, ["close", "stale-close"]);
     assert.equal(closed.status, 0, closed.stderr);
+    assert.equal(
+      closed.stderr,
+      `lane: note: Herdr metadata for ${closePath} does not match this repository; removed the worktree with git only\n`,
+    );
     assert.ok(!closeFake.calls().some((args) => args[0] === "worktree" && args[1] === "remove"));
     assert.ok(!existsSync(closePath));
     negativeControl("stale Herdr path identity refusal");
@@ -1218,6 +1267,10 @@ test("linked invocation creates labeled children under the canonical repository 
       assert.notEqual(args[args.indexOf("--workspace") + 1], "w-caller");
       assert.equal(args[args.indexOf("--label") + 1], "repo/repo:lane-child-topic");
     }
+    assert.equal(
+      fake.calls().filter((args) => args[0] === "workspace" && args[1] === "list").length,
+      2,
+    );
     negativeControl("canonical Herdr parent and labeled child");
   } finally {
     fixture.cleanup();

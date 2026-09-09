@@ -408,3 +408,26 @@ Living log for agents maintaining this repository. Newest entry last.
   Linux, or Windows was exercised. No additional approval is needed; review,
   promotion, and archival remain operator actions, and nothing was pushed or written
   under `docs/reviews/`.
+
+## 2026-09-09 — repository-safe roots identity review corrections
+
+- Rebased onto main at `ada3157`, retained both HANDOFF histories in chronological
+  order, and carried the facilitator-owned review record through unchanged. Amendment
+  A1 remains verbatim in the Product contract; no other amendment was applied.
+- Made canonical-checkout absence non-fatal for bare-plus-linked `config` and `status`
+  reads while guarding mutations; distinguished missing registered worktrees with
+  `git worktree prune` guidance; and reported one Git-only close note for mismatched
+  Herdr metadata.
+- Consulted live agent names before start, reused one Herdr workspace listing until a
+  mutation needs refresh, removed the no-op worktree-list quoting flags and redundant
+  stem slice, restored verbatim spec sync, and documented the legacy-home refusal.
+- Five focused tests failed before the Round 2 product changes and passed afterward.
+  The Round 1 evidence is corrected to nine changed expectations, not eight. Final
+  `npm test` passed 69/69 in 13.684 seconds; all 69 deliberate controls failed in
+  13.441 seconds; and the no-Herdr run passed 68 with one explicit skip in 13.500
+  seconds. Strict OpenSpec validation passed 15/15; `git diff --check` and the
+  public-safety scan were clean.
+- Verified Node.js 20.19.4, npm 10.8.2, Git 2.54.0, OpenSpec 1.6.0, and Herdr 0.8.2.
+  No live Herdr mutation, forced digest/name collision, real TTY, linked separate-Git-
+  directory invocation, Linux, or Windows run was performed. Promotion and archival
+  remain operator actions; nothing was pushed or changed under `docs/reviews/`.
