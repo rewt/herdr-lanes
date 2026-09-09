@@ -24,7 +24,7 @@ These additions do not claim the whole existing board/CLI has been re-specified.
 ## Impact
 
 - Scope: lane.mjs; built-ins-only board services; test/; README.md; docs/REFERENCE.md; HANDOFF.md.
-- Prerequisites: board-cli promoted.
+- Prerequisites: board-actions (2b-ii) promoted.
 - Contract: Uses previously approved A1-A3; no further amendment proposed.
 - Delivery: `lane/board-discovery`, route `engineer`; High; one focused engineering session.
 - Non-goals: No filesystem-wide crawler, OS-process agent detector, remote server discovery, persistent machine registry, git identity changes, or lifecycle scheduling.
@@ -32,3 +32,7 @@ These additions do not claim the whole existing board/CLI has been re-specified.
 See [design](design.md) for compatibility changes and risk controls and
 [tasks](tasks.md) for the complete dispatchable brief. Shared amendments and
 workflow are in [the OpenSpec guide](../../README.md).
+
+Pre-agreed split: 2c-i board-inventory delivers discovery/joins/history; 2c-ii
+board-sampling delivers bounded asynchronous sampling. The exact acceptance
+partition is in [design](design.md#pre-agreed-split-point).

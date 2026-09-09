@@ -40,9 +40,14 @@ lane config SHALL exit zero and print deterministic `key<TAB>value<TAB>source` r
 including defaults and the fully resolved worktree directory. Values SHALL be JSON
 encoded on one line, with routes expanded per route name. Sources SHALL be env,
 default, or the defining file path; derived defaults SHALL identify the parent file.
+The CLI usage text and README command table SHALL both list `lane config` with
+its purpose and matching syntax.
 #### Scenario: Explain without running commands
 - **WHEN** config includes a prepare or validate command and overridden routes
 - **THEN** lane config reports final values and their sources without executing those commands or calling Herdr.
+#### Scenario: Command discoverability
+- **WHEN** an operator reads the CLI usage text or README command table
+- **THEN** both list `lane config` and describe its resolved-configuration output.
 
 ### Requirement: Preserve foreign paths and existing work
 lane open SHALL refuse any occupied destination without adoption, overwrite, or

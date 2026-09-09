@@ -71,9 +71,10 @@ Each task includes its relevant requirements and adds these shared requirements:
    an explicit reason when Herdr or a suitable terminal is absent.
 4. Run `npm test`, relevant negative controls, and `git diff --check`, serialized.
    Describe measured results and limits. Do not lower or bypass the validator.
-5. Document every new public key, flag, and environment variable in the short
-   command-led README, with full semantics in REFERENCE. Keep fixtures and all
-   tracked artifacts public-safe. Never copy raw local briefs, transcripts, process
+5. Document every new public command, key, flag, and environment variable in the
+   CLI usage text and short command-led README, including the README command table
+   for commands and their options; put full semantics in REFERENCE. Keep fixtures
+   and all tracked artifacts public-safe. Never copy raw local briefs, transcripts, process
    lists, socket paths, identities, or operator configuration into git.
 6. Commit the report and dated HANDOFF entry with implementation. Run `lane check`
    after the final commit; quote its exact GATE in the conversation. Do not create
@@ -86,6 +87,11 @@ Each task includes its relevant requirements and adds these shared requirements:
 The operator must approve these exact texts before their dependent implementation.
 Keep the current root `AGENTS.md` unchanged in this planning lane. Approval is for a
 concrete amendment; it is not required to finish the present specification.
+
+Roots-config (1a) needs no contract amendment. Canonical-config resolution is a
+documented behavior change inside that lane, covered by its tests and reference
+update. A1 is approved/applied in roots-identity (1b); its path-placement sentence
+retroactively describes the placement already delivered in 1a.
 
 **A1 — append to Product contract (roots-identity):**
 
@@ -104,7 +110,7 @@ concrete amendment; it is not required to finish the present specification.
 > updates must not lose unrelated sessions. No daemon or background job coordination
 > is added.
 
-**A3 — replace the Herdr-optional bullet in Product contract (board-cli):**
+**A3 — replace the Herdr-optional bullet in Product contract (board-actions, 2b-ii):**
 
 > Herdr integration is optional for git-only operations and offline board snapshots.
 > Dispatch, dispatch-from-idea, live discovery, and session focus require an available
@@ -124,6 +130,9 @@ A2 clarifies the display-only exception already identified in the promoted board
 reviews. A3 makes the requested CLI boundary explicit; it does not permit a job
 system. A4 extends the existing Ink/React exception only as far as the chosen official
 UI component package and UI modules. Any further dependency needs its own proposal.
+Board-cli (2b-i) adds read interfaces with the UI untouched and needs no amendment;
+A3 applies when board-actions (2b-ii) rewires that UI. Idea-cli composes existing
+open/dispatch operations after session-registry and needs no additional amendment.
 
 ## Shared decisions
 
@@ -148,6 +157,8 @@ New workspace labels include repository and root identity:
 `<root-label>/<repo-name>:lane-<topic>`. Add a short identity digest when readable
 labels coincide. Labels are display text; operations use opaque Herdr IDs and
 verified git paths. Retain existing labels and find old workspaces by path/ID.
+New labels are bounded to 64 Unicode code points, with grapheme-safe truncation and
+a disambiguating identity suffix as specified in the roots-identity design.
 
 Give mouse research one **optional, two-hour lane** after keyboard UX. Enter-to-focus
 is the acceptance requirement; a negative mouse result is useful evidence and does

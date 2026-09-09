@@ -29,12 +29,17 @@ an automatic temporary-directory fallback.
 New lane Herdr workspaces SHALL be children of their canonical repository workspace
 and use the design's root/repository/topic labels. Controls SHALL resolve by IDs and
 verified paths. Agent names SHALL meet Herdr length and uniqueness rules.
+New workspace labels SHALL be at most 64 Unicode code points, preserve whole
+graphemes, and disambiguate truncated labels using the design's identity suffix.
 #### Scenario: Open invoked from another lane
 - **WHEN** a lane command is invoked inside a linked checkout
 - **THEN** the new child is opened under the canonical repository workspace, not beneath the caller's lane.
 #### Scenario: Matching display text or stale metadata
 - **WHEN** a workspace label matches but its checkout identity does not
 - **THEN** the CLI refuses to use it for dispatch or close.
+#### Scenario: Long labels with common prefixes
+- **WHEN** long Unicode root/repository/topic names produce the same truncated fragments
+- **THEN** labels stay within the bound with whole graphemes and distinct identity suffixes, while full identities remain available in CLI details.
 #### Scenario: Root identity remains git-owned
 - **WHEN** lanes open and dispatch in repositories with different git identities
 - **THEN** existing git config and environment determine author identity, and lane writes no identity setting.

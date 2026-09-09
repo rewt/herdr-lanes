@@ -259,3 +259,20 @@ Living log for agents maintaining this repository. Newest entry last.
 - Commit this correction, wait until the build/test process probe is clear, then
   run the ordinary lane check once against the final commit and report its exact
   GATE in the conversation. Do not stop or control the other session's processes.
+
+## 2026-09-08 — specification round-two review corrections
+
+- Updated the OpenSpec guide, report and briefs: roots-config needs no amendment;
+  A1 describes its placement retroactively in roots-identity. Kept A1-A4 text only
+  in the guide. Split board-cli into read interfaces (2b-i) and board-actions
+  (2b-ii), with discovery/UX split boundaries and corrected dependency edges.
+- Standardized roots-identity/mouse reports, required CLI usage and README-table
+  coverage, and bounded workspace labels to 64 code points with safe truncation.
+  Added docs/REVIEW-*.md to .gitignore; the pre-edit check did not match, the
+  post-edit check matched, and public docs/reviews/ records remain unignored.
+- Strict OpenSpec validation passed 11/11 with telemetry disabled and concurrency
+  1 after a clear load probe. Links, task counts, public-text review and
+  git diff --check passed. No product code, tests, package files or AGENTS.md changed.
+- Reused the unchanged e0cb38c baseline: 49/49 tests. Run lane check once after
+  this final commit and a fresh clear load probe; report its GATE outside git.
+  No live feature, TTY/mouse, rollout or minimum-version checks were performed.

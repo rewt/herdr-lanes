@@ -31,6 +31,14 @@ test fixture represents a development root, not a production temp fallback.
 
 Use `<root-label>/<repo-name>:lane-<topic>` for new child workspace labels and opaque
 IDs for controls. The parent must be the canonical non-linked repository workspace.
+Bound each new workspace label to 64 Unicode code points. If it is too long or
+collides, reserve an eight-hex-character suffix from the full root/repository/topic
+identity and use root/repo/topic fragments of at most 12/16/20 code points:
+`<root-fragment>/<repo-fragment>:lane-<topic-fragment>~<digest8>` fits the bound.
+Truncate only at grapheme boundaries, counting an ellipsis inside each fragment's
+budget. If suffixes collide, lengthen the digest and shrink the fragments to keep
+the same overall bound. Preserve the full labels/identities in CLI details; label
+truncation never changes a topic, path, or control target.
 Keep existing labels. Agent names remain valid Herdr names (lowercase initial
 letter, allowed characters, max 32) and unique across live agents; use a sanitized,
 bounded stem plus identity and random suffix rather than only topic/time.

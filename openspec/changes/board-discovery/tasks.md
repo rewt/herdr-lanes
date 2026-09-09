@@ -11,7 +11,7 @@ Read `AGENTS.md`, `README.md`, `docs/REFERENCE.md`, `HANDOFF.md`, and
 `specs/machine-session-discovery/spec.md`.
 Follow the shared delivery rules in `openspec/README.md`.
 
-Prerequisites: board-cli promoted.
+Prerequisites: board-actions (2b-ii) promoted.
 Contract approval: Uses previously approved A1-A3; no further amendment proposed.
 
 This is a dispatchable future engineering brief, not authorization to implement it
@@ -28,6 +28,11 @@ No filesystem-wide crawler, OS-process agent detector, remote server discovery, 
 
 Suggested route: `engineer`. Suggested effort: High; one focused engineering session.
 Use the route's configured agent/model; do not change routing defaults.
+
+At dispatch, use this combined lane or activate the pre-agreed board-inventory
+(2c-i) / board-sampling (2c-ii) split in design.md. Select the boundary before
+implementation; each resulting brief owns the named requirements, tests and
+handoff. Neither a partial checkbox nor a partially synced full spec is completion.
 
 ## 1. Lane-sized task
 

@@ -31,11 +31,14 @@ Use the route's configured agent/model; do not change routing defaults.
 
 ## 1. Lane-sized task
 
-- [ ] 1.1 Deliver this change's outcome and all applicable scenarios; verify the checks below, write `docs/LANE-ROOTS-IDENTITY-20260908.md` and a dated HANDOFF entry, commit, then obtain a passing GATE against the final commit.
+- [ ] 1.1 Deliver this change's outcome and all applicable scenarios; verify the checks below, write `docs/reports/roots-identity.md` and a dated HANDOFF entry, commit, then obtain a passing GATE against the final commit.
 
 ## Acceptance checks
 
 Observe failing offline fixtures for two roots with equal repo/topic names, shared-base foreign refusal, symlink escapes, checkout descendants, stale Herdr paths, linked invocation, parent-child topology, long-name uniqueness, and unchanged git identity. Fake Herdr must use actual protocol fields; preserve no-Herdr lifecycle checks.
+
+Include long Unicode workspace labels with common prefixes: assert the 64-code-point
+bound, whole graphemes, retained root/repo/topic fragments, and distinct suffixes.
 
 Each requirement in the adjacent delta spec is part of acceptance. Add and observe
 failing regression tests before product changes; retain deliberate negative controls.

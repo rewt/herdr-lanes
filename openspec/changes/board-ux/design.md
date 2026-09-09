@@ -2,6 +2,10 @@
 
 ## UI and dependencies
 
+Discovery supplies grouped rows, machine coverage and --all filtering; messages
+supplies substantive previews. Both must be promoted. The focus/done and UI process
+boundary arrive through discovery's board-actions (2b-ii) prerequisite.
+
 Use Ink 5/React 18 plus @inkjs/ui, selecting a pinned release compatible with Node 20.
 The reviewed upstream @inkjs/ui manifest reports 2.0.0, Node >=18 and Ink >=5;
 verify its published package/lockfile at implementation, since moving branches are
@@ -45,3 +49,22 @@ it is not a root test prerequisite. Report installation size/dependency count an
 compare with the previous 41-package/22 MB recorded board baseline.
 Do not claim real terminal input, terminal restoration, or Linux behavior from a
 string rendering test. Preserve process teardown and responsiveness budgets.
+
+## Pre-agreed split point
+
+Choose combined delivery or this exact split at dispatch, before implementation.
+The split needs no new product decision. If the combined scope will exceed one
+focused session, use these boundaries:
+
+| Subphase / topic | Scope and required acceptance | Depends on |
+| --- | --- | --- |
+| 3a-i / board-frame | Alternate-screen header/list/basic selected-row panel/footer, responsive geometry, Unicode clipping, stable selection, Enter focus, NO_COLOR, and terminal/observer teardown. Own Fullscreen responsive board, One-action keyboard focus, and Terminal and dependency isolation. Test all listed keys and resize/exit paths; retain existing gate colors and a basic detail summary. | board-discovery (2c), board-messages (2d); approved A4 |
+| 3a-ii / board-details | Complete goal/brief/report/message detail content, @inkjs/ui component adoption for selectors/status, upgrade the frame's simple repository/history controls to those components, and all state badges/colors. Own Complete session details plus the final component/dependency-footprint checks. Verify simultaneous working/overdue/stale/failed indicators, input focus, expanded details and the isolated install/TTY smoke. | board-frame (3a-i) |
+
+When activated, partition complete requirement blocks into those two OpenSpec
+changes and one dispatchable brief each before writing code. Each gets a
+`docs/reports/<topic>.md` report, tests and post-commit check. The frame uses Ink/
+React with simple controls first; complete details and @inkjs/ui adoption follow
+in board-details. Full UX acceptance, idea-composer, and optional mouse research
+wait for board-details to promote. Do not sync unfinished detail requirements or
+mark the original combined task complete after shipping the frame alone.

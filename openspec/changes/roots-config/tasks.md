@@ -12,7 +12,7 @@ Read `AGENTS.md`, `README.md`, `docs/REFERENCE.md`, `HANDOFF.md`, and
 Follow the shared delivery rules in `openspec/README.md`.
 
 Prerequisites: None; this is the first Phase 1 task, incorporating the supplied roots brief.
-Contract approval: No amendment required for this slice; A1 is reserved for roots-identity.
+Contract approval: Roots-config (1a) needs no amendment. Canonical-config resolution is a documented behavior change inside this lane. A1 applies in roots-identity (1b) and retroactively describes the path placement delivered in 1a.
 
 This is a dispatchable future engineering brief, not authorization to implement it
 in the planning session. When dispatched by the operator, work only in the current
@@ -36,6 +36,10 @@ Use the route's configured agent/model; do not change routing defaults.
 ## Acceptance checks
 
 Add failing tests for every precedence source, both relative-key origins, route-name replacement, array replacement, canonical-vs-linked invocation, home boundary, malformed config, config TSV sources, occupied foreign paths, and LANE_CONFIG bypass. Run offline with fake/unavailable Herdr; confirm old lifecycle tests still pass.
+
+Require `lane config` in both the CLI usage text and the README command table,
+with its purpose and matching syntax. Observe a failing usage/README assertion
+before adding those entries; document full source/precedence semantics in REFERENCE.
 
 Each requirement in the adjacent delta spec is part of acceptance. Add and observe
 failing regression tests before product changes; retain deliberate negative controls.

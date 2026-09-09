@@ -1,14 +1,14 @@
-# Put board observations and actions behind lane CLI
+# Expose board read interfaces through lane CLI
 
-Status: proposed. Initiative phase 2b; one independent lane.
+Status: proposed. Initiative phase 2b-i; one independent lane.
 
 ## Why
 
-The existing UI opens the Herdr socket, runs git sampling, reads reports, and rewrites registry files itself. A single CLI boundary must exist before adding more UI actions.
+The existing board needs a stable read interface before its UI can move onto CLI processes. Read services can ship independently of action commands and UI rewiring.
 
 ## What Changes
 
-Expose a versioned JSON snapshot/foreground watch stream and explicit focus/done CLI actions. Rewire the existing UI to those interfaces while keeping its current layout and plain output.
+Add plain/JSON snapshots and a foreground JSON watch with explicit repository scope, moving read-command service orchestration into lane.mjs. Leave the existing UI untouched.
 
 ## Capabilities
 
@@ -23,11 +23,11 @@ These additions do not claim the whole existing board/CLI has been re-specified.
 
 ## Impact
 
-- Scope: lane.mjs; board/app.mjs; dependency-free board entrypoints/model/client; test/; README.md; docs/REFERENCE.md; HANDOFF.md.
+- Scope: lane.mjs; dependency-free board entrypoints/model/client; test/; README.md; docs/REFERENCE.md; HANDOFF.md. board/app.mjs is unchanged.
 - Prerequisites: session-registry promoted.
-- Contract: A3 must be approved before implementation.
+- Contract: No amendment required for read interfaces; A3 applies in board-actions (2b-ii), when the UI is rewired.
 - Delivery: `lane/board-cli`, route `engineer`; High; one focused engineering session.
-- Non-goals: No new layout, machine discovery, mouse, composer, global cache, daemon, protocol server, or action retry.
+- Non-goals: No focus/done CLI actions, UI rewire, new layout, machine discovery, mouse, composer, global cache, daemon, or protocol server.
 
 See [design](design.md) for compatibility changes and risk controls and
 [tasks](tasks.md) for the complete dispatchable brief. Shared amendments and

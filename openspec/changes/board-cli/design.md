@@ -1,4 +1,4 @@
-# Design: Put board observations and actions behind lane CLI
+# Design: Expose board read interfaces through lane CLI
 
 ## Commands and boundary
 
@@ -6,11 +6,7 @@
 - `lane board --json [--repo <path>]`: one JSON snapshot, no Ink, one stdout document.
 - `lane board --watch --json [--repo <path>]`: foreground newline-delimited JSON
   snapshots; no detached process or persistent observation cache.
-- `lane board focus <row-id>`: refresh and verify the selected live occupant, then
-  invoke `herdr agent focus` using the explicit pane/name and server.
-- `lane board done <row-id>`: mark an existing registered session done through the
-  registry adapter. Unregistered rows give a clear unsupported message.
-- `lane board`: interactive UI using only these CLI interfaces.
+- `lane board`: existing interactive entrypoint, left unchanged in this lane.
 
 Reject contradictory modes, unknown flags, extra operands, and missing values
 before effects. Help documents the interface; one-shot errors go to stderr.
@@ -38,20 +34,20 @@ board-messages replaces it. Do not claim the footer is a real assistant message.
 A done marker never changes git or gate data. A report can have a verdict and full
 reviewed_head (when supplied); absence of reviewed_head means freshness unknown.
 
-The core may reuse the existing built-ins-only board services as children/modules;
-lane.mjs remains dependency-free. UI imports UI/presentation code and uses argument-
-array child processes to call its own installation's lane.mjs. It does not read
-target-repository files, run git, open Herdr sockets, or write metadata. Focus/done
-are CLI calls even from a UI key. An import/process-boundary regression pins this.
+Move read-command parsing, canonical config resolution, and service orchestration
+into lane.mjs, reusing the built-ins-only board services as modules/children.
+Keep modules import-safe and preserve exports used by the current UI; do not copy
+two independently maintained sampling implementations. board/app.mjs and its direct
+I/O paths remain untouched. This is an independently usable scripting interface;
+the UI process-boundary rewire and its import regression belong to board-actions
+(2b-ii). A3 is approved/applied in that second lane, not this read-only slice.
 
 ## Lifetime and failure behavior
 
-Use one observation process per board. EOF, q, SIGINT, SIGTERM, and render errors
-close subscriptions, pending requests, timers, and children. Preserve permanent
-client shutdown; a late refresh cannot revive it. Reconnect only observations,
-never focus/done/start/prompt. No action has an automatic retry.
-
-An opaque row ID is a reference, not authority: verify its server, current terminal
-occupant, canonical repo, and metadata target at action time. Stale, tampered,
-missing, or now-foreign IDs fail without focusing another pane or writing files.
-No shell interpolation of IDs, task text, repository names, or paths.
+Use one observation process per watch invocation. Consumer pipe closure, SIGINT,
+SIGTERM, and service errors close subscriptions, pending requests, timers, and
+children. Preserve permanent client shutdown; a late refresh cannot revive it.
+Reconnect only observations. Read interfaces never focus an agent or write session
+metadata. Repository paths are passed as arguments, never interpolated as shell code.
+Keep all existing UI/client framing and teardown regressions green without changing
+the interactive application; add watch-lifetime regressions at the CLI boundary.

@@ -24,7 +24,7 @@ These additions do not claim the whole existing board/CLI has been re-specified.
 ## Impact
 
 - Scope: board/app.mjs; board/ui/; board/package.json and lockfile; test/; README.md; docs/REFERENCE.md; HANDOFF.md.
-- Prerequisites: board-messages promoted.
+- Prerequisites: board-discovery (2c) and board-messages (2d) promoted; board-actions (2b-ii) is inherited through discovery.
 - Contract: A4 must be approved before adding @inkjs/ui or UI-only modules.
 - Delivery: `lane/board-ux`, route `engineer`; High; one focused engineering session.
 - Non-goals: No mouse support, new discovery logic, direct UI git/Herdr/file access, major Ink upgrade, visual-history store, or composer.
@@ -32,3 +32,7 @@ These additions do not claim the whole existing board/CLI has been re-specified.
 See [design](design.md) for compatibility changes and risk controls and
 [tasks](tasks.md) for the complete dispatchable brief. Shared amendments and
 workflow are in [the OpenSpec guide](../../README.md).
+
+Pre-agreed split: 3a-i board-frame delivers layout/focus/terminal restoration;
+3a-ii board-details delivers complete details, selectors and status semantics.
+The exact acceptance partition is in [design](design.md#pre-agreed-split-point).

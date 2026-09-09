@@ -11,8 +11,8 @@ Read `AGENTS.md`, `README.md`, `docs/REFERENCE.md`, `HANDOFF.md`, and
 `specs/agent-message-preview/spec.md`.
 Follow the shared delivery rules in `openspec/README.md`.
 
-Prerequisites: board-discovery promoted.
-Contract approval: Uses approved A3; no further amendment proposed.
+Prerequisites: board-cli (2b-i) promoted; no discovery or action dependency.
+Contract approval: No additional amendment required; this extends the read interface.
 
 This is a dispatchable future engineering brief, not authorization to implement it
 in the planning session. When dispatched by the operator, work only in the current

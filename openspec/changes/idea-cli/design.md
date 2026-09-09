@@ -2,6 +2,11 @@
 
 ## CLI contract
 
+Depend only on session-registry (2a), which already includes root/config resolution
+and automatic dispatch metadata. This command selects --repo explicitly and needs
+no machine inventory or UI boundary. The later composer obtains its repository
+picker from discovery; that does not delay this independent CLI capability.
+
 ```sh
 lane new <topic> --repo <path> --route <name> [--edit] -- "task text"
 lane routes --repo <path> --json

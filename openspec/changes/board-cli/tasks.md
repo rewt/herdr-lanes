@@ -1,8 +1,8 @@
-# Put board observations and actions behind lane CLI
+# Expose board read interfaces through lane CLI
 
 ## Outcome
 
-Expose a versioned JSON snapshot/foreground watch stream and explicit focus/done CLI actions. Rewire the existing UI to those interfaces while keeping its current layout and plain output.
+Deliver Phase 2b-i: plain/JSON snapshots and foreground JSON watch, with read-command services moved behind lane.mjs. Leave the existing UI untouched.
 
 ## Repository context and authorization
 
@@ -12,7 +12,7 @@ Read `AGENTS.md`, `README.md`, `docs/REFERENCE.md`, `HANDOFF.md`, and
 Follow the shared delivery rules in `openspec/README.md`.
 
 Prerequisites: session-registry promoted.
-Contract approval: A3 must be approved before implementation.
+Contract approval: No amendment required for read interfaces; A3 applies in board-actions (2b-ii), when the UI is rewired.
 
 This is a dispatchable future engineering brief, not authorization to implement it
 in the planning session. When dispatched by the operator, work only in the current
@@ -22,9 +22,9 @@ has approved the exact amendment. One build/test at a time on the machine.
 
 ## Scope and limits
 
-lane.mjs; board/app.mjs; dependency-free board entrypoints/model/client; test/; README.md; docs/REFERENCE.md; HANDOFF.md.
+lane.mjs; dependency-free board entrypoints/model/client; test/; README.md; docs/REFERENCE.md; HANDOFF.md. board/app.mjs is unchanged.
 
-No new layout, machine discovery, mouse, composer, global cache, daemon, protocol server, or action retry.
+No focus/done CLI actions, UI rewire, new layout, machine discovery, mouse, composer, global cache, daemon, or protocol server.
 
 Suggested route: `engineer`. Suggested effort: High; one focused engineering session.
 Use the route's configured agent/model; do not change routing defaults.
@@ -35,7 +35,11 @@ Use the route's configured agent/model; do not change routing defaults.
 
 ## Acceptance checks
 
-Observe failing tests for JSON shape/framing and invalid flags, operation with no board dependencies, current table through fake CLI, stale/foreign/unnamed focus, done routing, and quit during pending refresh/reconnect. Retain split/batched frames, timeout, error-body and permanent-client-close regressions.
+Observe failing tests for JSON shape/framing, --repo resolution and invalid flags,
+operation without board dependencies, read-service errors, no observation writes
+or focus changes, and watch termination during pending refresh/reconnect. Retain
+split/batched frames, timeout, error-body and permanent-client-close regressions.
+Verify board/app.mjs is unchanged and the existing UI's service exports still work.
 
 Each requirement in the adjacent delta spec is part of acceptance. Add and observe
 failing regression tests before product changes; retain deliberate negative controls.

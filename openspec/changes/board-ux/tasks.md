@@ -11,7 +11,7 @@ Read `AGENTS.md`, `README.md`, `docs/REFERENCE.md`, `HANDOFF.md`, and
 `specs/board-terminal-ux/spec.md`.
 Follow the shared delivery rules in `openspec/README.md`.
 
-Prerequisites: board-messages promoted.
+Prerequisites: board-discovery (2c) and board-messages (2d) promoted; board-actions (2b-ii) is inherited through discovery.
 Contract approval: A4 must be approved before adding @inkjs/ui or UI-only modules.
 
 This is a dispatchable future engineering brief, not authorization to implement it
@@ -28,6 +28,11 @@ No mouse support, new discovery logic, direct UI git/Herdr/file access, major In
 
 Suggested route: `engineer`. Suggested effort: High; one focused engineering session.
 Use the route's configured agent/model; do not change routing defaults.
+
+At dispatch, use this combined lane or activate the pre-agreed board-frame (3a-i) /
+board-details (3a-ii) split in design.md. Select the boundary before implementation;
+each resulting brief owns the named requirements, tests and handoff. Dependent
+composer/mouse work waits for the complete UX, not just the frame.
 
 ## 1. Lane-sized task
 

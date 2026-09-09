@@ -25,7 +25,7 @@ These additions do not claim the whole existing board/CLI has been re-specified.
 
 - Scope: lane.mjs; test/lane.test.mjs; README.md; docs/REFERENCE.md; .lane.json.example; HANDOFF.md.
 - Prerequisites: None; this is the first Phase 1 task, incorporating the supplied roots brief.
-- Contract: No amendment required for this slice; A1 is reserved for roots-identity.
+- Contract: Roots-config (1a) needs no amendment. Canonical-config resolution is a documented behavior change inside this lane. A1 applies in roots-identity (1b) and retroactively describes the path placement delivered in 1a.
 - Delivery: `lane/roots`, route `engineer`; High; one focused engineering session.
 - Non-goals: Do not migrate worktrees, change git identity, add root names/accounts, redesign the board, or add a migration command.
 

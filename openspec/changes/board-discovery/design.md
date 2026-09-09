@@ -63,3 +63,21 @@ Acceptance target: a sanitized fixture with 100 sessions in 10 repositories shou
 accept keyboard/CLI control within 100 ms while a git request is delayed; report
 refresh wall time and process counts on the available machine, without hardcoding
 host-speed limits into tests.
+
+## Pre-agreed split point
+
+Choose combined delivery or this exact split at dispatch, before implementation.
+The split needs no new product decision. If the combined scope will exceed one
+focused session, use these boundaries instead of broadening the lane:
+
+| Subphase / topic | Scope and required acceptance | Depends on |
+| --- | --- | --- |
+| 2c-i / board-inventory | Local endpoint enumeration, canonical repo/agent joins, coverage, machine default, --repo/--all, grouping and done semantics. Own the complete requirements Machine default with repository filter, Every discovered agent remains visible, and History filtering is independent of agent status. Test inaccessible/duplicate endpoints, foreign metadata, unnamed/non-git agents and history controls. Preserve existing sampling behavior. | board-actions (2b-ii) |
+| 2c-ii / board-sampling | Asynchronous per-checkout sampling, concurrency/rate limits, freshness/error handling and bounded caches. Own Responsive bounded observation. Verify delayed-git responsiveness, one in-flight refresh, two-child limit, no duplicate sampling and cleanup on the 100-session/10-repository fixture. | board-inventory (2c-i) |
+
+When activated, partition complete requirement blocks into those two OpenSpec
+changes and one dispatchable brief each before writing code. Include each slice's
+report under `docs/reports/<topic>.md`, tests and post-commit check. Keep full
+discovery completion pending until board-sampling promotes; dependants requiring
+board-discovery wait for both. The first slice is usable discovery with existing
+sampling; it does not claim the second slice's responsiveness/freshness guarantees.

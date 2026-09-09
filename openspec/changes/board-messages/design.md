@@ -2,6 +2,10 @@
 
 ## Evidence and extraction
 
+Depend only on board-cli (2b-i), which supplies the read schema and service boundary.
+The parser works on existing registered rows; machine discovery and UI/action
+rewiring are independent. Preserve the same adapter when discovery adds more rows.
+
 Protocol 20 exposes agent/pane reads as rendered text plus revision/truncated flags;
 it does not expose a structured last-assistant-message field. Do not invent one,
 read vendor-private transcript files, or depend on agent SDKs. Ask Herdr for

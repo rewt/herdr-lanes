@@ -11,8 +11,8 @@ Read `AGENTS.md`, `README.md`, `docs/REFERENCE.md`, `HANDOFF.md`, and
 `specs/idea-dispatch/spec.md`.
 Follow the shared delivery rules in `openspec/README.md`.
 
-Prerequisites: board-discovery promoted; may proceed after Phase 2 without waiting for optional mouse research.
-Contract approval: Uses approved A1-A3; no new contract amendment proposed.
+Prerequisites: session-registry (2a) promoted; no board discovery, UI, or mouse dependency.
+Contract approval: Uses approved A1-A2; no new contract amendment proposed.
 
 This is a dispatchable future engineering brief, not authorization to implement it
 in the planning session. When dispatched by the operator, work only in the current

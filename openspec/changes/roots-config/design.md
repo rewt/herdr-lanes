@@ -16,8 +16,10 @@ Two clarifications follow from current code:
    worktree ancestry from selecting a different root or ignored config disappearing.
    The repository file for operational settings is the canonical checkout's
    `.lane.json`; a lane-local copy is not a third config layer. This is an intentional
-   clarification of existing cwd-dependent config behavior and needs regression
-   coverage. Check and promote use the same resolver and preserve validation parity.
+   documented behavior change in this lane, requiring no contract amendment, and
+   needs regression coverage. Check and promote use the same resolver and preserve
+   validation parity. A1 is applied in roots-identity (1b) and retroactively
+   describes the path placement delivered here.
 
 Use only the **nearest** parent file, not an arbitrary-depth merge. For repositories
 under home, exclude home and every ancestor above it. Elsewhere stop before the
