@@ -622,7 +622,10 @@ function openWorkspaceIdFor(path, { refuseStale = true, onMismatch, workspaces }
 // herdr workspace. Repair that by opening from the parent workspace explicitly,
 // retaining opaque IDs and verifying the returned path and repository identity.
 function ensureHerdrWorkspace(path, label, workspaces) {
-  let id = openWorkspaceIdFor(path, { workspaces });
+  // Worktree creation/opening and workspace discovery are separate Herdr
+  // snapshots. Refetch here so newly visible metadata is never judged against
+  // the caller's pre-creation listing.
+  let id = openWorkspaceIdFor(path);
   if (id !== undefined) return id;
   const parent = parentWorkspaceId(workspaces);
   if (parent === undefined) return undefined;

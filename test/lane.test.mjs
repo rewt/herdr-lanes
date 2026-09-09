@@ -175,7 +175,9 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs
 const args = process.argv.slice(2);
 const log = process.env.FAKE_HERDR_LOG;
 const statePath = process.env.FAKE_HERDR_STATE;
-const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : {};
+const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : {
+  opened: process.env.FAKE_HERDR_INITIALLY_OPENED === "1",
+};
 appendFileSync(log, JSON.stringify(args) + "\\n");
 const save = () => writeFileSync(statePath, JSON.stringify(state));
 const result = (id, value) => process.stdout.write(JSON.stringify({ id, result: value }) + "\\n");
@@ -188,11 +190,13 @@ const workspace = (id, label, path, linked, repoKey = process.env.FAKE_HERDR_REP
   },
 });
 if (args[0] === "workspace" && args[1] === "list") {
+  state.workspaceLists = (state.workspaceLists || 0) + 1;
+  save();
   const workspaces = [workspace("w-parent", "repository", process.env.FAKE_HERDR_REPO_ROOT, false)];
   if (process.env.FAKE_HERDR_CALLER_PATH) {
     workspaces.push(workspace("w-caller", "caller-lane", process.env.FAKE_HERDR_CALLER_PATH, true));
   }
-  if (state.opened) {
+  if (state.opened && !(process.env.FAKE_HERDR_HIDE_OPENED_ON_FIRST_LIST === "1" && state.workspaceLists === 1)) {
     workspaces.push(workspace("w-lane", state.label, process.env.FAKE_HERDR_LANE_PATH, true));
   }
   if (process.env.FAKE_HERDR_STALE_ID) {
@@ -229,6 +233,11 @@ if (args[0] === "workspace" && args[1] === "list") {
     type: "worktree_list", worktrees,
   });
 } else if (args[0] === "worktree" && args[1] === "create") {
+  if (process.env.FAKE_HERDR_FAILED_CREATE_OPENED === "1") {
+    state.opened = true;
+    state.label = args[args.indexOf("--label") + 1];
+    save();
+  }
   process.exit(1);
 } else if (args[0] === "worktree" && args[1] === "open") {
   if (process.env.FAKE_HERDR_NO_REPAIR !== "1") {
@@ -284,6 +293,9 @@ if (args[0] === "workspace" && args[1] === "list") {
     FAKE_HERDR_STALE_LABEL: options.staleLabel,
     FAKE_HERDR_FOREIGN_REPO_KEY: options.foreignRepoKey,
     FAKE_HERDR_NO_REPAIR: options.noRepair ? "1" : undefined,
+    FAKE_HERDR_FAILED_CREATE_OPENED: options.failedCreateOpened ? "1" : undefined,
+    FAKE_HERDR_INITIALLY_OPENED: options.initiallyOpened ? "1" : undefined,
+    FAKE_HERDR_HIDE_OPENED_ON_FIRST_LIST: options.hideOpenedOnFirstList ? "1" : undefined,
   });
   for (const [key, value] of Object.entries(fixture.env)) {
     if (value === undefined) delete fixture.env[key];
@@ -1296,6 +1308,55 @@ test("linked invocation creates labeled children under the canonical repository 
       2,
     );
     negativeControl("canonical Herdr parent and labeled child");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("open refreshes Herdr workspaces after a failed create before accepting fallback metadata", () => {
+  const fixture = makeFixture();
+  try {
+    const path = lanePath(fixture, "fallback-refresh");
+    const fake = writeFakeHerdr(fixture, {
+      lanePath: path,
+      branch: "lane/fallback-refresh",
+      failedCreateOpened: true,
+    });
+    const opened = lane(fixture, ["open", "fallback-refresh"]);
+    assert.equal(opened.status, 0, opened.stderr);
+    assert.match(opened.stdout, /herdr workspace: w-lane/);
+    assert.equal(
+      fake.calls().filter((args) => args[0] === "worktree" && args[1] === "open").length,
+      0,
+    );
+    assert.equal(
+      fake.calls().filter((args) => args[0] === "workspace" && args[1] === "list").length,
+      2,
+    );
+    negativeControl("failed-create workspace refresh");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("dispatch refreshes Herdr workspaces before accepting newly visible metadata", () => {
+  const fixture = makeFixture();
+  try {
+    const path = openLane(fixture, "dispatch-refresh");
+    const fake = writeFakeHerdr(fixture, {
+      lanePath: path,
+      branch: "lane/dispatch-refresh",
+      initiallyOpened: true,
+      hideOpenedOnFirstList: true,
+    });
+    const dispatched = lane(fixture, ["dispatch", "dispatch-refresh", "review this"]);
+    assert.equal(dispatched.status, 0, dispatched.stderr);
+    assert.match(dispatched.stdout, /dispatched 'lane-dispatch-refr-/);
+    assert.equal(
+      fake.calls().filter((args) => args[0] === "worktree" && args[1] === "open").length,
+      0,
+    );
+    negativeControl("dispatch workspace refresh");
   } finally {
     fixture.cleanup();
   }

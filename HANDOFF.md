@@ -445,3 +445,16 @@ Living log for agents maintaining this repository. Newest entry last.
   `npm test` passed 69/69 in 18.821 seconds, and all 69 deliberate negative controls
   failed with zero passes in 21.115 seconds. Tests waited for clear process probes;
   no product code or review record changed, and nothing was pushed.
+
+## 2026-09-09 — Herdr workspace snapshot refresh
+
+- Refetched the authoritative Herdr workspace list before accepting worktree metadata,
+  preventing `open` after a Git fallback and `dispatch` from comparing a newly visible
+  workspace against a stale pre-create snapshot.
+- Added offline fake-Herdr coverage for a failed create that still registers workspace
+  metadata and for metadata becoming visible between dispatch listings. Both focused
+  tests first failed with the stale-metadata refusal and include deliberate negative
+  controls.
+- Baseline `npm test` passed 69/69. Final `npm test` passed 71/71 after a clear load
+  probe, and `git diff --check` passed. No live Herdr mutation was performed, no
+  review feature work is included in this correction, and nothing was pushed.
