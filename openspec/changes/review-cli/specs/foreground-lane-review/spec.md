@@ -28,7 +28,7 @@ a finite check budget plus the one-build/test machine rule.
 - **THEN** the template permits zero build/test/prepare/install/check commands, still requires the private record, and lists omitted verification as Unverified.
 #### Scenario: Budgeted checks and mutation witness
 - **WHEN** tests are authorized
-- **THEN** commands including negative controls stay within the finite budget after a clear load probe, and mutation work uses temporary copies with cleanup rather than tracked lane files.
+- **THEN** commands including negative controls stay within the finite budget after a clear load probe, all fixtures/copies use cleaned system-temp paths, and nothing is created or modified in the lane worktree, tracked or untracked.
 
 ### Requirement: Machine-checkable review evidence
 New private records SHALL use the design's v1 envelope with a fixed first-line
@@ -44,7 +44,7 @@ findings and mandatory Re-executed, Non-claims and Unverified sections.
 ### Requirement: Tool-enforced unchanged lane
 Review SHALL record HEAD and a clean-tree check before dispatch, and require the
 same HEAD/branch and a completely clean tree after private completion and before
-writing public output.
+accepting a private review result.
 #### Scenario: Reviewer or engineer changes the worktree
 - **WHEN** HEAD moves or tracked/index/untracked state is dirty, including a reviewer-written public record
 - **THEN** the command exits 2, preserves all work/evidence, and neither resets files nor accepts the review.
@@ -58,13 +58,28 @@ the private canonical .lane/reviews/<topic>/<head7>-rN.md and verifying sanitiza
 #### Scenario: Sanitization cannot be verified
 - **WHEN** private strings remain, encoding/markup is ambiguous, or redaction loses a finding's location/meaning
 - **THEN** the command exits 2, writes no public record, retains the private record and does not leak it through diagnostics.
+#### Scenario: Deterministic aliases and placeholders
+- **WHEN** injected OS username, home basename, full/short hostname and declared tokens occur in varied case and inside unrelated words
+- **THEN** only whole path-segment/word-boundary matches are replaced with the design's fixed placeholders and counts; substring collisions, protected locations and unsupported payloads refuse exactly as defined there.
+
+### Requirement: After-check publication boundary
+The complete review command SHALL require successful sanitized public generation
+and a final integrity check before returning a verdict, extending the private-only
+slice's validated-record completion point without weakening its checks.
+#### Scenario: Complete-command success
+- **WHEN** the private record passes validation and the lane is still clean at its captured HEAD
+- **THEN** only the CLI creates the public file without replacement, rechecks HEAD/tree allowing that file alone, and then emits the verdict with exit 0 or 1.
+#### Scenario: Mutation during publication
+- **WHEN** another mutation appears after public creation or a selected output already exists
+- **THEN** the command exits exactly 2 with no verdict, keeps existing evidence, and explains the inspection/commit/removal and explicit-round recovery rather than retrying.
 
 ### Requirement: Single dispatch bounded observation and explicit outcomes
 Review SHALL call the existing dispatch path once, default to review, enforce the
 documented --timeout and stop local observation without any follow-up lifecycle action.
-#### Scenario: Recorded verdict
-- **WHEN** valid unchanged-target evidence is sanitized and published
-- **THEN** stdout is PASS with exit 0 or NEEDS-WORK/FAIL with exit 1, and no other action follows.
+Refusals SHALL use an exit-2 boundary, never the shared exit-1 fail helper.
+#### Scenario: Private-only recorded verdict
+- **WHEN** the R-i slice obtains a validated private record and unchanged clean lane
+- **THEN** stdout is PASS with exit 0 or NEEDS-WORK/FAIL with exit 1, stderr names the private path, and no public output is created; the complete command additionally satisfies After-check publication boundary before emitting a verdict.
 #### Scenario: Missing result or interrupted wait
 - **WHEN** dispatch stalls, the record stays missing/incomplete, timeout occurs, or observation is interrupted
 - **THEN** the command exits 2 with no verdict, closes local children/timers, keeps evidence and states that the Herdr reviewer may still write late output.
@@ -77,4 +92,4 @@ The implementation SHALL use built-ins-only fake-reviewer tests and document the
 command/template/protocol in usage, the README table, REFERENCE and shared rules.
 #### Scenario: No real agent or UI dependencies
 - **WHEN** the offline suite runs in cleaned temporary repositories
-- **THEN** a fake reviewer writing only the private file exercises all verdict/error paths, mutation refusal and public sanitization without real Herdr, nested builds/tests or UI installation.
+- **THEN** a fake reviewer writing only the private file exercises the delivered slice's verdict/error paths and unchanged-tree refusal, with every refusal asserting exactly 2, without real Herdr, nested builds/tests or UI installation; public-projection coverage belongs to R-ii's requirement blocks.

@@ -1,6 +1,6 @@
 # Run one independent review in the foreground
 
-Status: proposed. Review-protocol addendum; one independent lane.
+Status: proposed. Review-protocol addendum; one lane or the pre-agreed two-lane split.
 
 ## Why
 
@@ -33,6 +33,7 @@ historical evidence; no new promotion policy is introduced.
 
 - Scope: lane.mjs; docs/REVIEW_TEMPLATE.md; test/; README.md; docs/REFERENCE.md;
   openspec/README.md; docs/reports/review-cli.md; HANDOFF.md.
+  AGENTS.md repository-map maintenance only; no contract edit.
 - Capability prerequisites: none beyond current main. No registry, board, composer,
   OpenSpec runtime or built-in route package is required.
 - Dispatch order: after roots-config promotes due to lane.mjs/config overlap. This
@@ -46,3 +47,7 @@ historical evidence; no new promotion policy is introduced.
 
 See [design](design.md), the [dispatchable task](tasks.md), and the
 [shared workflow](../../README.md).
+
+Pre-agreed split: R-i review-private ends at validated private evidence with no
+public output; R-ii review-public adds sanitization and guarded publication. See
+the [requirement/test partition](design.md#pre-agreed-split-point); choose before dispatch.

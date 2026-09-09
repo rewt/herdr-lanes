@@ -28,6 +28,11 @@ its default effort and cannot inherit Codex arguments. Every shipped route has
 explicit kind, model, args, env: [] and use. Do not embed permission-bypass flags,
 credentials, endpoints, author settings, account IDs, working paths or private notes.
 
+Ordinary review deliberately passes no effort flag, rather than pinning high.
+Retain this requested policy, and have the operator ratify it when approving A5:
+it follows the agent's default and may change as that default changes. An operator
+wanting fixed high must explicitly replace the route with args: ["--effort", "high"].
+
 Shipped dispatch is a complete copy of the shipped engineer kind/model/args/env
 (without use). Thus a configuration-free dispatch and --route engineer select the
 same profile. Preserve existing independent dispatch/route override semantics:
@@ -84,7 +89,15 @@ TSV/JSON-encoded value format remains; derived sources must explain the winning
 input, not attribute a file override to built-in. A config-free lane routes now
 succeeds with eight sorted routes instead of reporting none configured. A
 config-free dispatch now uses the engineer profile instead of the previous generic
-agent fallback. Document both deliberate behavior changes and update their tests.
+agent fallback. Third, LANE_CONFIG changes from the delivered single-file whole
+configuration to one operator file over built-ins. A partial explicit file now
+inherits undeclared built-in routes. To replace all shipped route definitions, a
+caller must supply complete definitions for every built-in name as well as its
+extra routes; merely declaring a smaller map cannot produce an exact smaller route
+inventory under name-wise merging. No route-removal mechanism exists in this scope.
+Document all three deliberate changes and test partial and complete explicit files.
+Update the delivered root-configuration requirements through this change's MODIFIED
+delta; do not silently contradict the current spec's source vocabulary or bypass rule.
 
 ## Template resolution
 
@@ -137,3 +150,22 @@ do not duplicate the entire shipped table in the example.
 
 No agent or UI package is installed and no review is launched by reading config.
 Keep tool dependencies, promotion validation and the no-retry boundary unchanged.
+Maintain AGENTS.md's repository map for defaults/; this is ordinary documentation
+maintenance alongside the approved A5 contract edit, not a new amendment.
+
+## Pre-agreed split point
+
+Choose combined delivery or split before coding: D-i / default-routes owns Portable
+built-in role configuration, Existing layers override built-ins transparently,
+Explicitly approved defaults boundary, and the MODIFIED Bounded two-file configuration
+and Explain resolved configuration blocks; test all eight routes/args/use notes,
+configuration/source precedence, the LANE_CONFIG change, package-data failures and
+root-placement preservation, with approved A5/map/docs. D-ii / default-templates
+depends on D-i and owns Repository or installed generic templates, including its
+template-source inspection scenario; test both names, installation/cwd resolution,
+repository overrides/refusals and the enforced review envelope. Each uses engineer,
+one focused session, its own docs/reports/<topic>.md, checks and promotion. Partition
+those complete blocks into two changes/briefs before implementation and sync only
+delivered blocks: D-i ships routes/provenance with review-cli's packaged-only template
+behavior, and D-ii adds template lookup/derived rows. Both wait for full review-cli;
+do not mark the combined task complete or claim full default-config until D-ii.

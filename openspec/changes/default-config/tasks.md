@@ -9,7 +9,8 @@ lowest-precedence sources and repository overrides that preserve the review prot
 
 Read AGENTS.md, README.md, HANDOFF.md, docs/REFERENCE.md, openspec/README.md and this
 change's proposal/design/specs/built-in-lane-defaults/spec.md. Inspect the delivered
-root-configuration and foreground-lane-review specs before editing their consumers.
+root-configuration and foreground-lane-review specs, plus this change's
+specs/root-configuration/spec.md MODIFIED blocks, before editing their consumers.
 
 Prerequisite: review-cli promoted, after roots-config in the dispatch sequence.
 Contract approval: exact A5 in the OpenSpec guide must be approved and applied in
@@ -23,12 +24,18 @@ Use one build/test at a time after a clear load probe.
 
 lane.mjs; defaults/lane.json; docs/BRIEF_TEMPLATE.md; docs/REVIEW_TEMPLATE.md;
 .lane.json.example; test/; README.md; docs/REFERENCE.md; openspec/README.md;
-docs/reports/default-config.md; HANDOFF.md; AGENTS.md only for approved A5.
+docs/reports/default-config.md; HANDOFF.md; AGENTS.md for approved A5 and ordinary
+repository-map maintenance for defaults/ (the map needs no contract amendment).
 
 No installs, account configuration, remote model selection, substitutions, retries,
 automatic escalation, new template command, lane new implementation or dependencies.
 Suggested route: engineer. Suggested effort: High; one focused session. The required
 public model policy is confined to the approved defaults; do not invent other defaults.
+
+At dispatch, choose combined delivery or the D-i default-routes / D-ii
+default-templates seam in [design](design.md#pre-agreed-split-point). Partition the
+named complete requirements/tests into two briefs before coding; only D-ii completes
+the combined capability. Ratify ordinary review's unpinned effort with A5 approval.
 
 ## 1. Lane-sized task
 
@@ -44,7 +51,8 @@ real agent or network. Observe failures before implementing:
   route output, engineer-equivalent defaults, and no generated host config.
 - Parent/repo/explicit-file/environment/CLI precedence; same-name whole-route
   replacement, array replacement, unrelated routes retained, empty objects, strict
-  file errors and independent explicit dispatch overrides.
+  file errors and independent explicit dispatch overrides; partial LANE_CONFIG
+  inherits built-in routes and complete definitions replace every shipped role.
 - Built-in source attribution in lane config, overridden source provenance and
   inspection-only template rows; no Herdr call or effects during inspection.
 - Root placement unaffected by the defaults directory; LANE_CONFIG bypass retains
@@ -57,6 +65,8 @@ real agent or network. Observe failures before implementing:
 - README/usage/REFERENCE and example override coverage; no personal/organization
   paths/defaults; existing review schema/witness/dirty-tree/sanitization refusals
   and the unchanged validation/fast-forward safeguards remain green.
+  Document all three behavior changes (routes, dispatch, explicit-file inheritance),
+  the route-removal limitation and unpinned ordinary-review effort; maintain the map.
 
 Do not run nested builds/tests or install agent/UI dependencies for these fixtures.
 Run npm test, relevant deliberate controls and git diff --check serialized; preserve

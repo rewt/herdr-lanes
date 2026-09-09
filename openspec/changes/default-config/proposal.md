@@ -1,6 +1,6 @@
 # Ship overridable built-in routes and generic templates
 
-Status: proposed. Configuration addendum; one independent lane, pending A5.
+Status: proposed. Configuration addendum; one lane or its pre-agreed split, pending A5.
 
 ## Why
 
@@ -26,14 +26,15 @@ immediately while preserving explicit repository and operator choices.
 
 ### Modified Capabilities
 
-None in this proposal baseline. At dispatch, preserve the delivered root-configuration
-and foreground-lane-review requirements while adding this lowest-precedence layer.
+- `root-configuration`: make LANE_CONFIG one operator file over built-ins and add
+  built-in source attribution; retain the other delivered discovery/path safeguards.
 
 ## Impact
 
 - Scope: lane.mjs; defaults/lane.json; docs/BRIEF_TEMPLATE.md;
   docs/REVIEW_TEMPLATE.md; .lane.json.example; test/; README.md;
   docs/REFERENCE.md; openspec/README.md; docs/reports/default-config.md; HANDOFF.md.
+  AGENTS.md for approved A5 and ordinary repository-map maintenance for defaults/.
 - Prerequisites: review-cli promoted (and roots-config already promoted in its
   dispatch sequence). No registry, board or idea-composer dependency.
 - Contract: A5 must be approved/applied here before implementation. The exact text
@@ -50,3 +51,7 @@ explicit rather than treating public model names as blanket permission for host 
 organization defaults. Every route remains replaceable; other agents stay supported.
 
 See [design](design.md) and the [dispatchable task](tasks.md).
+
+Pre-agreed split: D-i default-routes delivers routes/precedence/provenance under A5;
+D-ii default-templates delivers repository/installation template lookup. The
+[requirement/test partition](design.md#pre-agreed-split-point) is selected before coding.

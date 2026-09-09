@@ -354,3 +354,22 @@ Living log for agents maintaining this repository. Newest entry last.
   No live dispatch, interactive TTY board, submodule checkout, Linux/Windows host,
   permission-denial model, or path-creation race was exercised. No new approval is
   needed; promotion and archival remain operator actions, and nothing was pushed.
+
+## 2026-09-09 — specification third-review corrections
+
+- Rebased lane/spec onto promoted roots-config main at 5da8868, preserving both
+  handoff histories in commit-time order and the facilitator's d0c4e53-r3 review
+  record byte-for-byte. It remains historical evidence for its original SHA.
+- Updated review-cli/default-config proposals, designs, deltas, briefs, guide and
+  report: named independent split boundaries; deterministic sanitization/refusals;
+  system-temp-only reviewer fixtures; exact exit-2 errors and publication recovery;
+  route prerequisites, map maintenance, A3/A5 wording and review-effort ratification.
+  Added MODIFIED root-configuration blocks for built-in precedence/provenance.
+- Strict OpenSpec validation passed 14/14 after a clear load probe, telemetry off
+  and concurrency 1. Links/anchors, task/split structure, retained current scenarios,
+  public-text inspection and git diff --check passed. Product code, tests, packages
+  and AGENTS.md match main; no product negative control was warranted for prose.
+- Reused promoted main's 60/60 baseline; reserve one lane check for the final commit
+  after a fresh clear load probe and report its GATE outside git. Sanitizer/defaults
+  implementation, live review/Herdr, client support and minimum-version hosts remain
+  unverified. No push or product implementation.

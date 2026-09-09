@@ -24,9 +24,12 @@ whole-route-by-name rules, with existing environment/CLI precedence preserved.
 #### Scenario: Explicit config and root placement
 - **WHEN** LANE_CONFIG selects a file or only an empty parent config exists
 - **THEN** built-ins remain lowest, explicit config bypasses other files, and only roots-config's eligible parent semantics can activate sibling .worktrees placement.
+#### Scenario: Partial explicit route inventory
+- **WHEN** LANE_CONFIG declares only one overridden route
+- **THEN** undeclared built-in routes remain; complete overrides are needed for every shipped definition to replace them all, and a smaller exact route set cannot be requested through name-wise merging.
 #### Scenario: Source inspection
 - **WHEN** lane config resolves built-in and overridden values
-- **THEN** built-in values use the exact source built-in, overridden values name their defining sources, template rows are identified as inspection-only, and no Herdr/mutation occurs.
+- **THEN** built-in values use the exact source built-in, overridden values name their defining sources, and no Herdr/mutation occurs.
 
 ### Requirement: Repository or installed generic templates
 The tool SHALL resolve each conventional brief/review template from the target
@@ -37,6 +40,9 @@ worktree when present, otherwise from its real installation, without a config fi
 #### Scenario: Repository template and invalid override
 - **WHEN** a target supplies a template
 - **THEN** it overrides that one packaged template; unreadable, malformed or escaping overrides refuse and cannot remove the review protocol or change reviewer write authority.
+#### Scenario: Template source inspection
+- **WHEN** lane config reports the resolved templates
+- **THEN** template.brief/template.review are inspection-only rows with built-in or repository-file sources and cause no rendering, dispatch or mutation.
 
 ### Requirement: Explicitly approved defaults boundary
 Default-config SHALL require approved A5, remain agent-agnostic and introduce no

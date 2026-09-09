@@ -12,6 +12,8 @@ round. --route defaults to review; missing/unknown routes fail without falling b
 to engineer. --timeout defaults to 1800 seconds and accepts integers 1 through 7200.
 Reject duplicate/unknown flags, empty/missing values, invalid topics and operands
 before effects. No new config key, environment variable or runtime dependency.
+Until default-config ships, configure a review route before using this command;
+include that prerequisite in its README and REFERENCE instructions.
 
 Require --change or --brief (both allowed). The caller supplies --change for every
 OpenSpec-origin lane, including differing topic/change names. Resolve one simple
@@ -72,8 +74,10 @@ at that boundary is still failure; retained output is not a successful review re
 
 ## Template and machine-checkable record schema
 
-The engineering lane adds docs/REVIEW_TEMPLATE.md beside BRIEF_TEMPLATE.md, initially
-loaded from the tool installation. default-config later adds repository overrides.
+The engineering lane adds docs/REVIEW_TEMPLATE.md beside BRIEF_TEMPLATE.md and its
+AGENTS.md repository-map entry (documentation maintenance, not a contract amendment).
+Initially load the template from the tool installation; default-config later adds
+repository overrides.
 Use documented literal placeholders, no template engine. The required sections of
 the rendered brief are Role, Target and sources, Run budget, Review criteria,
 Required output, and Completion. A supplied brief cannot broaden write permissions.
@@ -81,8 +85,12 @@ Required output, and Completion. A supplied brief cannot broaden write permissio
 Required output must say explicitly: writing the designated PRIVATE RECORD FILE is
 mandatory completion work and is permitted despite the prohibition on changing
 tracked files. The reviewer must not write the public record, stage, commit, fix,
-rebase, promote, push or send work back to an engineer. Only temporary test fixtures
-and that gitignored private record may be written. A chat verdict is insufficient.
+rebase, promote, push or send work back to an engineer. Nothing may be created or
+modified inside the reviewed lane worktree, tracked or untracked, including ignored
+scratch. All test/mutation fixtures and temporary copies belong under the system
+temp directory and must be cleaned up; direct caches/build outputs there too, or
+report the check as unavailable. Within repository checkouts, only the designated
+canonical gitignored private record may be written. A chat verdict is insufficient.
 
 Default run budget is zero build/test/prepare/install/check commands. An explicit
 Review run budget section in --brief may authorize exact commands with a finite
@@ -145,8 +153,8 @@ Every tests_pass=true entry needs exit_code=0 and a witness object with kind
 (negative-control or mutation), command, cwd, exit_code and result, plus a nonempty
 observed_failure explaining the detection expected and actually seen. A failure
 must be observed, not merely a planned command or a green rerun. Witness execution
-counts against the run budget. A mutation uses a temporary copy with cleanup and
-never edits tracked files in the reviewed lane. Witnesses may be reused only when
+counts against the run budget. A mutation uses a system-temp copy with cleanup and
+never writes inside the reviewed lane. Witnesses may be reused only when
 their stated scope actually covers each linked claim.
 
 Tests-pass assertions belong only to these witnessed entries, not free prose.
@@ -174,20 +182,76 @@ omit a finding to make publication possible. The public envelope adds a Sanitiza
 section recording placeholder substitutions by category/count, without the original
 private values. Keep it within 120 lines and 64 KiB; never silently truncate evidence.
 
-Sanitize every projected string, including commands/results and Markdown links:
-convert paths proven inside the reviewed repository to relative paths, replace
-other absolute paths (POSIX, drive-letter, UNC and file-URL forms) with explicit
-placeholders, and strip user/host names using local OS identity/hostname aliases
-and the reviewer's declared identifier set. Do not gather or log credential stores.
-Public commands changed by sanitization are labeled redacted; exact commands remain
-in the private record, and public output must not pretend a substituted command
-was executed literally. Public finding locations must still be usable file:line;
-if redaction destroys that or the fix/evidence meaning, refuse publication.
+Use this deterministic policy for every projected string, including commands and
+results, after JSON/string decoding and NFC normalization. Alias inputs are exactly:
 
-Verify the transformed structure again, rescan all projected fields for absolute
-paths and known/declared private tokens, and require stable/idempotent redaction.
-Reject unresolved escapes/encodings, ambiguous token replacement, unsupported
-markup, leftover private material or an inability to preserve required fields.
+| Source | Category |
+| --- | --- |
+| os.userInfo().username | user |
+| basename(os.homedir()) | user |
+| os.hostname() and its first dot-separated label | host |
+| Every string in the record's Private identifiers array | private |
+
+Ignore empty OS aliases, but fail if an OS source cannot be read. Declared entries
+must be nonempty strings. Deduplicate case-insensitively; identical aliases use
+user before host before private. Remove duplicates of automatic aliases from the
+declared set. Do not read git author data, environment dumps or credential stores.
+Tests inject these exact OS values so host fixtures remain deterministic.
+
+First convert paths proven inside the reviewed repository to repository-relative
+paths. Replace other absolute POSIX, drive-letter, UNC and file-URL paths as whole
+paths, including their private segments. Then redact aliases, matching case-
+insensitively at whole path segments (delimited by slash/backslash or string ends)
+or Unicode word boundaries (adjacent characters must not be letters, combining
+marks, numbers or underscore). Never substring-replace a username inside an
+unrelated word. Match accepted aliases longest-first, using the category precedence
+above for ties, so a hostname and its first label do not compete. Preserve the case
+of unaffected text.
+
+Only these generated placeholders and categories are permitted:
+
+| Category | Placeholder |
+| --- | --- |
+| absolute-path | [ABS_PATH] |
+| user | [USER] |
+| host | [HOST] |
+| private | [PRIVATE] |
+
+Sanitization lists counts for all four categories, including zero, and identifies
+modified execution fields by array index/field as redacted, never by their original
+values. Repository-relative path conversions are counted separately as relative-path
+conversions and use no placeholder. Keep exact commands privately; a redacted public
+command must not be represented as a literal execution. Generated placeholders are
+reserved atoms, skipped on rescans; a reviewer cannot preinsert them into projected
+payload text to hide a value.
+
+The following are concrete refusal triggers, before writing any public file:
+
+- Ambiguous aliases: after deduplication, one remaining declared token is a proper
+  case-insensitive substring of another declared token. Do not guess which identity
+  was intended. Known nested automatic hostname aliases use the longest-first rule.
+- Ambiguous location: after safe repository-path conversion, any alias match would
+  replace text in a finding's file:line or a captured identity/base metadata field.
+  Refuse instead of changing the location or the commit/branch being asserted.
+- Ambiguous path: a candidate absolute path cannot be delimited or proven to be
+  repository-relative without guessing (for example an unquoted path with spaces
+  that admits multiple file boundaries). Do not silently redact only a prefix.
+- Unsupported payload: projected field strings must be plain single-line text,
+  restricted to ASCII U+0020 through U+007E after sanitization. Reject controls,
+  newlines, non-ASCII residue, backticks, angle brackets, square brackets, and the
+  Markdown emphasis sequences double-asterisk/double-underscore in reviewer payload.
+  Also reject percent-encoded octets, HTML entities and literal backslash-x/two-hex
+  or backslash-u/four-hex escape sequences remaining after one JSON decode. These
+  include inline links/images, HTML, fenced code and encoded concealment. Structural
+  schema tags, JSON fences and the CLI's own placeholders are not payload markup.
+- Residual private content: an absolute path or alias still matches on rescan,
+  redaction changes on a second pass, or a required finding/fix/evidence field is
+  lost. No transliteration, semantic rewrite or silent truncation is allowed.
+
+Verify the transformed schema and require idempotence (identical second-pass text
+and zero additional substitutions). The v1 plain-text restriction intentionally
+refuses some otherwise benign Unicode/markup; retain those details privately and
+let the operator arrange a later explicitly numbered review with publishable wording.
 On any unverifiable case, exit 2 with no public record and a concise diagnostic;
 retain the private file for operator inspection. Never echo private content.
 This verifies a documented mechanical sanitization policy; it cannot certify the
@@ -206,13 +270,20 @@ publication, including stalled dispatch calls. Bound subprocesses by remaining t
 
 Poll the one expected private file with foreground timers (250 ms to 1 s), not a
 busy loop. Do not infer completion from an agent footer, exit or chat message.
-Publication and final integrity checks must complete before reporting a verdict.
+For combined delivery or completed R-ii, publication and final integrity checks must
+complete before reporting a verdict. The pre-agreed split below defines R-i's
+private-only completion point.
 
 | Exit | Result on stdout |
 | --- | --- |
 | 0 | PASS followed by a newline; public record successfully written. |
 | 1 | NEEDS-WORK or FAIL followed by a newline; public record successfully written. |
 | 2 | No verdict; timeout, missing/incomplete/invalid record, dirty/moved target, unverified sanitization, dispatch/preflight/write failure or interruption. |
+
+Review refusals must not use the shared fail() helper, which exits 1. Use a
+review-specific exit-2 error boundary, including failures surfaced by shared config,
+path or dispatch helpers; preserve those helpers' behavior for other commands.
+Every refusal test asserts exactly 2 and empty verdict stdout, not just nonzero.
 
 Gate disclosure, diagnostics and paths go to stderr. Timeout, Ctrl-C, SIGTERM or
 stdout closure ends local children/timers promptly with exit 2, never a synthetic
@@ -228,6 +299,16 @@ needs a fresh lane check; the old record still names its original reviewed SHA.
 Do not exempt evidence from clean-tree checks or trigger self-review after a
 record-only commit. Promotion always revalidates and never depends on a verdict.
 
+REFERENCE must name the late-publication failure: an exit-2 result can leave an
+untracked public file if a concurrent mutation is detected after its creation.
+Inspect that file and the private evidence before deciding to commit or remove it;
+never treat it as a successful command result. A commit changes HEAD, so a new check
+and explicitly selected round target that new SHA. To reuse the same HEAD/round,
+the operator must separately authorize removing both old output files after
+inspection, ensure the old reviewer cannot still write, and restore a clean tree.
+Otherwise retain the evidence and choose a fresh round. The CLI does none of this
+cleanup and never bypasses its occupied-output refusal.
+
 Recommend an explicit higher review route for round 3 or later: review-xhigh for
 adversarial, crypto or semantics work, review-max after repeated NEEDS-WORK. Until
 those routes are configured or default-config ships, use operator-owned equivalents.
@@ -240,4 +321,29 @@ and round policy exceed one foreground review.
 Document syntax/defaults/flags in usage and the README command table, link the new
 template, and put gate/source/budget/schema/witness/sanitization/exit/recovery details
 in REFERENCE. Update shared rules to distinguish review-only permissions from
-engineering delivery. No AGENTS.md amendment is needed for review-cli.
+engineering delivery. No AGENTS.md contract amendment is needed for review-cli.
+
+## Pre-agreed split point
+
+Choose combined delivery or this exact split at dispatch, before implementation.
+Use the split if the combined scope exceeds one focused session; it needs no new
+product decision. The private-only first slice is useful on its own, and both
+slices include their own tests, docs, report, commit and post-commit gate.
+
+| Subphase / topic | Complete requirement blocks and acceptance | Depends on |
+| --- | --- | --- |
+| R-i / review-private | Own Explicit source round and captured target; Mandatory private reviewer output and finite checks; Machine-checkable review evidence; Tool-enforced unchanged lane; Single dispatch bounded observation and explicit outcomes; Offline tests and discoverable protocol. Deliver template/map, explicit source/round, gate disclosure, one existing-path dispatch, private validator and bounded wait/exit. Test source/flag/route/gate/path refusals with exact exit 2, all three private verdicts with exits 0/1, witness/schema/SHA errors, before/after tree checks, system-temp fixtures, timeout/signal/pipe cleanup and no public file created. | Current main; roots-config promoted for lane.mjs sequencing. |
+| R-ii / review-public | Own Orchestrator-only sanitized public record and After-check publication boundary. Deliver alias policy, projection, sanitization verification and publication only after the clean-tree check. Test every alias source/boundary/case/placeholder, ambiguity/markup/encoding/refusal, redaction counts/idempotence, meaningful locations, private retention, exclusive public creation, concurrent mutation and occupied-round recovery. Assert exact exit 2 on every refusal and retain R-i regressions. | review-private (R-i). |
+
+For R-i, the outcome table terminates at the validated private record and unchanged
+tree: PASS exits 0; NEEDS-WORK/FAIL exit 1; all refusals exit 2. Print the private path
+on stderr and create no public output. R-ii's After-check publication boundary adds
+the full-command requirement that stdout verdict/exit 0 or 1 wait for successful
+public generation and its final integrity check. There is no temporary user flag,
+alternate dispatch path or automatic transition between these deliverable versions.
+
+Partition the named complete requirement blocks into two OpenSpec changes and one
+dispatchable brief each before coding. Each owns docs/reports/<topic>.md and its
+acceptance; sync only delivered blocks. Do not check off the combined task or sync
+publication requirements after R-i alone. Consumers requiring full review-cli,
+including default-config, wait for R-ii; an operator can inspect R-i's private output.

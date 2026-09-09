@@ -6,8 +6,9 @@ working. Any capable agent can follow them through `lane dispatch`; no slash
 commands, generated agent integration, framework install, or runtime hook is needed.
 
 [The initiative report](../docs/SPEC-20260908.md) explains the selection, sequence,
-estimates, and operator rollout. All changes here are **proposed**, with unchecked
-tasks. This planning commit neither implements them nor approves contract amendments.
+estimates, and operator rollout. roots-config has promoted and its task is checked;
+the other change folders remain proposals with unchecked tasks. This planning
+addendum neither implements them nor approves contract amendments.
 All interactive UI is Ink in the terminal; no browser UI is planned.
 
 ## Layout and lifecycle
@@ -32,8 +33,8 @@ The review/configuration addendum has two more independent engineering lanes:
 
 | Change / dispatchable brief | Route / effort | Sequence and approval |
 | --- | --- | --- |
-| [review-cli](changes/review-cli/tasks.md) | engineer / High | No capability prerequisite beyond current main; dispatch after roots-config promotes because lane.mjs overlaps. No AGENTS.md amendment. |
-| [default-config](changes/default-config/tasks.md) | engineer / High | After review-cli promotes; requires approved A5. |
+| [review-cli](changes/review-cli/tasks.md) | engineer / High; combined or [R-i/R-ii split](changes/review-cli/design.md#pre-agreed-split-point) | No capability prerequisite beyond current main; roots-config sequencing is now satisfied. No contract amendment; map maintenance is allowed. |
+| [default-config](changes/default-config/tasks.md) | engineer / High; combined or [D-i/D-ii split](changes/default-config/design.md#pre-agreed-split-point) | After full review-cli (R-ii if split); approved A5 applies in D-i if split. |
 
 Use each tasks file's topic for subsequent lanes. Resolve its dependencies on local
 main before opening it. Check off its single task only after implementation,
@@ -101,6 +102,9 @@ set an explicit finite check budget; absent authorization means zero build/test 
 Every authorized build/test, including a negative control, waits for a clear load
 probe and consumes its stated budget. Reviewers must write the designated private
 record; that mandatory output is permitted by their otherwise read-only role.
+Before default-config ships, configure the review route first. Reviewers create
+nothing inside the lane worktree, including untracked/ignored scratch; any
+test/mutation fixtures live under the system temp directory and are cleaned up.
 
 The reviewer writes only the canonical checkout's gitignored
 .lane/reviews/<topic>/<head7>-rN.md, never the public record or tracked files. The
@@ -115,6 +119,9 @@ sanitization refuses publication. The CLI writes the public record only after
 those checks; it never stages or commits it. The operator inspects public safety
 and authorizes any subsequent commit/check/fix. A record's original SHA never
 silently becomes evidence for a newer commit.
+If the pre-agreed review split is selected, R-i ends at a validated private record
+with no public output; R-ii adds verified sanitization and the publication boundary.
+Default-config waits for that complete boundary, not just the private-only command.
 
 Recommend a higher explicitly selected route for round 3 or later: review-xhigh
 for adversarial/crypto/semantics work, review-max after repeated NEEDS-WORK. Before
@@ -153,8 +160,9 @@ retroactively describes the placement already delivered in 1a.
 **A3 — replace the Herdr-optional bullet in Product contract (board-actions, 2b-ii):**
 
 > Herdr integration is optional for git-only operations and offline board snapshots.
-> Dispatch, dispatch-from-idea, live discovery, and session focus require an available
-> Herdr server. The optional board UI invokes lane CLI interfaces for observations
+> Dispatch in any form, including review dispatch and dispatch-from-idea, live
+> discovery, and session focus require an available Herdr server. The optional board
+> UI invokes lane CLI interfaces for observations
 > and actions; it does not implement a second git or Herdr control path. Reconnection
 > may restore display subscriptions only and must never replay lifecycle actions.
 
@@ -174,13 +182,19 @@ retroactively describes the placement already delivered in 1a.
 > operator-supplied configuration and must not embed personal or organization-specific
 > paths, accounts, credentials, endpoints, or identities. Agent kind and model remain
 > configurable; unavailable defaults fail visibly without silent model substitution
-> or retries. Document every public configuration key and environment variable in
+> or retries. Under the public-file rule above, documented public vendor product
+> identifiers used as overridable defaults are not organization-specific defaults.
+> Document every public configuration key and environment variable in
 > README.md.
 
 A5 is proposed only for default-config. Public model names are portable identifiers,
 but packaged model policy changes the previous operator-owned default boundary;
 explicit approval keeps that exception narrow. review-cli needs no A5 or other new
 amendment. This planning addendum does not edit AGENTS.md.
+Ordinary review deliberately uses the agent's default effort with no flag, rather
+than fixed high. Ratify that choice with A5; a complete route override can pin high.
+Repository-map entries for the new template/defaults are ordinary documentation
+maintenance, authorized in their engineering lanes without a separate amendment.
 
 A2 clarifies the display-only exception already identified in the promoted board
 reviews. A3 makes the requested CLI boundary explicit; it does not permit a job
