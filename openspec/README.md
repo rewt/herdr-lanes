@@ -8,6 +8,7 @@ commands, generated agent integration, framework install, or runtime hook is nee
 [The initiative report](../docs/SPEC-20260908.md) explains the selection, sequence,
 estimates, and operator rollout. All changes here are **proposed**, with unchecked
 tasks. This planning commit neither implements them nor approves contract amendments.
+All interactive UI is Ink in the terminal; no browser UI is planned.
 
 ## Layout and lifecycle
 
@@ -26,6 +27,13 @@ Create the lane from the current canonical checkout, then dispatch its tasks fil
 lane open roots
 lane dispatch roots --route engineer @openspec/changes/roots-config/tasks.md
 ```
+
+The review/configuration addendum has two more independent engineering lanes:
+
+| Change / dispatchable brief | Route / effort | Sequence and approval |
+| --- | --- | --- |
+| [review-cli](changes/review-cli/tasks.md) | engineer / High | No capability prerequisite beyond current main; dispatch after roots-config promotes because lane.mjs overlaps. No AGENTS.md amendment. |
+| [default-config](changes/default-config/tasks.md) | engineer / High | After review-cli promotes; requires approved A5. |
 
 Use each tasks file's topic for subsequent lanes. Resolve its dependencies on local
 main before opening it. Check off its single task only after implementation,
@@ -57,7 +65,9 @@ to package manifests, installation steps, or `npm test`.
 
 ## Common delivery rules
 
-Each task includes its relevant requirements and adds these shared requirements:
+Each engineering task includes its requirements and these shared delivery rules.
+Independent reviewers follow the narrower review protocol below, not engineering
+instructions to add tests, edit files, commit, or run unbudgeted baseline checks.
 
 1. Read `AGENTS.md`, `README.md`, `HANDOFF.md`, `docs/REFERENCE.md`, and its change
    artifacts completely. Work only in the dispatched repository and lane worktree.
@@ -81,6 +91,36 @@ Each task includes its relevant requirements and adds these shared requirements:
    another report commit to store that final line: it would stale the gate.
 7. A gate is not a review verdict. Promotion always revalidates, regardless of board
    metadata, report wording, completion flags, or a previously green gate.
+
+## Independent review protocol
+
+[review-cli](changes/review-cli/design.md) specifies the reusable reviewer template
+and one foreground command. The operator supplies an explicit --round and selects
+--change for an OpenSpec-origin lane, otherwise --brief. Additional brief text can
+set an explicit finite check budget; absent authorization means zero build/test runs.
+Every authorized build/test, including a negative control, waits for a clear load
+probe and consumes its stated budget. Reviewers must write the designated private
+record; that mandatory output is permitted by their otherwise read-only role.
+
+The reviewer writes only the canonical checkout's gitignored
+.lane/reviews/<topic>/<head7>-rN.md, never the public record or tracked files. The
+v1 schema requires a first line of **PASS**, **NEEDS-WORK** or **FAIL**, full
+Reviewed commit, [Major]/[Moderate]/[Minor] findings with file:line/fix, Re-executed
+commands/results with a negative-control or mutation witness behind every tests-pass
+claim, Non-claims and Unverified. The exact schema is maintained in the change/spec.
+
+lane review enforces unchanged HEAD and a clean tree before/after the reviewer,
+validates the private record and sanitizes a public projection. Unverifiable
+sanitization refuses publication. The CLI writes the public record only after
+those checks; it never stages or commits it. The operator inspects public safety
+and authorizes any subsequent commit/check/fix. A record's original SHA never
+silently becomes evidence for a newer commit.
+
+Recommend a higher explicitly selected route for round 3 or later: review-xhigh
+for adversarial/crypto/semantics work, review-max after repeated NEEDS-WORK. Before
+default-config ships, these are operator-configured route names. There is no automatic
+escalation or next round. Any review-fix loop stays with the operator or a separately
+authorized contrib wrapper with a fixed round cap; no wrapper is specified here.
 
 ## Proposed contract amendments — pending operator approval
 
@@ -126,6 +166,22 @@ retroactively describes the placement already delivered in 1a.
 > and lockfile isolated; git-only commands, plain/JSON board output, and npm test
 > must run without installing the UI package. Preserve Node.js 20 compatibility.
 
+**A5 — replace the repository-neutral configuration bullet in Change rules (default-config):**
+
+> Keep configuration repository-neutral. The tool may ship documented, overridable
+> built-in role routes using public vendor model names and effort settings, plus
+> packaged generic brief and review templates. Built-ins have lower precedence than
+> operator-supplied configuration and must not embed personal or organization-specific
+> paths, accounts, credentials, endpoints, or identities. Agent kind and model remain
+> configurable; unavailable defaults fail visibly without silent model substitution
+> or retries. Document every public configuration key and environment variable in
+> README.md.
+
+A5 is proposed only for default-config. Public model names are portable identifiers,
+but packaged model policy changes the previous operator-owned default boundary;
+explicit approval keeps that exception narrow. review-cli needs no A5 or other new
+amendment. This planning addendum does not edit AGENTS.md.
+
 A2 clarifies the display-only exception already identified in the promoted board
 reviews. A3 makes the requested CLI boundary explicit; it does not permit a job
 system. A4 extends the existing Ink/React exception only as far as the chosen official
@@ -146,12 +202,19 @@ Default to machine scope, with `--repo <path>` as a canonical-repository filter.
 Identity groups represent development-root paths, not author-email groups; the CLI
 does not assign identities. Show git identity only through existing git tooling.
 
-Keep review records in each target repository's tracked
+Keep public review records in each target repository's trackable
 `docs/reviews/<topic>/<head7>-r<N>.md`. Each record names the full reviewed SHA,
 verdict, findings, test evidence, and limits, uses public-safe prose, and contains
 no raw transcript or local paths. Historical reviews remain immutable evidence;
 they do not make a newer commit reviewed or green. Private source material stays
-local. No review writer, review enforcement, or remote policy is added to the CLI.
+local. The proposed review-cli writes only the validated, sanitized public projection;
+it adds no review-based promotion enforcement or remote policy.
+
+[default-config](changes/default-config/design.md) proposes the eight overridable
+role profiles, engineer-equivalent shipped dispatch, built-in source provenance and
+repository-or-installed template lookup. Configuration stays optional for those
+defaults; agent installation/authentication and repository validation remain operator
+concerns. Templates and routes cannot weaken the review protocol above.
 
 New workspace labels include repository and root identity:
 `<root-label>/<repo-name>:lane-<topic>`. Add a short identity digest when readable

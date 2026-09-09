@@ -306,6 +306,27 @@ Living log for agents maintaining this repository. Newest entry last.
   No contract amendment or additional approval is needed for roots-config; no push,
   promotion, archive, or independent review was performed.
 
+## 2026-09-09 — foreground review and built-in configuration proposals
+
+- Added review-cli and default-config OpenSpec changes, each with one complete
+  engineer-route brief. Updated the report table, rollout checklist and guide;
+  stated that interactive UI is Ink in the terminal with no browser UI planned.
+- Review uses explicit rounds and PASS/NEEDS-WORK/FAIL, full-SHA/schema checks,
+  witnessed test claims, private-only reviewer output, unchanged HEAD/clean-tree
+  enforcement and CLI-authored sanitized public evidence. No automatic fix loop.
+- Specified eight overridable built-in routes, engineer-equivalent shipped dispatch,
+  built-in source attribution and repository/installed template lookup. Proposed
+  exact A5 only in the guide; default-config requires approval after review-cli.
+  Review-cli follows roots-config promotion to serialize lane.mjs edits.
+- Strict OpenSpec validation passed 13/13 after a clear load probe, telemetry off
+  and concurrency 1. Links/anchors, single-task structure, public-text review and
+  git diff --check passed. Product code/tests/packages/AGENTS.md remain unchanged;
+  no product negative-control run was warranted. Reused the clean 55cd44c 49/49 gate
+  baseline; reserve one lane check for the final commit after a fresh clear probe.
+- CLI help and official Codex docs informed effort syntax; installed-client max
+  support, live reviews, agent/account availability and sanitization implementation
+  remain unverified future work. No source brief was copied and no push performed.
+
 ## 2026-09-09 — development-root configuration review corrections
 
 - Replaced the board's temporary `LANE_CONFIG` file with explicit resolved `--main`
