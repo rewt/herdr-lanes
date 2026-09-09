@@ -276,3 +276,32 @@ Living log for agents maintaining this repository. Newest entry last.
 - Reused the unchanged e0cb38c baseline: 49/49 tests. Run lane check once after
   this final commit and a fresh clear load probe; report its GATE outside git.
   No live feature, TTY/mouse, rollout or minimum-version checks were performed.
+
+## 2026-09-09 — development-root configuration
+
+- Added nearest-parent plus canonical-repository `.lane.json` layering, with bounded
+  home/root discovery, strict selected-file validation, shallow top-level replacement,
+  route-name merging, canonical linked-worktree resolution, and exact `LANE_CONFIG`
+  bypass. Existing registry/seams/prepare path meanings remain unchanged.
+- Added `worktree_root` as a defining-file-relative shared base with repository-name
+  placement. Preserved caller-relative `LANE_WORKTREE_ROOT` as the final repository
+  container, parent-derived `.worktrees` and legacy home defaults, and git-registered
+  paths for every already-open lane operation. Occupied ordinary/foreign paths remain
+  untouched and do not create a lane branch.
+- Added deterministic source-attributed `lane config` TSV output and documented its
+  syntax in CLI usage and the README table. The isolated board now receives resolved
+  canonical main/registry settings without exposing route environment values.
+- Baseline `npm test` passed 49/49. Before implementation, the expanded suite passed
+  50/57 with seven intended failures; the focused inherited-board control also failed
+  before its correction. Final `npm test` passed 58/58 in 8.105 seconds. With Herdr
+  absent, 57 passed and the one Herdr-dependent test skipped explicitly; all 58
+  deliberate negative controls failed.
+- Strict OpenSpec validation passed 12/12, `git diff --check` was clean, and an
+  added-line scan found no host/private source text. Verified with Node.js 20.19.4,
+  npm 10.8.2, git 2.54.0, and OpenSpec 1.6.0. Commands were serialized; the final
+  suite ran after a clear build/test process probe.
+- No live dispatch, real interactive board, Linux/Windows host, regular-file
+  permission denial, or path-creation race was tested. Broader realpath identity,
+  root labels/accounts, workspace-label changes, and migrations remain out of scope.
+  No contract amendment or additional approval is needed for roots-config; no push,
+  promotion, archive, or independent review was performed.

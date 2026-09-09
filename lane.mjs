@@ -8,12 +8,15 @@
 // current main branch, deterministic validation green, then a fast-forward-only
 // merge into local main. No merge commits, no push, no policy gates —
 // deterministic tests decide acceptance and git truth decides everything
-// else. Configuration lives in <repo>/.lane.json (see README).
+// else. Configuration is layered from parent and repository .lane.json files
+// (see README).
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { constants as osConstants, homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import {
+  existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync,
+} from "node:fs";
+import { constants as osConstants, homedir, tmpdir } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
@@ -43,8 +46,9 @@ const REPO_ROOT = (() => {
     return REPO;
   }
 })();
-// Repository-owned configuration: <repo>/.lane.json (or $LANE_CONFIG). Every
-// key is optional.
+// Configuration comes from the nearest eligible parent .lane.json followed by
+// the canonical checkout's .lane.json. $LANE_CONFIG selects exactly one file.
+// Every key is optional.
 //   main      integration branch (default "main")
 //   validate  shell command that must exit 0 before a fast-forward
 //             (default "npm test"; $LANE_VALIDATE overrides at run time)
@@ -62,18 +66,153 @@ const REPO_ROOT = (() => {
 //   registry  JSON session-registry path for `board` (default
 //             ".lane/sessions.json", relative to the repository root)
 //   seams_doc path of a topic map for kept unfinished work, shown by `seams`
-const CONFIG = (() => {
-  const file = process.env.LANE_CONFIG ?? join(REPO, ".lane.json");
-  try {
-    return JSON.parse(readFileSync(file, "utf8"));
-  } catch {
-    return {};
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function requireString(config, key, file) {
+  if (Object.hasOwn(config, key) && typeof config[key] !== "string") {
+    fail(`invalid lane config ${file}: ${key} must be a string`);
   }
+}
+
+function requireStringArray(config, key, label, file) {
+  if (!Object.hasOwn(config, key)) return;
+  if (!Array.isArray(config[key]) || config[key].some((value) => typeof value !== "string")) {
+    fail(`invalid lane config ${file}: ${label}.${key} must be an array of strings`);
+  }
+}
+
+function validateDispatch(config, label, file, { route = false } = {}) {
+  if (!isRecord(config)) fail(`invalid lane config ${file}: ${label} must be an object`);
+  for (const key of ["kind", "model", ...(route ? ["use"] : [])]) {
+    if (Object.hasOwn(config, key) && typeof config[key] !== "string") {
+      fail(`invalid lane config ${file}: ${label}.${key} must be a string`);
+    }
+  }
+  requireStringArray(config, "env", label, file);
+  requireStringArray(config, "args", label, file);
+}
+
+function validateConfig(config, file) {
+  if (!isRecord(config)) fail(`invalid lane config ${file}: top level must be an object`);
+  for (const key of ["main", "validate", "registry", "seams_doc", "worktree_root"]) {
+    requireString(config, key, file);
+  }
+  if (Object.hasOwn(config, "prepare")) {
+    if (!Array.isArray(config.prepare)) {
+      fail(`invalid lane config ${file}: prepare must be an array`);
+    }
+    for (const [index, step] of config.prepare.entries()) {
+      if (!isRecord(step) || typeof step.run !== "string" ||
+          (Object.hasOwn(step, "unless") && typeof step.unless !== "string")) {
+        fail(`invalid lane config ${file}: prepare[${index}] must have string run and optional string unless`);
+      }
+    }
+  }
+  if (Object.hasOwn(config, "dispatch")) validateDispatch(config.dispatch, "dispatch", file);
+  if (Object.hasOwn(config, "routes")) {
+    if (!isRecord(config.routes)) fail(`invalid lane config ${file}: routes must be an object`);
+    for (const [name, route] of Object.entries(config.routes)) {
+      validateDispatch(route, `routes.${name}`, file, { route: true });
+    }
+  }
+}
+
+function readConfig(file, { required = false } = {}) {
+  if (!required && !existsSync(file)) return undefined;
+  let text;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch (error) {
+    fail(`cannot read lane config ${file}: ${error.message}`);
+  }
+  let config;
+  try {
+    config = JSON.parse(text);
+  } catch (error) {
+    fail(`invalid lane config ${file}: ${error.message}`);
+  }
+  validateConfig(config, file);
+  return config;
+}
+
+function within(path, boundary) {
+  const offset = relative(boundary, path);
+  return offset === "" || (offset !== ".." && !offset.startsWith(`..${sep}`) && !isAbsolute(offset));
+}
+
+function nearestParentConfig(repository) {
+  const home = resolve(homedir());
+  if (resolve(repository) === home) return undefined;
+  const boundedByHome = within(repository, home);
+  let directory = dirname(repository);
+  while (dirname(directory) !== directory) {
+    if (boundedByHome && !within(directory, home)) break;
+    if (boundedByHome && directory === home) break;
+    const candidate = join(directory, ".lane.json");
+    if (existsSync(candidate)) return candidate;
+    directory = dirname(directory);
+  }
+  return undefined;
+}
+
+const CALLER_CWD = process.cwd();
+const EXPLICIT_CONFIG = process.env.LANE_CONFIG !== undefined;
+const REPOSITORY_CONFIG_FILE = join(REPO_ROOT, ".lane.json");
+const PARENT_CONFIG_FILE = EXPLICIT_CONFIG ? undefined : nearestParentConfig(REPO_ROOT);
+const CONFIG_LAYERS = (() => {
+  if (EXPLICIT_CONFIG) {
+    const file = resolve(CALLER_CWD, process.env.LANE_CONFIG);
+    return [{ file, config: readConfig(file, { required: true }) }];
+  }
+  const layers = [];
+  if (PARENT_CONFIG_FILE !== undefined) {
+    layers.push({ file: PARENT_CONFIG_FILE, config: readConfig(PARENT_CONFIG_FILE, { required: true }) });
+  }
+  const repository = readConfig(REPOSITORY_CONFIG_FILE);
+  if (repository !== undefined) layers.push({ file: REPOSITORY_CONFIG_FILE, config: repository });
+  return layers;
+})();
+const { config: CONFIG, sources: CONFIG_SOURCES, routeSources: ROUTE_SOURCES } = (() => {
+  const config = {};
+  const sources = new Map();
+  const routeSources = new Map();
+  for (const layer of CONFIG_LAYERS) {
+    for (const [key, value] of Object.entries(layer.config)) {
+      if (key === "routes") {
+        config.routes = { ...(config.routes ?? {}), ...value };
+        for (const name of Object.keys(value)) routeSources.set(name, layer.file);
+      } else {
+        config[key] = value;
+        sources.set(key, layer.file);
+      }
+    }
+  }
+  return { config, sources, routeSources };
 })();
 const MAIN = CONFIG.main ?? "main";
 const LANE_PREFIX = "lane/";
-const WORKTREE_ROOT = process.env.LANE_WORKTREE_ROOT
-  ?? join(homedir(), ".herdr", "worktrees", REPO_ROOT.split("/").filter((x) => x !== "").pop());
+const REPO_NAME = basename(REPO_ROOT);
+const { path: WORKTREE_ROOT, source: WORKTREE_ROOT_SOURCE } = (() => {
+  if (process.env.LANE_WORKTREE_ROOT !== undefined) {
+    return { path: resolve(CALLER_CWD, process.env.LANE_WORKTREE_ROOT), source: "env" };
+  }
+  if (Object.hasOwn(CONFIG, "worktree_root")) {
+    const source = CONFIG_SOURCES.get("worktree_root");
+    return { path: join(resolve(dirname(source), CONFIG.worktree_root), REPO_NAME), source };
+  }
+  if (!EXPLICIT_CONFIG && PARENT_CONFIG_FILE !== undefined) {
+    return {
+      path: join(dirname(PARENT_CONFIG_FILE), ".worktrees", REPO_NAME),
+      source: PARENT_CONFIG_FILE,
+    };
+  }
+  return {
+    path: join(homedir(), ".herdr", "worktrees", REPO_NAME),
+    source: "default",
+  };
+})();
 const DEFAULT_VALIDATE = CONFIG.validate ?? "npm test";
 const TOOL_ROOT = dirname(fileURLToPath(import.meta.url));
 
@@ -121,6 +260,29 @@ function routes() {
       `${name}\tkind=${resolved.kind}\tmodel=${resolved.model ?? "(none)"}\targs=${JSON.stringify(resolved.args)}` +
         `\tuse=${resolved.use ?? "(none)"}\n`,
     );
+  }
+}
+
+function config() {
+  const rows = [
+    ["dispatch", CONFIG.dispatch ?? {}, CONFIG_SOURCES.get("dispatch") ?? "default"],
+    ["main", MAIN, CONFIG_SOURCES.get("main") ?? "default"],
+    ["prepare", CONFIG.prepare ?? [], CONFIG_SOURCES.get("prepare") ?? "default"],
+    ["registry", CONFIG.registry ?? ".lane/sessions.json", CONFIG_SOURCES.get("registry") ?? "default"],
+    ["seams_doc", CONFIG.seams_doc ?? null, CONFIG_SOURCES.get("seams_doc") ?? "default"],
+    [
+      "validate",
+      process.env.LANE_VALIDATE ?? DEFAULT_VALIDATE,
+      process.env.LANE_VALIDATE !== undefined ? "env" : (CONFIG_SOURCES.get("validate") ?? "default"),
+    ],
+    ["worktree_root", WORKTREE_ROOT, WORKTREE_ROOT_SOURCE],
+  ];
+  for (const name of routeNames()) {
+    rows.push([`routes.${name}`, configuredRoutes()[name], ROUTE_SOURCES.get(name)]);
+  }
+  rows.sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
+  for (const [key, value, source] of rows) {
+    process.stdout.write(`${key}\t${JSON.stringify(value)}\t${source}\n`);
   }
 }
 
@@ -599,17 +761,31 @@ function board(args) {
   if (!args.includes("--once") && !existsSync(join(boardRoot, "node_modules", "ink"))) {
     fail(`install board dependencies first: npm --prefix ${boardRoot} ci`);
   }
-  const run = args.includes("--once")
-    ? spawnSync(process.execPath, [join(boardRoot, "cli.mjs"), "--repo", REPO, "--once"], {
-      cwd: REPO,
-      env: process.env,
-      stdio: "inherit",
-    })
-    : spawnSync("npm", ["--prefix", boardRoot, "run", "--silent", "start", "--", "--repo", REPO], {
-      cwd: REPO,
-      env: process.env,
-      stdio: "inherit",
-    });
+  // The isolated board entrypoints read one file. Give them the already-resolved
+  // canonical settings they consume, without exposing route environment values.
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "herdr-lanes-board-config-"));
+  const temporaryConfig = join(temporaryDirectory, "config.json");
+  writeFileSync(temporaryConfig, `${JSON.stringify({
+    main: MAIN,
+    registry: CONFIG.registry ?? ".lane/sessions.json",
+  })}\n`, { mode: 0o600 });
+  const boardEnvironment = { ...process.env, LANE_CONFIG: temporaryConfig };
+  let run;
+  try {
+    run = args.includes("--once")
+      ? spawnSync(process.execPath, [join(boardRoot, "cli.mjs"), "--repo", REPO_ROOT, "--once"], {
+        cwd: REPO_ROOT,
+        env: boardEnvironment,
+        stdio: "inherit",
+      })
+      : spawnSync("npm", ["--prefix", boardRoot, "run", "--silent", "start", "--", "--repo", REPO_ROOT], {
+        cwd: REPO_ROOT,
+        env: boardEnvironment,
+        stdio: "inherit",
+      });
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
   if (run.error?.code === "ENOENT") fail("npm is required to start the interactive board");
   if (run.status !== 0) {
     process.exit(run.status ?? 1);
@@ -618,6 +794,10 @@ function board(args) {
 
 const [command, topic, ...rest] = process.argv.slice(2);
 switch (command) {
+  case "config":
+    if (topic !== undefined) fail("usage: lane config");
+    config();
+    break;
   case "check":
     check([topic, ...rest].filter((argument) => argument !== undefined));
     break;
@@ -697,11 +877,12 @@ switch (command) {
     break;
   default:
     process.stdout.write(
-      "usage: lane <open|status|seams|routes|dispatch|prepare|check|rebase-check|verify-agent|promote|close|board> [topic] [base-ref]\n" +
+      "usage: lane <open|status|seams|routes|config|dispatch|prepare|check|rebase-check|verify-agent|promote|close|board> [topic] [base-ref]\n" +
         `  open <topic> [base]  cut lane/<topic> into a herdr worktree; base defaults to\n` +
         `                       ${MAIN} — pass a kept branch or archive/* tag to resume it\n` +
         "  seams [pattern]  list kept unfinished work (branches + archive tags)\n" +
         "  routes           list configured dispatch routes and resolved defaults\n" +
+        "  config           print resolved configuration as key, JSON value, and source\n" +
         "  dispatch <topic> [--route <name>] [--kind <agent>] [--model <m>] [@brief-file | prompt]\n" +
         "                   start a visible agent session (any herdr kind) in the\n" +
         "                   lane's workspace; defaults in .lane.json routes/dispatch\n" +

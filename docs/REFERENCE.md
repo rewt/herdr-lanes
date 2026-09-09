@@ -2,11 +2,13 @@
 
 ## Configuration
 
-`lane` reads `.lane.json` from the target repository root. Every key is optional:
+Every key is optional. A repository can inherit reusable settings from one parent
+`.lane.json` and override them in its own canonical-checkout `.lane.json`:
 
 ```json
 {
   "main": "main",
+  "worktree_root": "../.worktrees",
   "validate": "npm test",
   "registry": ".lane/sessions.json",
   "prepare": [
@@ -34,6 +36,7 @@
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `main` | `main` | Local integration branch |
+| `worktree_root` | see below | Shared base directory for repository worktree containers |
 | `validate` | `npm test` | Shell command required for promotion |
 | `registry` | `.lane/sessions.json` | Gitignored JSON array of sessions displayed by `board` |
 | `prepare` | none | `{unless, run}` steps for fresh worktrees |
@@ -49,8 +52,78 @@
 | `routes.<name>.use` | none | Operator note describing when to select the route; dispatch ignores it |
 | `seams_doc` | none | Optional task-map path printed by `seams` |
 
-Overrides: `LANE_CONFIG`, `LANE_VALIDATE`, and `LANE_WORKTREE_ROOT`. Do not put
-secrets in tracked configuration.
+### File discovery and merging
+
+Without `LANE_CONFIG`, `lane` identifies the canonical checkout through git's common
+directory. It searches upward from the canonical checkout's parent and loads only the
+nearest `.lane.json` it finds, then loads the canonical checkout's `.lane.json` if
+present. Invoking the command in a linked worktree therefore uses the same operational
+files as invoking it in main; a linked worktree's copy is not another layer.
+
+For a repository below the current user's home directory, the search excludes home
+and every ancestor above it. If the canonical checkout is home, no parent is searched.
+Outside home, the search stops before the filesystem root. A missing optional parent
+or repository file contributes nothing.
+
+Top-level keys merge shallowly, with the repository value replacing the parent value.
+Arrays such as `prepare`, `dispatch.env`, and `dispatch.args` never concatenate across
+files, and a repository `dispatch` object replaces the parent object as a whole. The
+only special case is `routes`: route names merge, while a repository route replaces
+the complete same-named parent route. Dispatch's documented global-to-route-to-CLI
+resolution occurs after this file merge, so its existing environment append behavior
+is unchanged.
+
+`LANE_CONFIG` selects exactly one file and bypasses both discovered layers. A relative
+`LANE_CONFIG` is resolved from the command's invoking directory. The selected file
+must exist. Selected files that cannot be read, contain malformed JSON, or give a
+known key the wrong type stop the command before git, validation, setup, or Herdr
+actions. Optional absent discovered files are allowed. Configuration is parsed as JSON
+only; values are not interpolated or executed during loading or `lane config`.
+
+### Worktree-root precedence
+
+`worktree_root` is a shared base. A relative value is resolved from the directory of
+the parent or repository file that defines it, then the canonical repository basename
+is appended. New lane paths use this order:
+
+| Winning setting | Repository worktree directory |
+| --- | --- |
+| `LANE_WORKTREE_ROOT` | `<env-directory>` |
+| Repository `worktree_root` | `<resolved-base>/<repo-name>` |
+| Parent `worktree_root` | `<resolved-base>/<repo-name>` |
+| Parent file present without the key | `<parent-directory>/.worktrees/<repo-name>` |
+| No parent and no key | `<home>/.herdr/worktrees/<repo-name>` |
+
+`LANE_WORKTREE_ROOT` intentionally keeps its earlier meaning: it is the final
+per-repository directory, so no repository segment is appended. A relative value is
+resolved from the invoking directory. When `LANE_CONFIG` is explicit and its one file
+omits `worktree_root`, the legacy home default applies; the selected file's directory
+does not count as discovered parent configuration.
+
+Only `worktree_root` is relative to its defining configuration file. `registry` and
+`seams_doc` remain relative to the canonical repository, and `prepare[].unless`
+remains relative to the worktree being prepared. Changing root settings affects only
+new lanes. Every existing lane operation locates registered worktrees through git and
+never moves or adopts them.
+
+`LANE_VALIDATE` overrides `validate` at execution time. Do not put secrets in tracked
+configuration.
+
+### Explain configuration
+
+`lane config` prints deterministic tab-separated rows:
+
+```text
+key<TAB>JSON-value<TAB>source
+```
+
+It reports `dispatch`, `main`, `prepare`, `registry`, `seams_doc`, `validate`, the
+fully resolved per-repository `worktree_root`, and one `routes.<name>` row per merged
+route. Rows are sorted by key; JSON values stay on one line. Each source is `env`,
+`default`, or the absolute defining file path. A parent-derived `.worktrees` default
+names that parent file as its source. `LANE_VALIDATE` and `LANE_WORKTREE_ROOT` appear
+with source `env`; `LANE_CONFIG`-selected values name the selected file. The command
+does not run prepare/validate commands or contact Herdr.
 
 ## Check
 
@@ -261,6 +334,8 @@ lane open resumed-task archive/lane/old-task
 
 | Message | Action |
 | --- | --- |
+| `cannot read lane config ...` / `invalid lane config ...` | Fix the named selected file; lifecycle actions have not started |
+| `worktree path already exists` | Choose another root/topic, or move the occupant yourself only after verifying ownership |
 | `herdr workspace: none` | Start Herdr in the canonical checkout and retry dispatch |
 | `lane worktree is not clean` | Commit or stash lane changes |
 | `current worktree is not clean` | Commit or stash changes before `lane check` |

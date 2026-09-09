@@ -1,5 +1,6 @@
 {
   "main": "main",
+  "worktree_root": "../.worktrees",
   "validate": "npm test",
   "registry": ".lane/sessions.json",
   "prepare": [

@@ -19,8 +19,9 @@ In the repository you want agents to work on:
 cp /path/to/herdr-lanes/.lane.json.example .lane.json
 ```
 
-Edit `.lane.json` so `validate`, `prepare`, `dispatch.kind`, and the named `routes`
-match the project. Put the project's instructions in `AGENTS.md` before opening lanes.
+Edit `.lane.json` so `worktree_root`, `validate`, `prepare`, `dispatch.kind`, and the
+named `routes` match the project. Put the project's instructions in `AGENTS.md` before
+opening lanes. A relative `worktree_root` is resolved from the file that defines it.
 Add `.lane/` to the target repository's `.gitignore`; `lane check` and `lane board`
 write runtime state there, and that state must not make a worktree dirty.
 
@@ -41,6 +42,7 @@ lane open docs-change
 lane dispatch docs-change --route engineer @/absolute/path/to/docs-change-brief.md
 
 lane routes
+lane config
 lane status
 ```
 
@@ -66,7 +68,7 @@ pushes.
 
 ```text
 lane/<topic> branch
-~/.herdr/worktrees/<repo>/lane-<topic>
+<worktree_root>/<repo>/lane-<topic>
 Herdr workspace for that worktree
 ```
 
@@ -87,6 +89,7 @@ rebases automatically when clean and refuses with a file list when conflicts exi
 | `lane open <topic> [base-ref]` | Create a lane |
 | `lane dispatch <topic> [--route <name>] [options] [@brief \| prompt]` | Start and prompt its agent |
 | `lane routes` | List resolved named dispatch routes |
+| `lane config` | Print resolved configuration values and sources |
 | `lane status` | Show lane state and overlap |
 | `lane check [--cmd <validate command>]` | Record validation against this worktree's HEAD |
 | `lane promote <topic>` | Rebase, validate, and fast-forward local main |
@@ -98,6 +101,13 @@ rebases automatically when clean and refuses with a file list when conflicts exi
 
 Requirements: Node.js 20+, git 2.38+, and [Herdr](https://herdr.dev) 0.8+ for
 dispatch. Herdr is optional for git-only lane operations.
+
+Configuration may be shared in the nearest parent `.lane.json` and overridden by the
+canonical repository's `.lane.json`. `LANE_CONFIG` selects one file instead;
+`LANE_VALIDATE` overrides validation, and `LANE_WORKTREE_ROOT` preserves its legacy
+meaning as the final per-repository directory. Relative environment paths resolve
+from the invoking shell's directory. See the reference for the exact boundaries and
+merge rules.
 
 ## Lane board
 
