@@ -83,10 +83,13 @@ only; values are not interpolated or executed during loading or `lane config`.
 Because `validate` and `prepare[].run` are trusted shell commands, place shared parent
 configuration only in directories controlled by the operator.
 
-Canonical-checkout derivation does not yet support repositories used as Git
-submodules: their common directory can resolve inside the superproject's
-`.git/modules`, producing the wrong configuration root and repository name. Use lane
-with top-level repositories until canonical submodule identity is addressed.
+Repository identity is the real absolute path returned by Git for its common
+directory. The canonical checkout is the non-linked checkout whose own Git directory
+is that common directory; when invoked in the primary checkout, this also supports a
+Git directory stored separately from the working tree. A bare repository or a linked
+invocation for which Git cannot identify that primary checkout fails before lane
+mutation. Repository basenames, remotes, workspace labels, and author settings are
+never treated as ownership.
 
 ### Worktree-root precedence
 
@@ -112,7 +115,18 @@ Only `worktree_root` is relative to its defining configuration file. `registry` 
 `seams_doc` remain relative to the canonical repository, and `prepare[].unless`
 remains relative to the worktree being prepared. Changing root settings affects only
 new lanes. Every existing lane operation locates registered worktrees through git and
-never moves or adopts them.
+never moves or adopts them. Before using one, `lane` verifies that its real Git common
+directory is the canonical repository identity and that its checked-out branch is the
+expected lane branch.
+
+Before creating a lane, `lane` resolves the selected base, repository worktree
+directory, destination, and existing ancestors through real paths. It refuses a
+destination outside the selected base; in or equal to the canonical checkout, a
+registered checkout, or another repository; or already occupied by a foreign
+repository. These refusals happen before branch creation or a Herdr mutation. The
+created path and Git identity are checked again after Git or Herdr returns. There is
+no automatic temporary-directory fallback. Choose distinct worktree bases when two
+repositories would otherwise occupy the same destination.
 
 `LANE_VALIDATE` overrides `validate` at execution time. Do not put secrets in tracked
 configuration.
@@ -246,6 +260,20 @@ herdr workspace create --cwd /path/to/repository --label repository --focus
 
 Without Herdr, `open` falls back to `git worktree`; `dispatch` is unavailable.
 
+New lane workspace labels use `<root-label>/<repo-name>:lane-<topic>`. The root is
+the real directory containing the inherited parent configuration, or the canonical
+repository's real parent when no parent configuration is inherited. If the readable
+label exceeds 64 Unicode code points or matches another identity, `lane` keeps
+grapheme-safe root/repository/topic fragments and appends a SHA-256 identity suffix.
+Digest collisions lengthen the suffix while fragment budgets shrink to retain the
+bound. Existing open workspace labels are not renamed.
+
+Workspace controls use opaque Herdr IDs only after `repo_key`, `repo_root`,
+`checkout_path`, and linked-worktree metadata match Git's canonical identity and real
+path. A stale or foreign match is not used. New workspaces are created or opened from
+the canonical non-linked repository workspace even when `lane open` runs in a linked
+checkout.
+
 ## Dispatch options
 
 ```sh
@@ -269,7 +297,10 @@ unknown `--route` is rejected before any Herdr call.
 
 Before sending the brief, `dispatch` waits for the pane shell to reach the lane
 worktree, starts the agent with a unique name, and verifies the agent cwd reported by
-Herdr. A failed cwd check closes the tab without sending the brief.
+Herdr by real path. A failed cwd check closes the tab without sending the brief. New
+agent names use a readable topic stem plus repository-identity and random hexadecimal
+suffixes, while staying within Herdr's 32-character naming grammar. Lane never writes
+Git author name, email, signing, or other identity configuration.
 
 ## Model routing guidance
 
@@ -350,6 +381,9 @@ lane open resumed-task archive/lane/old-task
 | --- | --- |
 | `cannot read lane config ...` / `invalid lane config ...` | Fix the named selected file; lifecycle actions have not started |
 | `worktree path already exists` | Choose another root/topic, or move the occupant yourself only after verifying ownership |
+| `unsafe worktree path` | Move the configured base outside checkouts and remove symlink escapes; no fallback path is selected |
+| `worktree path belongs to another repository` | Give the repositories distinct worktree bases |
+| `repository identity mismatch` | Treat the Herdr entry as stale; reopen the correct canonical repository workspace |
 | `herdr workspace: none` | Start Herdr in the canonical checkout and retry dispatch |
 | `lane worktree is not clean` | Commit or stash lane changes |
 | `current worktree is not clean` | Commit or stash changes before `lane check` |

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   appendFileSync,
   chmodSync,
@@ -130,6 +131,145 @@ function writeExecutable(fixture, name, body) {
   writeFileSync(path, `#!/bin/sh\n${body}\n`);
   chmodSync(path, 0o755);
   return path;
+}
+
+function repositoryIdentity(repo) {
+  return realpathSync(git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
+}
+
+function identityDigest(root, repo, topic, length = 8) {
+  return createHash("sha256").update(`${root}\0${repo}\0${topic}`).digest("hex").slice(0, length);
+}
+
+function writeFakeHerdr(fixture, options = {}) {
+  const executable = join(fixture.bin, "herdr");
+  const log = join(fixture.root, "herdr.jsonl");
+  const state = join(fixture.root, "herdr-state.json");
+  const source = `#!${process.execPath}
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+const log = process.env.FAKE_HERDR_LOG;
+const statePath = process.env.FAKE_HERDR_STATE;
+const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : {};
+appendFileSync(log, JSON.stringify(args) + "\\n");
+const save = () => writeFileSync(statePath, JSON.stringify(state));
+const result = (id, value) => process.stdout.write(JSON.stringify({ id, result: value }) + "\\n");
+const workspace = (id, label, path, linked, repoKey = process.env.FAKE_HERDR_REPO_KEY) => ({
+  active_tab_id: id + ":t1", agent_status: "idle", focused: false, label,
+  number: 1, pane_count: 1, tab_count: 1, workspace_id: id,
+  worktree: {
+    checkout_path: path, is_linked_worktree: linked, repo_key: repoKey,
+    repo_name: process.env.FAKE_HERDR_REPO_NAME, repo_root: process.env.FAKE_HERDR_REPO_ROOT,
+  },
+});
+if (args[0] === "workspace" && args[1] === "list") {
+  const workspaces = [workspace("w-parent", "repository", process.env.FAKE_HERDR_REPO_ROOT, false)];
+  if (process.env.FAKE_HERDR_CALLER_PATH) {
+    workspaces.push(workspace("w-caller", "caller-lane", process.env.FAKE_HERDR_CALLER_PATH, true));
+  }
+  if (state.opened) {
+    workspaces.push(workspace("w-lane", state.label, process.env.FAKE_HERDR_LANE_PATH, true));
+  }
+  if (process.env.FAKE_HERDR_STALE_ID) {
+    workspaces.push(workspace(
+      process.env.FAKE_HERDR_STALE_ID,
+      process.env.FAKE_HERDR_STALE_LABEL || "stale-label",
+      process.env.FAKE_HERDR_LANE_PATH,
+      true,
+      process.env.FAKE_HERDR_FOREIGN_REPO_KEY,
+    ));
+  }
+  workspaces.push(...JSON.parse(process.env.FAKE_HERDR_EXTRA_WORKSPACES || "[]"));
+  result("cli:workspace:list", { type: "workspace_list", workspaces });
+} else if (args[0] === "worktree" && args[1] === "list") {
+  const openId = state.opened ? "w-lane" : process.env.FAKE_HERDR_STALE_ID;
+  const worktrees = [{
+    branch: "main", is_bare: false, is_detached: false, is_linked_worktree: false,
+    is_prunable: false, label: "repository", open_workspace_id: "w-parent",
+    path: process.env.FAKE_HERDR_REPO_ROOT,
+  }];
+  if (process.env.FAKE_HERDR_LANE_PATH) worktrees.push({
+    branch: process.env.FAKE_HERDR_LANE_BRANCH, is_bare: false, is_detached: false,
+    is_linked_worktree: true, is_prunable: false, label: state.label || "lane",
+    ...(openId ? { open_workspace_id: openId } : {}), path: process.env.FAKE_HERDR_LANE_PATH,
+  });
+  result("cli:worktree:list", {
+    source: {
+      repo_key: process.env.FAKE_HERDR_REPO_KEY,
+      repo_name: process.env.FAKE_HERDR_REPO_NAME,
+      repo_root: process.env.FAKE_HERDR_REPO_ROOT,
+      source_checkout_path: process.env.FAKE_HERDR_REPO_ROOT,
+      source_workspace_id: "w-parent",
+    },
+    type: "worktree_list", worktrees,
+  });
+} else if (args[0] === "worktree" && args[1] === "create") {
+  process.exit(1);
+} else if (args[0] === "worktree" && args[1] === "open") {
+  if (process.env.FAKE_HERDR_NO_REPAIR !== "1") {
+    state.opened = true;
+    state.label = args[args.indexOf("--label") + 1];
+    save();
+  }
+  result("cli:worktree:open", { type: "worktree_open", workspace_id: "w-lane" });
+} else if (args[0] === "worktree" && args[1] === "remove") {
+  result("cli:worktree:remove", { type: "worktree_remove", workspace_id: args[3] });
+} else if (args[0] === "tab" && args[1] === "create") {
+  result("cli:tab:create", {
+    type: "tab_create", tab: { tab_id: "w-lane:t2", workspace_id: "w-lane" },
+    root_pane: { pane_id: "w-lane:p2", tab_id: "w-lane:t2", workspace_id: "w-lane" },
+  });
+} else if (args[0] === "pane" && args[1] === "get") {
+  result("cli:pane:get", { type: "pane_get", pane: {
+    pane_id: "w-lane:p2", foreground_cwd: process.env.FAKE_HERDR_LANE_PATH,
+  } });
+} else if (args[0] === "agent" && args[1] === "start") {
+  state.agent = args[2];
+  save();
+  result("cli:agent:start", { type: "agent_start", name: state.agent, pane_id: "w-lane:p2" });
+} else if (args[0] === "agent" && args[1] === "list") {
+  result("cli:agent:list", { type: "agent_list", agents: state.agent ? [{
+    agent_status: "idle", cwd: process.env.FAKE_HERDR_LANE_PATH, name: state.agent,
+    pane_id: "w-lane:p2", workspace_id: "w-lane",
+  }] : [] });
+} else if (args[0] === "agent" && args[1] === "read") {
+  process.stdout.write("");
+} else if (args[0] === "agent" && args[1] === "prompt") {
+  result("cli:agent:prompt", { type: "agent_prompt", name: args[2] });
+} else if (args[0] === "tab" && args[1] === "close") {
+  result("cli:tab:close", { type: "tab_close", tab_id: args[2] });
+} else {
+  process.stderr.write("unsupported fake Herdr command: " + args.join(" ") + "\\n");
+  process.exit(2);
+}
+`;
+  writeFileSync(executable, source);
+  chmodSync(executable, 0o755);
+  Object.assign(fixture.env, {
+    FAKE_HERDR_LOG: log,
+    FAKE_HERDR_STATE: state,
+    FAKE_HERDR_REPO_KEY: repositoryIdentity(fixture.repo),
+    FAKE_HERDR_REPO_NAME: options.repoName ?? fixture.repo.split("/").at(-1),
+    FAKE_HERDR_REPO_ROOT: fixture.repo,
+    FAKE_HERDR_LANE_PATH: options.lanePath,
+    FAKE_HERDR_LANE_BRANCH: options.branch,
+    FAKE_HERDR_CALLER_PATH: options.callerPath,
+    FAKE_HERDR_EXTRA_WORKSPACES: JSON.stringify(options.extraWorkspaces ?? []),
+    FAKE_HERDR_STALE_ID: options.staleId,
+    FAKE_HERDR_STALE_LABEL: options.staleLabel,
+    FAKE_HERDR_FOREIGN_REPO_KEY: options.foreignRepoKey,
+    FAKE_HERDR_NO_REPAIR: options.noRepair ? "1" : undefined,
+  });
+  for (const [key, value] of Object.entries(fixture.env)) {
+    if (value === undefined) delete fixture.env[key];
+  }
+  return {
+    log,
+    calls() {
+      if (!existsSync(log)) return [];
+      return readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
+    },
+  };
 }
 
 test("open creates a lane and refuses duplicate, invalid, and unresolved inputs", () => {
@@ -626,7 +766,7 @@ test("config layers the nearest parent and canonical repository with attributed 
     writeFileSync(repoConfig, `${JSON.stringify({
       main: "main",
       validate: `touch '${shouldNotRun}'`,
-      worktree_root: "repo-trees",
+      worktree_root: "../repo-trees",
       prepare: [{ unless: "repo.marker", run: `touch '${shouldNotRun}'` }],
       dispatch: { kind: "codex", env: ["REPO=1"], args: ["--repo"] },
       routes: {
@@ -659,7 +799,7 @@ test("config layers the nearest parent and canonical repository with attributed 
       source: parentConfig,
     });
     assert.deepEqual(rows.get("worktree_root"), {
-      value: join(fixture.repo, "repo-trees", "repo"),
+      value: join(dirname(fixture.repo), "repo-trees", "repo"),
       source: repoConfig,
     });
     assert.ok(!existsSync(shouldNotRun));
@@ -667,7 +807,7 @@ test("config layers the nearest parent and canonical repository with attributed 
       env: discoveredEnv(fixture, { HOME: home }),
     });
     assert.equal(opened.status, 0, opened.stderr);
-    assert.ok(existsSync(join(fixture.repo, "repo-trees", "repo", "lane-repository-root-lane")));
+    assert.ok(existsSync(join(dirname(fixture.repo), "repo-trees", "repo", "lane-repository-root-lane")));
     negativeControl("layered config attribution and replacement");
   } finally {
     fixture.cleanup();
@@ -745,8 +885,9 @@ test("worktree roots honor parent-relative, parent-default, legacy, and caller-r
       source: "env",
     });
     const run = lane(fixture, ["open", "environment-lane"], { cwd: caller, env });
-    assert.equal(run.status, 0, run.stderr);
-    assert.ok(existsSync(join(caller, "environment-trees", "lane-environment-lane")));
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /unsafe worktree path.*canonical checkout/);
+    assert.ok(!existsSync(join(caller, "environment-trees", "lane-environment-lane")));
     assert.ok(!existsSync(join(caller, "environment-trees", "repo")));
     negativeControl("worktree root precedence matrix");
   } finally {
@@ -850,6 +991,274 @@ test("linked invocations use canonical repository config for explanation, check,
   }
 });
 
+test("same-named repositories in equal-labeled roots keep distinct paths, labels, agents, and git identities", () => {
+  const fixtures = [
+    makeFixture(undefined, { repoParts: ["development-a", "same-root", "same-repo"] }),
+    makeFixture(undefined, { repoParts: ["development-b", "same-root", "same-repo"] }),
+  ];
+  try {
+    const records = [];
+    for (const [index, fixture] of fixtures.entries()) {
+      const rootIdentity = realpathSync(join(fixture.root, `development-${index === 0 ? "a" : "b"}`, "same-root"));
+      writeFileSync(join(rootIdentity, ".lane.json"), `${JSON.stringify({ validate: "true" })}\n`);
+      fixture.env = discoveredEnv(fixture, { HOME: join(fixture.root, `development-${index === 0 ? "a" : "b"}`) });
+      const path = join(rootIdentity, ".worktrees", "same-repo", "lane-shared-topic");
+      const identity = repositoryIdentity(fixture.repo);
+      const readableLabel = "same-root/same-repo:lane-shared-topic";
+      const fake = writeFakeHerdr(fixture, {
+        lanePath: path,
+        branch: "lane/shared-topic",
+        extraWorkspaces: [{
+          active_tab_id: "w-foreign:t1",
+          agent_status: "idle",
+          focused: false,
+          label: readableLabel,
+          number: 8,
+          pane_count: 1,
+          tab_count: 1,
+          workspace_id: "w-foreign",
+          worktree: {
+            checkout_path: "/foreign/worktree",
+            is_linked_worktree: true,
+            repo_key: "/foreign/repository.git",
+            repo_name: "same-repo",
+            repo_root: "/foreign/same-repo",
+          },
+        }],
+      });
+      git(fixture.repo, ["config", "user.name", `Lane Identity ${index + 1}`]);
+      git(fixture.repo, ["config", "user.email", `identity-${index + 1}@example.invalid`]);
+      const before = git(fixture.repo, ["config", "--local", "--list"]);
+      const opened = lane(fixture, ["open", "shared-topic"]);
+      assert.equal(opened.status, 0, opened.stderr);
+      assert.ok(existsSync(path));
+      assert.match(opened.stdout, new RegExp(`repository identity: ${identity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+      assert.match(opened.stdout, new RegExp(`root identity: ${rootIdentity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+      const dispatched = lane(fixture, ["dispatch", "shared-topic", "implement the task"]);
+      assert.equal(dispatched.status, 0, dispatched.stderr);
+      const calls = fake.calls();
+      const create = calls.find((args) => args[0] === "worktree" && args[1] === "create");
+      const label = create[create.indexOf("--label") + 1];
+      const start = calls.find((args) => args[0] === "agent" && args[1] === "start");
+      const agent = start[2];
+      assert.match(label, /^same-root\/same-repo:lane-shared-topic~[0-9a-f]{8}$/);
+      assert.ok(label.endsWith(identityDigest(rootIdentity, identity, "shared-topic")));
+      assert.match(agent, /^[a-z][a-z0-9_-]{0,31}$/);
+      assert.ok(agent.includes(identityDigest(rootIdentity, identity, "shared-topic", 6)));
+      assert.equal(git(fixture.repo, ["config", "--local", "--list"]), before);
+      assert.equal(git(path, ["config", "user.name"]), `Lane Identity ${index + 1}`);
+      records.push({ agent, identity, label, path });
+    }
+    assert.notEqual(records[0].path, records[1].path);
+    assert.notEqual(records[0].identity, records[1].identity);
+    assert.notEqual(records[0].label, records[1].label);
+    assert.notEqual(records[0].agent, records[1].agent);
+    negativeControl("root/repository identity labels and agent names");
+  } finally {
+    for (const fixture of fixtures) fixture.cleanup();
+  }
+});
+
+test("long Unicode workspace labels retain graphemes and fragments within 64 code points", () => {
+  const accent = "e\u0301";
+  const family = "👨‍👩‍👧‍👦";
+  const fixtures = ["a", "b"].map((suffix) => makeFixture(undefined, {
+    repoParts: [`${accent.repeat(12)}-root-${suffix}`, `${family.repeat(3)}-repository-${suffix}`],
+  }));
+  try {
+    const labels = [];
+    for (const [index, fixture] of fixtures.entries()) {
+      const rootIdentity = realpathSync(dirname(fixture.repo));
+      writeFileSync(join(rootIdentity, ".lane.json"), `${JSON.stringify({ validate: "true" })}\n`);
+      fixture.env = discoveredEnv(fixture, { HOME: fixture.root });
+      const topic = `${"common-prefix-".repeat(4)}${index === 0 ? "a" : "b"}`;
+      const path = join(rootIdentity, ".worktrees", fixture.repo.split("/").at(-1), `lane-${topic}`);
+      const fake = writeFakeHerdr(fixture, { lanePath: path, branch: `lane/${topic}` });
+      const opened = lane(fixture, ["open", topic]);
+      assert.equal(opened.status, 0, opened.stderr);
+      const create = fake.calls().find((args) => args[0] === "worktree" && args[1] === "create");
+      const label = create[create.indexOf("--label") + 1];
+      assert.ok([...label].length <= 64, `${[...label].length} code points: ${label}`);
+      assert.match(label, new RegExp(`^(?:${accent})+…/`));
+      assert.ok(label.includes(`${family}${family}…:lane-common-prefix-`));
+      assert.match(label, /~[0-9a-f]{8,}$/);
+      assert.ok(label.endsWith(identityDigest(rootIdentity, repositoryIdentity(fixture.repo), topic)));
+      labels.push(label);
+    }
+    assert.notEqual(labels[0], labels[1]);
+    negativeControl("bounded grapheme-safe identity labels");
+  } finally {
+    for (const fixture of fixtures) fixture.cleanup();
+  }
+});
+
+test("open refuses symlink escapes and destinations inside repository checkouts before mutation", () => {
+  const fixtures = [];
+  try {
+    const escaped = makeFixture();
+    fixtures.push(escaped);
+    const selectedBase = join(escaped.root, "selected-base");
+    const outside = join(escaped.root, "outside-base");
+    mkdirSync(selectedBase);
+    mkdirSync(outside);
+    symlinkSync(outside, join(selectedBase, "repo"));
+    writeConfig(escaped, { main: "main", validate: "true", worktree_root: selectedBase });
+    delete escaped.env.LANE_WORKTREE_ROOT;
+    const escape = lane(escaped, ["open", "symlink-escape"]);
+    assert.equal(escape.status, 1);
+    assert.match(escape.stderr, /unsafe worktree path.*outside selected base/);
+    assert.ok(!existsSync(join(outside, "lane-symlink-escape")));
+    assert.ok(!refExists(escaped.repo, "refs/heads/lane/symlink-escape"));
+
+    const canonical = makeFixture();
+    fixtures.push(canonical);
+    canonical.env.LANE_WORKTREE_ROOT = join(canonical.repo, "nested-worktrees");
+    const descendant = lane(canonical, ["open", "checkout-descendant"]);
+    assert.equal(descendant.status, 1);
+    assert.match(descendant.stderr, /unsafe worktree path.*canonical checkout/);
+    assert.ok(!refExists(canonical.repo, "refs/heads/lane/checkout-descendant"));
+
+    const registered = makeFixture();
+    fixtures.push(registered);
+    const host = openLane(registered, "registered-host");
+    registered.env.LANE_WORKTREE_ROOT = join(host, "nested-worktrees");
+    const nested = lane(registered, ["open", "registered-descendant"]);
+    assert.equal(nested.status, 1);
+    assert.match(nested.stderr, /unsafe worktree path.*registered checkout/);
+    assert.ok(!refExists(registered.repo, "refs/heads/lane/registered-descendant"));
+
+    const foreign = makeFixture();
+    fixtures.push(foreign);
+    const other = join(foreign.root, "other-repository");
+    execFileSync(GIT, ["init", "-b", "main", other], { stdio: "ignore" });
+    foreign.env.LANE_WORKTREE_ROOT = join(other, "nested-worktrees");
+    const otherRepo = lane(foreign, ["open", "foreign-descendant"]);
+    assert.equal(otherRepo.status, 1);
+    assert.match(otherRepo.stderr, /unsafe worktree path.*another repository/);
+    assert.ok(!refExists(foreign.repo, "refs/heads/lane/foreign-descendant"));
+    negativeControl("realpath and checkout descendant guards");
+  } finally {
+    for (const fixture of fixtures) fixture.cleanup();
+  }
+});
+
+test("registered paths are rejected when their on-disk repository identity changes", () => {
+  const fixture = makeFixture();
+  try {
+    const path = openLane(fixture, "swapped-owner");
+    const original = `${path}-original`;
+    execFileSync("mv", [path, original]);
+    const foreign = join(fixture.root, "foreign-checkout");
+    execFileSync(GIT, ["init", "-b", "main", foreign], { stdio: "ignore" });
+    symlinkSync(foreign, path);
+    const run = lane(fixture, ["status"]);
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /registered worktree .* does not belong to canonical git common directory/);
+    negativeControl("registered worktree ownership verification");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("stale Herdr checkout metadata is not used for dispatch or close", () => {
+  const dispatchFixture = makeFixture();
+  const closeFixture = makeFixture();
+  try {
+    const dispatchPath = openLane(dispatchFixture, "stale-dispatch");
+    const dispatchFake = writeFakeHerdr(dispatchFixture, {
+      lanePath: dispatchPath,
+      branch: "lane/stale-dispatch",
+      staleId: "w-stale",
+      staleLabel: "root/repo:lane-stale-dispatch",
+      foreignRepoKey: join(dispatchFixture.root, "foreign.git"),
+      noRepair: true,
+    });
+    const dispatched = lane(dispatchFixture, ["dispatch", "stale-dispatch", "do not send"]);
+    assert.equal(dispatched.status, 1);
+    assert.match(dispatched.stderr, /Herdr workspace w-stale.*repository identity mismatch/);
+    assert.ok(!dispatchFake.calls().some((args) => args[0] === "tab" && args[1] === "create"));
+
+    const closePath = openLane(closeFixture, "stale-close");
+    const closeFake = writeFakeHerdr(closeFixture, {
+      lanePath: closePath,
+      branch: "lane/stale-close",
+      staleId: "w-stale",
+      staleLabel: "root/repo:lane-stale-close",
+      foreignRepoKey: join(closeFixture.root, "foreign.git"),
+      noRepair: true,
+    });
+    const closed = lane(closeFixture, ["close", "stale-close"]);
+    assert.equal(closed.status, 0, closed.stderr);
+    assert.ok(!closeFake.calls().some((args) => args[0] === "worktree" && args[1] === "remove"));
+    assert.ok(!existsSync(closePath));
+    negativeControl("stale Herdr path identity refusal");
+  } finally {
+    dispatchFixture.cleanup();
+    closeFixture.cleanup();
+  }
+});
+
+test("linked invocation creates labeled children under the canonical repository workspace", () => {
+  const fixture = makeFixture(undefined, { repoParts: ["repo", "repo"] });
+  try {
+    const caller = join(fixture.root, "caller-lane");
+    git(fixture.repo, ["worktree", "add", "-b", "lane/caller", caller], { stdio: "ignore" });
+    const path = lanePath(fixture, "child-topic");
+    const fake = writeFakeHerdr(fixture, {
+      callerPath: caller,
+      lanePath: path,
+      branch: "lane/child-topic",
+    });
+    const opened = lane(fixture, ["open", "child-topic"], { cwd: caller });
+    assert.equal(opened.status, 0, opened.stderr);
+    const controls = fake.calls().filter((args) => args[0] === "worktree" && ["create", "open"].includes(args[1]));
+    assert.ok(controls.length >= 2);
+    for (const args of controls) {
+      assert.equal(args[args.indexOf("--workspace") + 1], "w-parent");
+      assert.notEqual(args[args.indexOf("--workspace") + 1], "w-caller");
+      assert.equal(args[args.indexOf("--label") + 1], "repo/repo:lane-child-topic");
+    }
+    negativeControl("canonical Herdr parent and labeled child");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("a repository with a separate git directory retains its canonical checkout identity", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "herdr-lanes-separate-test-")));
+  const repo = join(root, "working", "repository");
+  const gitDirectory = join(root, "metadata", "repository.git");
+  const bin = join(root, "bin");
+  const configPath = join(root, "lane.json");
+  const worktrees = join(root, "worktrees");
+  mkdirSync(dirname(repo), { recursive: true });
+  mkdirSync(dirname(gitDirectory), { recursive: true });
+  mkdirSync(bin);
+  symlinkSync(GIT, join(bin, "git"));
+  symlinkSync(HEAD, join(bin, "head"));
+  execFileSync(GIT, ["init", "-b", "main", "--separate-git-dir", gitDirectory, repo], { stdio: "ignore" });
+  git(repo, ["config", "user.name", "Lane Tests"]);
+  git(repo, ["config", "user.email", "lane-tests@example.invalid"]);
+  writeFileSync(join(repo, "shared.txt"), "base\n");
+  git(repo, ["add", "shared.txt"]);
+  git(repo, ["commit", "-m", "initial"], { stdio: "ignore" });
+  writeFileSync(configPath, `${JSON.stringify({ main: "main", validate: "true" })}\n`);
+  const fixture = {
+    root, repo, bin, configPath, worktrees,
+    env: { ...process.env, PATH: bin, LANE_CONFIG: configPath, LANE_WORKTREE_ROOT: worktrees },
+  };
+  try {
+    const opened = lane(fixture, ["open", "separate-directory"]);
+    assert.equal(opened.status, 0, opened.stderr);
+    assert.match(opened.stdout, new RegExp(`canonical checkout: ${repo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    assert.match(opened.stdout, new RegExp(`repository identity: ${realpathSync(gitDirectory).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    assert.ok(existsSync(join(worktrees, "lane-separate-directory")));
+    negativeControl("separate git directory canonical checkout");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("selected malformed, unreadable, and wrongly typed config files fail before mutation", () => {
   const fixtures = [];
   try {
@@ -927,7 +1336,8 @@ test("open refuses ordinary and foreign-worktree destinations without creating b
     const foreignHead = git(foreignPath, ["rev-parse", "HEAD"]);
     const foreign = lane(fixture, ["open", "foreign-worktree"]);
     assert.equal(foreign.status, 1);
-    assert.match(foreign.stderr, new RegExp(`worktree path already exists: ${foreignPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    assert.match(foreign.stderr, new RegExp(`worktree path belongs to another repository: ${foreignPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    assert.match(foreign.stderr, /choose distinct worktree bases/);
     assert.equal(git(foreignPath, ["rev-parse", "HEAD"]), foreignHead);
     assert.ok(!refExists(fixture.repo, "refs/heads/lane/foreign-worktree"));
     negativeControl("occupied foreign path refusal");

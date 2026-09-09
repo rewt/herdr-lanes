@@ -69,11 +69,19 @@ pushes.
 ```text
 lane/<topic> branch
 <worktree_root>/<repo>/lane-<topic>
-Herdr workspace for that worktree
+<root-label>/<repo>:lane-<topic> Herdr workspace for that worktree
 ```
 
+Git's canonical common-directory path—not the repository basename, remote, or
+author—owns each lane. Before creating or using a worktree, `lane` verifies that
+identity and its real path. New destinations inside a checkout or escaping the
+selected worktree base are refused; already-registered legacy locations remain
+usable. `lane` never changes git author configuration.
+
 `lane dispatch <topic> --route <name> @brief.md` starts the route's configured agent
-in that workspace, verifies its cwd, then sends the brief.
+in that workspace, verifies its repository identity and cwd, then sends the brief.
+New workspace labels include root, repository, and topic identity and are bounded to
+64 Unicode code points; agent names include a repository-identity and random suffix.
 
 `lane status` shows each lane's commits ahead/behind main, dirty state, rebase state,
 and files changed by more than one lane. Keep concurrent lanes in separate files when

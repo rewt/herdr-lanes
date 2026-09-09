@@ -373,3 +373,38 @@ Living log for agents maintaining this repository. Newest entry last.
   after a fresh clear load probe and report its GATE outside git. Sanitizer/defaults
   implementation, live review/Herdr, client support and minimum-version hosts remain
   unverified. No push or product implementation.
+
+## 2026-09-09 — repository-safe roots identity
+
+- Made the real absolute Git common directory authoritative for repository ownership,
+  resolved the canonical non-linked checkout (including a primary checkout with a
+  separately stored Git directory), and verified every created or registered lane's
+  identity and branch before use. Existing verified legacy paths remain in place.
+- Added pre/post realpath guards for selected bases and lane destinations. Open now
+  refuses symlink escapes, canonical/registered/foreign checkout descendants, and
+  shared-base foreign occupants before mutation, with no temporary fallback or
+  automatic cleanup/adoption.
+- Verified Herdr `repo_key`, `repo_root`, `checkout_path`, and linked status before
+  using opaque parent/lane workspace IDs. Linked invocation targets the canonical
+  repository workspace; stale foreign metadata is not used for dispatch or close.
+  Added 64-code-point grapheme-safe root/repository/topic labels with collision
+  digests and 32-character identity-aware randomized agent names.
+- Appended operator-approved Amendment A1 verbatim to the `AGENTS.md` Product contract;
+  no other amendment was applied. Documented the behavior and synced only the
+  repository-identity delta into the current OpenSpec capability.
+- Baseline `npm test` passed 60/60. Before implementation, the expanded suite passed
+  59/67 with eight intended failures covering the new acceptance fixtures. Final
+  `npm test` passed 67/67 in 13.483 seconds; all 67 deliberate negative controls
+  failed in 15.889 seconds. With Herdr absent, 66 passed and the single live guard
+  skipped with its explicit reason in 13.675 seconds.
+- Strict OpenSpec validation passed 13/13 with telemetry disabled and concurrency one;
+  `git diff --check` and the public added-line scan passed. Long Unicode fixtures
+  produced distinct 62-code-point labels under the 64-point limit, and exercised
+  agent names were 32 characters. Verified Node.js 20.19.4, npm 10.8.2, Git 2.54.0,
+  OpenSpec 1.6.0, and installed Herdr protocol fields.
+- Tests/validation were serialized after clear process probes; the no-Herdr run waited
+  for another lane's Cargo test. No live Herdr mutation, real-TTY rendering, forced
+  digest collision, path race, bare repository, linked separate-Git-dir invocation,
+  Linux, or Windows was exercised. No additional approval is needed; review,
+  promotion, and archival remain operator actions, and nothing was pushed or written
+  under `docs/reviews/`.

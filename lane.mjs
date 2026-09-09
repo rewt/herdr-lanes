@@ -12,8 +12,9 @@
 // (see README).
 
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
 import {
-  existsSync, mkdirSync, readFileSync, renameSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync,
 } from "node:fs";
 import { constants as osConstants, homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -30,21 +31,81 @@ process.stdout.on("error", (error) => {
 // The repository is whichever checkout the command runs in (any worktree of it).
 const REPO = (() => {
   try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
+    return realpathSync(execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim());
   } catch {
     process.stderr.write("lane: not inside a git repository\n");
     process.exit(1);
   }
 })();
-// The checkout this script runs from may itself be a lane worktree; herdr
-// worktree actions must be addressed to the repository root's workspace.
-const REPO_ROOT = (() => {
+const REPO_IDENTITY = (() => {
   try {
     const common = execFileSync("git", ["-C", REPO, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" }).trim();
-    return resolve(common, "..");
+    return realpathSync(common);
   } catch {
-    return REPO;
+    fail(`cannot resolve canonical git common directory for ${REPO}`);
   }
+})();
+const CURRENT_GIT_DIRECTORY = (() => {
+  try {
+    const directory = execFileSync("git", ["-C", REPO, "rev-parse", "--path-format=absolute", "--git-dir"], { encoding: "utf8" }).trim();
+    return realpathSync(directory);
+  } catch {
+    fail(`cannot resolve git directory for ${REPO}`);
+  }
+})();
+
+function samePath(left, right) {
+  if (typeof left !== "string" || typeof right !== "string") return false;
+  const canonical = (path) => {
+    try {
+      return realpathSync(path);
+    } catch {
+      return resolve(path);
+    }
+  };
+  return canonical(left) === canonical(right);
+}
+
+function candidateIsCanonicalCheckout(path) {
+  try {
+    const checkout = realpathSync(execFileSync(
+      "git", ["-C", path, "rev-parse", "--show-toplevel"], { encoding: "utf8" },
+    ).trim());
+    const common = realpathSync(execFileSync(
+      "git", ["-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" },
+    ).trim());
+    const gitDirectory = realpathSync(execFileSync(
+      "git", ["-C", path, "rev-parse", "--path-format=absolute", "--git-dir"], { encoding: "utf8" },
+    ).trim());
+    return checkout === realpathSync(path) && common === REPO_IDENTITY && gitDirectory === REPO_IDENTITY;
+  } catch {
+    return false;
+  }
+}
+
+// The checkout this script runs from may itself be a lane worktree. Resolve
+// the primary checkout whose git directory is the common directory so every
+// Herdr child is attached to the repository workspace, not the caller lane.
+const REPO_ROOT = (() => {
+  if (CURRENT_GIT_DIRECTORY === REPO_IDENTITY) return REPO;
+  let listed;
+  try {
+    listed = execFileSync(
+      "git", ["-C", REPO, "-c", "core.quotePath=false", "worktree", "list", "--porcelain"],
+      { encoding: "utf8" },
+    );
+  } catch {
+    fail(`cannot list worktrees for canonical git common directory ${REPO_IDENTITY}`);
+  }
+  for (const entry of listed.split("\n\n")) {
+    const line = entry.split("\n").find((value) => value.startsWith("worktree "));
+    if (line === undefined) continue;
+    const candidate = line.slice("worktree ".length);
+    if (!samePath(candidate, REPO_IDENTITY) && candidateIsCanonicalCheckout(candidate)) {
+      return realpathSync(candidate);
+    }
+  }
+  fail(`cannot resolve canonical non-linked checkout for git common directory ${REPO_IDENTITY}`);
 })();
 // Configuration comes from the nearest eligible parent .lane.json followed by
 // the canonical checkout's .lane.json. $LANE_CONFIG selects exactly one file.
@@ -194,22 +255,29 @@ const { config: CONFIG, sources: CONFIG_SOURCES, routeSources: ROUTE_SOURCES } =
 const MAIN = CONFIG.main ?? "main";
 const LANE_PREFIX = "lane/";
 const REPO_NAME = basename(REPO_ROOT);
-const { path: WORKTREE_ROOT, source: WORKTREE_ROOT_SOURCE } = (() => {
+const ROOT_IDENTITY = realpathSync(PARENT_CONFIG_FILE === undefined ? dirname(REPO_ROOT) : dirname(PARENT_CONFIG_FILE));
+const { path: WORKTREE_ROOT, base: WORKTREE_BASE, source: WORKTREE_ROOT_SOURCE } = (() => {
   if (process.env.LANE_WORKTREE_ROOT !== undefined) {
-    return { path: resolve(CALLER_CWD, process.env.LANE_WORKTREE_ROOT), source: "env" };
+    const path = resolve(CALLER_CWD, process.env.LANE_WORKTREE_ROOT);
+    return { path, base: path, source: "env" };
   }
   if (Object.hasOwn(CONFIG, "worktree_root")) {
     const source = CONFIG_SOURCES.get("worktree_root");
-    return { path: join(resolve(dirname(source), CONFIG.worktree_root), REPO_NAME), source };
+    const base = resolve(dirname(source), CONFIG.worktree_root);
+    return { path: join(base, REPO_NAME), base, source };
   }
   if (!EXPLICIT_CONFIG && PARENT_CONFIG_FILE !== undefined) {
+    const base = join(dirname(PARENT_CONFIG_FILE), ".worktrees");
     return {
-      path: join(dirname(PARENT_CONFIG_FILE), ".worktrees", REPO_NAME),
+      path: join(base, REPO_NAME),
+      base,
       source: PARENT_CONFIG_FILE,
     };
   }
+  const base = join(homedir(), ".herdr", "worktrees");
   return {
-    path: join(homedir(), ".herdr", "worktrees", REPO_NAME),
+    path: join(base, REPO_NAME),
+    base,
     source: "default",
   };
 })();
@@ -317,15 +385,158 @@ function branchExists(branch) {
   return tryGit(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]) !== undefined;
 }
 
+function worktreeEntries() {
+  return git(["-c", "core.quotePath=false", "worktree", "list", "--porcelain"])
+    .split("\n\n")
+    .map((entry) => {
+      const fields = new Map(entry.split("\n").filter(Boolean).map((line) => {
+        const separator = line.indexOf(" ");
+        return separator === -1 ? [line, true] : [line.slice(0, separator), line.slice(separator + 1)];
+      }));
+      return {
+        path: fields.get("worktree"),
+        branch: typeof fields.get("branch") === "string"
+          ? fields.get("branch").replace(/^refs\/heads\//u, "")
+          : undefined,
+      };
+    })
+    .filter((entry) => typeof entry.path === "string");
+}
+
+function gitIdentityForPath(path) {
+  try {
+    const common = execFileSync(
+      "git", ["-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+    return realpathSync(common);
+  } catch {
+    return undefined;
+  }
+}
+
+function verifyRegisteredWorktree(path, branch) {
+  const identity = gitIdentityForPath(path);
+  if (identity !== REPO_IDENTITY) {
+    fail(`registered worktree ${path} for ${branch} does not belong to canonical git common directory ${REPO_IDENTITY}`);
+  }
+  const actual = tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: path });
+  if (actual !== branch) {
+    fail(`registered worktree ${path} has branch ${actual ?? "(detached)"}, expected ${branch}`);
+  }
+  return path;
+}
+
 function worktreeFor(branch) {
-  const entries = git(["worktree", "list", "--porcelain"]).split("\n\n");
-  for (const entry of entries) {
-    if (entry.includes(`branch refs/heads/${branch}`)) {
-      const line = entry.split("\n").find((l) => l.startsWith("worktree "));
-      if (line !== undefined) return line.slice("worktree ".length);
-    }
+  for (const entry of worktreeEntries()) {
+    if (entry.branch === branch) return verifyRegisteredWorktree(entry.path, branch);
   }
   return undefined;
+}
+
+function entryExists(path) {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function futureRealPath(path) {
+  const suffix = [];
+  let ancestor = resolve(path);
+  while (!entryExists(ancestor)) {
+    const parent = dirname(ancestor);
+    if (parent === ancestor) fail(`unsafe worktree path has no resolvable ancestor: ${path}`);
+    suffix.unshift(basename(ancestor));
+    ancestor = parent;
+  }
+  let realAncestor;
+  try {
+    realAncestor = realpathSync(ancestor);
+  } catch (error) {
+    fail(`unsafe worktree path cannot resolve ${ancestor}: ${error.message}`);
+  }
+  return { path: resolve(realAncestor, ...suffix), ancestor: realAncestor };
+}
+
+function repositoryContaining(path) {
+  try {
+    const root = execFileSync(
+      "git", ["-C", path, "rev-parse", "--show-toplevel"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+    return { root: realpathSync(root), identity: gitIdentityForPath(path) };
+  } catch {
+    return undefined;
+  }
+}
+
+function assertSafeNewWorktreePath(path) {
+  const selectedBase = futureRealPath(WORKTREE_BASE).path;
+  const repositoryRoot = futureRealPath(WORKTREE_ROOT).path;
+  const destination = futureRealPath(path);
+  if (!within(repositoryRoot, selectedBase) || !within(destination.path, selectedBase)) {
+    fail(`unsafe worktree path resolves outside selected base ${selectedBase}: ${path} -> ${destination.path}`);
+  }
+
+  for (const entry of worktreeEntries()) {
+    let checkout;
+    try {
+      checkout = realpathSync(entry.path);
+    } catch {
+      continue;
+    }
+    if (within(destination.path, checkout)) {
+      const kind = samePath(checkout, REPO_ROOT) ? "canonical checkout" : "registered checkout";
+      fail(`unsafe worktree path is inside the ${kind} ${checkout}: ${path}`);
+    }
+  }
+
+  if (entryExists(path)) {
+    const occupant = gitIdentityForPath(path);
+    if (occupant !== undefined && occupant !== REPO_IDENTITY) {
+      fail(`worktree path belongs to another repository: ${path}; choose distinct worktree bases`);
+    }
+    fail(`worktree path already exists: ${path}`);
+  }
+
+  const containing = repositoryContaining(destination.ancestor);
+  if (containing !== undefined && containing.identity !== REPO_IDENTITY && within(destination.path, containing.root)) {
+    fail(`unsafe worktree path is inside another repository ${containing.root}: ${path}`);
+  }
+}
+
+function assertCreatedWorktree(path, branch) {
+  const destination = futureRealPath(path).path;
+  assertSafeNewWorktreePathAfterCreation(destination);
+  const identity = gitIdentityForPath(destination);
+  if (identity !== REPO_IDENTITY) {
+    fail(`created worktree ${destination} does not belong to canonical git common directory ${REPO_IDENTITY}`);
+  }
+  const actual = tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: destination });
+  if (actual !== branch) fail(`created worktree ${destination} has branch ${actual ?? "(detached)"}, expected ${branch}`);
+}
+
+function assertSafeNewWorktreePathAfterCreation(path) {
+  const selectedBase = futureRealPath(WORKTREE_BASE).path;
+  if (!within(path, selectedBase)) {
+    fail(`unsafe worktree path resolves outside selected base ${selectedBase}: ${path}`);
+  }
+  for (const entry of worktreeEntries()) {
+    if (samePath(entry.path, path)) continue;
+    let checkout;
+    try {
+      checkout = realpathSync(entry.path);
+    } catch {
+      continue;
+    }
+    if (within(path, checkout)) {
+      const kind = samePath(checkout, REPO_ROOT) ? "canonical checkout" : "registered checkout";
+      fail(`unsafe worktree path is inside the ${kind} ${checkout}: ${path}`);
+    }
+  }
 }
 
 // herdr helpers. Every herdr CLI call prints one JSON document; a failure is a
@@ -342,30 +553,113 @@ function herdrJson(args) {
   }
 }
 
-function parentWorkspaceId() {
-  const listed = herdrJson(["workspace", "list"]);
-  return listed?.workspaces.find(
-    (w) => w.worktree?.repo_root === REPO_ROOT && w.worktree?.is_linked_worktree === false,
-  )?.workspace_id;
+function workspaceMatches(workspace, path, linked) {
+  const worktree = workspace?.worktree;
+  return worktree !== undefined &&
+    samePath(worktree.repo_key, REPO_IDENTITY) &&
+    samePath(worktree.repo_root, REPO_ROOT) &&
+    samePath(worktree.checkout_path, path) &&
+    worktree.is_linked_worktree === linked;
 }
 
-function openWorkspaceIdFor(path) {
-  const listed = herdrJson(["worktree", "list", "--cwd", REPO]);
+function parentWorkspaceId(workspaces = herdrJson(["workspace", "list"])?.workspaces) {
+  return workspaces?.find((workspace) => workspaceMatches(workspace, REPO_ROOT, false))?.workspace_id;
+}
+
+function openWorkspaceIdFor(path, { refuseStale = true } = {}) {
+  const listed = herdrJson(["worktree", "list", "--cwd", REPO_ROOT]);
   if (listed === undefined) return undefined;
-  return listed.worktrees.find((w) => w.path === path)?.open_workspace_id;
+  if (!samePath(listed.source?.repo_key, REPO_IDENTITY) ||
+      !samePath(listed.source?.repo_root, REPO_ROOT) ||
+      !samePath(listed.source?.source_checkout_path, REPO_ROOT)) {
+    if (refuseStale) fail(`Herdr worktree source has a repository identity mismatch for ${REPO_ROOT}`);
+    return undefined;
+  }
+  const item = listed.worktrees.find((worktree) => samePath(worktree.path, path));
+  if (item?.open_workspace_id === undefined) return undefined;
+  const workspaces = herdrJson(["workspace", "list"])?.workspaces;
+  const workspace = workspaces?.find((entry) => entry.workspace_id === item.open_workspace_id);
+  if (!workspaceMatches(workspace, path, true)) {
+    if (refuseStale) {
+      fail(`Herdr workspace ${item.open_workspace_id} for ${path} has a repository identity mismatch; refusing stale metadata`);
+    }
+    return undefined;
+  }
+  return item.open_workspace_id;
 }
 
 // herdr refuses `worktree create`/`open` when the CLI runs inside a linked
 // worktree ("New and open worktree actions start from the repo parent
 // workspace"), so a lane opened from another lane gets a git worktree and no
-// herdr workspace. Repair that by opening from the parent workspace explicitly.
-function ensureHerdrWorkspace(path) {
+// herdr workspace. Repair that by opening from the parent workspace explicitly,
+// retaining opaque IDs and verifying the returned path and repository identity.
+function ensureHerdrWorkspace(path, label) {
   let id = openWorkspaceIdFor(path);
   if (id !== undefined) return id;
   const parent = parentWorkspaceId();
   if (parent === undefined) return undefined;
-  herdrJson(["worktree", "open", "--workspace", parent, "--path", path, "--no-focus"]);
+  herdrJson(["worktree", "open", "--workspace", parent, "--path", path, "--label", label, "--no-focus"]);
   return openWorkspaceIdFor(path);
+}
+
+const GRAPHEME_SEGMENTER = new Intl.Segmenter("en", { granularity: "grapheme" });
+
+function codePointLength(value) {
+  return [...value].length;
+}
+
+function graphemeFragment(value, budget) {
+  if (codePointLength(value) <= budget) return value;
+  let fragment = "";
+  let used = 0;
+  for (const { segment } of GRAPHEME_SEGMENTER.segment(value)) {
+    const length = codePointLength(segment);
+    if (used + length > budget - 1) break;
+    fragment += segment;
+    used += length;
+  }
+  return `${fragment}…`;
+}
+
+function laneIdentityDigest(topic, length = 8) {
+  return createHash("sha256")
+    .update(`${ROOT_IDENTITY}\0${REPO_IDENTITY}\0${topic}`)
+    .digest("hex")
+    .slice(0, length);
+}
+
+function compactWorkspaceLabel(topic, digestLength) {
+  let reduction = digestLength - 8;
+  const budgets = { root: 12, repository: 16, topic: 20 };
+  for (const key of ["topic", "repository", "root"]) {
+    const amount = Math.min(reduction, budgets[key] - 4);
+    budgets[key] -= amount;
+    reduction -= amount;
+  }
+  return `${graphemeFragment(basename(ROOT_IDENTITY), budgets.root)}/` +
+    `${graphemeFragment(REPO_NAME, budgets.repository)}:lane-${graphemeFragment(topic, budgets.topic)}` +
+    `~${laneIdentityDigest(topic, digestLength)}`;
+}
+
+function workspaceLabel(topic, path) {
+  const readable = `${basename(ROOT_IDENTITY)}/${REPO_NAME}:lane-${topic}`;
+  const workspaces = herdrJson(["workspace", "list"])?.workspaces ?? [];
+  const collides = (label) => workspaces.some((workspace) =>
+    workspace.label === label && !workspaceMatches(workspace, path, true));
+  if (codePointLength(readable) <= 64 && !collides(readable)) return readable;
+  for (let digestLength = 8; digestLength <= 44; digestLength += 1) {
+    const label = compactWorkspaceLabel(topic, digestLength);
+    if (codePointLength(label) <= 64 && !collides(label)) return label;
+  }
+  fail(`cannot produce a unique Herdr workspace label for ${path}`);
+}
+
+function newAgentName(topic) {
+  const identity = laneIdentityDigest(topic, 6);
+  const random = randomBytes(3).toString("hex");
+  const stem = `lane-${topic}`.slice(0, 18);
+  const available = 32 - identity.length - random.length - 2;
+  return `${stem.slice(0, available)}-${identity}-${random}`;
 }
 
 function agentRecord(agentName) {
@@ -389,7 +683,7 @@ function sleepMs(ms) {
 function verifyAgentCwd(agentName, path) {
   const record = agentRecord(agentName);
   if (record === undefined) return { ok: false, cwd: undefined };
-  return { ok: record.cwd === path, cwd: record.cwd };
+  return { ok: samePath(record.cwd, path), cwd: record.cwd };
 }
 
 // Dry-run a rebase of `branch` onto `against` with merge-tree (no worktree
@@ -422,14 +716,15 @@ function open(topic, base = MAIN) {
     fail(`base ref does not resolve: ${base}`);
   }
   const path = join(WORKTREE_ROOT, `lane-${topic}`);
-  if (existsSync(path)) fail(`worktree path already exists: ${path}`);
+  assertSafeNewWorktreePath(path);
+  const label = workspaceLabel(topic, path);
   const parent = parentWorkspaceId();
   const herdr = spawnSync(
     "herdr",
     [
       "worktree", "create",
       ...(parent === undefined ? ["--cwd", REPO_ROOT] : ["--workspace", parent]),
-      "--branch", branch, "--base", base, "--path", path,
+      "--branch", branch, "--base", base, "--path", path, "--label", label,
     ],
     { encoding: "utf8" },
   );
@@ -437,8 +732,17 @@ function open(topic, base = MAIN) {
     git(["worktree", "add", "-b", branch, path, base]);
     process.stdout.write("(herdr refused or is unavailable; created via git worktree)\n");
   }
-  const workspaceId = ensureHerdrWorkspace(path);
-  process.stdout.write(`lane open: ${branch}\n  worktree: ${path}\n  base: ${git(["rev-parse", "--short", base])} (${base})\n`);
+  assertCreatedWorktree(path, branch);
+  const workspaceId = ensureHerdrWorkspace(path, label);
+  process.stdout.write(
+    `lane open: ${branch}\n` +
+    `  worktree: ${path}\n` +
+    `  canonical checkout: ${REPO_ROOT}\n` +
+    `  repository identity: ${REPO_IDENTITY}\n` +
+    `  root identity: ${ROOT_IDENTITY}\n` +
+    `  workspace label: ${label}\n` +
+    `  base: ${git(["rev-parse", "--short", base])} (${base})\n`,
+  );
   process.stdout.write(
     workspaceId === undefined
       ? "  herdr workspace: none (herdr unavailable); dispatch will retry the repair\n"
@@ -528,7 +832,8 @@ function dispatch(topic, promptText, options = {}) {
   const path = worktreeFor(branch);
   if (path === undefined) fail(`lane ${branch} has no worktree; open it first`);
   if (herdrJson(["workspace", "list"]) === undefined) fail("herdr is unavailable; dispatch requires the herdr server");
-  const workspaceId = ensureHerdrWorkspace(path);
+  const label = workspaceLabel(topic, path);
+  const workspaceId = ensureHerdrWorkspace(path, label);
   if (workspaceId === undefined) {
     fail(`herdr shows no open workspace for ${path} and could not open one from the ${REPO_ROOT} workspace`);
   }
@@ -540,18 +845,17 @@ function dispatch(topic, promptText, options = {}) {
   let paneCwd;
   for (let attempt = 0; attempt < 60; attempt += 1) {
     paneCwd = herdrJson(["pane", "get", pane])?.pane?.foreground_cwd;
-    if (paneCwd === path) break;
+    if (samePath(paneCwd, path)) break;
     sleepMs(500);
   }
-  if (paneCwd !== path) {
+  if (!samePath(paneCwd, path)) {
     spawnSync("herdr", ["tab", "close", tabId], { encoding: "utf8" });
     fail(`pane ${pane} shell never reached ${path} (last cwd: ${paneCwd}); tab closed, nothing started`);
   }
-  // Unique per dispatch (a failed start can leave a name registered), and
-  // capped: herdr agent names are limited to 32 characters.
-  // herdr caps agent names at 32 chars: stem(22) + "-HHMMSS"(7) + "-N"(2) = 31.
-  const stem = `lane-${topic}`.slice(0, 22);
-  let agentName = `${stem}-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}`;
+  // The stem remains readable, while repository identity and random suffixes
+  // keep names distinct across equal topics and retry leftovers. Herdr limits
+  // names to 32 characters and [a-z][a-z0-9_-]*.
+  let agentName = newAgentName(topic);
   // Dispatch is model-agnostic: the tier policy is the operator's, and the
   // operator-owned role->agent mappings live in .lane.json "routes". Flags
   // override a selected route and global dispatch defaults; extra agent-CLI
@@ -573,7 +877,7 @@ function dispatch(topic, promptText, options = {}) {
     // A failed start can leave the name registered, and a start that herdr
     // reports as failed can still have launched the agent in the pane: use a
     // fresh name per attempt and adopt whatever is already running there.
-    if (attempt > 0) agentName = `${stem}-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}-${attempt}`;
+    if (attempt > 0) agentName = newAgentName(topic);
     const run = spawnSync("herdr", startArgsFor(agentName), { encoding: "utf8" });
     if (run.status === 0 && !`${run.stdout}${run.stderr}`.includes('"error"')) {
       started = true;
@@ -727,10 +1031,7 @@ function close(topic) {
     // worktree; a git-only removal leaves a ghost workspace behind.
     let removed = false;
     try {
-      const listed = JSON.parse(
-        execFileSync("herdr", ["worktree", "list", "--cwd", REPO], { encoding: "utf8" }),
-      );
-      const workspaceId = listed.result.worktrees.find((w) => w.path === path)?.open_workspace_id;
+      const workspaceId = openWorkspaceIdFor(path, { refuseStale: false });
       if (workspaceId !== undefined) {
         const run = spawnSync("herdr", ["worktree", "remove", "--workspace", workspaceId], {
           encoding: "utf8",

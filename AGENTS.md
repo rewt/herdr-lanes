@@ -36,6 +36,12 @@ user request defines the work; the handoff provides state and prior verification
 - Keep the tool a thin layer over git and Herdr. Do not add a job system, leases,
   remote policy gates, or hidden background coordination.
 
+A repository is identified by its canonical git common directory, never by its
+basename, workspace label, remote, or author name alone. Development-root lane
+paths are outside the canonical checkout, with no automatic temporary-directory
+fallback. Existing registered worktrees remain usable without automatic migration.
+Lane commands do not set git identity; git configuration remains authoritative.
+
 ## Documentation priority
 
 The README must lead with one copyable path: install, configure a target repository,
