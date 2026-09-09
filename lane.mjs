@@ -1202,6 +1202,10 @@ function normalizeReviewNewlineBoundaries(value) {
   return value.replace(/^\n+|\n+$/gu, "");
 }
 
+function privateReviewIsComplete(value) {
+  return value.trimEnd().split("\n").at(-1) === REVIEW_COMPLETE_MARKER;
+}
+
 function validateReviewRecord(record, expected) {
   const normalized = normalizeReviewNewlineBoundaries(record);
   const lines = normalized.split("\n");
@@ -1575,9 +1579,10 @@ async function waitForPrivateReview(path, deadline, interrupted, session) {
       } catch {
         fail("private review output is not valid UTF-8");
       }
-      const normalized = normalizeReviewNewlineBoundaries(text);
-      const lastNonemptyLine = normalized.split("\n").findLast((line) => line !== "");
-      if (lastNonemptyLine === REVIEW_COMPLETE_MARKER) return text;
+      // Completion is deliberately more permissive than schema validation: once a
+      // writer has emitted the marker, malformed trailing whitespace must fail fast
+      // in validateReviewRecord instead of being mistaken for an incomplete write.
+      if (privateReviewIsComplete(text)) return text;
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, Math.min(250, Math.max(1, deadline - Date.now()))));
   }
@@ -1923,7 +1928,10 @@ switch (command) {
     try {
       await review(topic, rest);
     } catch {
-      process.stderr.write("lane review: unexpected failure; private evidence may have been retained\n");
+      process.stderr.write(
+        "lane review: unexpected failure; private evidence may have been retained and a public record " +
+        "may also have been created; retained evidence must be inspected before recovery\n",
+      );
       process.exit(2);
     }
     break;

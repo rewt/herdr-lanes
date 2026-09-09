@@ -354,6 +354,9 @@ if (args[0] === "workspace" && args[1] === "list") {
       recordLines.push(...blankLines("after-marker", 0));
       record = recordLines.join("\\n") + "\\n";
     }
+    if (process.env.FAKE_REVIEW_MODE === "trailing-space-line") record += " \\n";
+    if (process.env.FAKE_REVIEW_MODE === "trailing-tab-line") record += "\\t\\n";
+    if (process.env.FAKE_REVIEW_MODE === "crlf-record") record = record.replace(/\\n/gu, "\\r\\n");
     mkdirSync(dirname(privatePath), { recursive: true });
     writeFileSync(privatePath, process.env.FAKE_REVIEW_MODE === "oversized" ? "x".repeat(1024 * 1024 + 1) : record);
     if (process.env.FAKE_REVIEW_MODE === "dirty-public") {
@@ -1834,7 +1837,7 @@ test("review preserves a final finding immediately before the next section headi
   }
 });
 
-test("review normalizes zero, one, and two blank lines at every record and section boundary", () => {
+test("review completion admits every validator-accepted record and section boundary fixture", () => {
   const sections = ["Findings", "Re-executed", "Non-claims", "Unverified", "Private identifiers", "Analysis"];
   const boundaries = [
     "record-start",
@@ -1869,7 +1872,7 @@ test("review normalizes zero, one, and two blank lines at every record and secti
       }
     }
     assert.deepEqual(failures, []);
-    negativeControl("review record boundary normalization matrix");
+    negativeControl("completion admits validator-accepted boundary fixtures");
   } finally {
     for (const fixture of fixtures) fixture.cleanup();
   }
@@ -2237,6 +2240,45 @@ test("review refuses malformed private evidence, incomplete output, timeout, and
   }
 });
 
+test("review sends malformed completed endings to schema validation without waiting for timeout", () => {
+  const cases = [
+    ["trailing-space-line", /private review completion marker must be the last nonempty line/],
+    ["trailing-tab-line", /private review completion marker must be the last nonempty line/],
+    ["crlf-record", /private review first line must be/],
+  ];
+  const fixtures = [];
+  const outcomes = [];
+  try {
+    for (const [mode, diagnostic] of cases) {
+      const topic = `review-${mode}`;
+      const review = makeReviewFixture(topic, { verdict: "PASS", mode });
+      fixtures.push(review.fixture);
+      const started = Date.now();
+      const run = lane(review.fixture, [
+        "review", topic, "--round", "1", "--brief", review.brief, "--timeout", "2",
+      ]);
+      outcomes.push({
+        mode,
+        status: run.status,
+        emptyStdout: run.stdout === "",
+        schemaDiagnostic: diagnostic.test(run.stderr),
+        timedOut: /review timed out/.test(run.stderr),
+        elapsedMs: Date.now() - started,
+      });
+    }
+    for (const outcome of outcomes) {
+      assert.equal(outcome.status, 2, JSON.stringify(outcome));
+      assert.equal(outcome.emptyStdout, true, JSON.stringify(outcome));
+      assert.equal(outcome.schemaDiagnostic, true, JSON.stringify(outcome));
+      assert.equal(outcome.timedOut, false, JSON.stringify(outcome));
+      assert.ok(outcome.elapsedMs < 1500, JSON.stringify(outcome));
+    }
+    negativeControl("malformed completed record fast schema refusal");
+  } finally {
+    for (const fixture of fixtures) fixture.cleanup();
+  }
+});
+
 test("review contains unexpected errors when the target disappears after dispatch", () => {
   const review = makeReviewFixture("review-removed-worktree", {
     verdict: "PASS", mode: "remove-worktree",
@@ -2255,6 +2297,47 @@ test("review contains unexpected errors when the target disappears after dispatc
       review.fixture.repo, ".lane", "reviews", "review-removed-worktree", `${capturedHead.slice(0, 7)}-r1.md`,
     )));
     negativeControl("unexpected review error boundary");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
+test("review unexpected failure after publication warns about retained public evidence", async () => {
+  const review = makeReviewFixture("review-post-public-error", { verdict: "PASS" });
+  try {
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicPath = join(
+      review.path, "docs", "reviews", "review-post-public-error", `${head.slice(0, 7)}-r1.md`,
+    );
+    let injected = false;
+    const mutator = setInterval(() => {
+      if (!injected && existsSync(publicPath)) {
+        injected = true;
+        renameSync(join(review.path, ".git"), join(review.path, ".git-injected-failure"));
+      }
+    }, 1);
+    const child = spawn(process.execPath, [
+      LANE, "review", "review-post-public-error", "--round", "1", "--brief", review.brief,
+    ], {
+      cwd: review.fixture.repo,
+      env: hermeticGitEnvironment(review.fixture.env),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    const result = await new Promise((resolvePromise) => child.once("close", (code) => resolvePromise(code)));
+    clearInterval(mutator);
+    assert.equal(result, 2, stderr);
+    assert.equal(stdout, "");
+    assert.equal(injected, true);
+    assert.ok(existsSync(publicPath));
+    assert.match(stderr, /public record may also have been created/);
+    assert.match(stderr, /must be inspected before recovery/);
+    assert.doesNotMatch(stderr, /(?:Error:|\n\s+at )/);
+    assert.doesNotMatch(stderr, new RegExp(review.fixture.root.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")));
+    negativeControl("post-publication unexpected failure recovery diagnostic");
   } finally {
     review.fixture.cleanup();
   }
@@ -2312,12 +2395,20 @@ test("review protocol documents normalized boundaries and consecutive findings",
   ), "utf8");
   for (const document of [reference, template, design]) {
     assert.match(document, /leading and trailing (?:blank-line|newline)\s+runs/iu);
-    assert.match(document, /Findings entries[^.]*consecutive lines[^.]*no blank\s+line/iu);
+  }
+  assert.match(design, /Findings entries[^.]*consecutive lines[^.]*no blank\s+line/iu);
+  assert.match(design, /completion probe[^.]*more permissive than schema validation/iu);
+  for (const document of [reference, template]) {
+    assert.match(
+      document,
+      /Findings, Non-claims, and Unverified entries each occupy\s+consecutive lines\s+with no blank\s+line/iu,
+    );
   }
   assert.doesNotMatch(design, /first physical line/iu);
   for (const spec of [currentSpec, deltaSpec]) {
     assert.match(spec, /boundary blank lines/iu);
     assert.match(spec, /first nonempty line/iu);
+    assert.match(spec, /malformed completed record/iu);
   }
   negativeControl("review boundary protocol documentation");
 });

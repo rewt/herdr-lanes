@@ -201,3 +201,40 @@ followed a clear process probe and ran alone.
 No live reviewer or Herdr mutation, alternate operating system, concurrent writer,
 push, promotion, archive, or change under `docs/reviews/` was performed. The final
 post-commit lane gate remains conversation-only evidence.
+
+## Round 5 review corrections
+
+- Completion detection is now deliberately more permissive than schema validation.
+  It trims trailing whitespace (including carriage returns) before comparing the
+  final content line with the marker, while the validator retains its stricter
+  newline-only boundary normalization. Thus every accepted boundary fixture is
+  detected complete, and malformed-but-finished output reaches a schema refusal
+  instead of exhausting the deadline.
+- The existing 39-case accepted-boundary matrix now states and exercises that
+  completion/validation invariant. A new table covers whitespace-only and tab-only
+  final lines plus a CRLF record; all three return exit 2 with empty stdout and a
+  schema diagnostic in less than 1.5 seconds against a two-second deadline.
+- The unexpected-error boundary now warns that private evidence may remain and a
+  public record may also have been created, requiring inspection before recovery. An
+  injected failure after exclusive publication verifies exit 2, empty stdout, no
+  stack or absolute path, and retention of the untracked public record.
+- The template and REFERENCE now state that Findings, Non-claims, and Unverified
+  entries each use consecutive lines with no intervening blank line. The completion
+  invariant and malformed-completed-record scenario are synchronized in the design,
+  change delta, and current capability.
+
+The initial four-test focused run passed the accepted-fixture invariant and failed the
+three new correction expectations before implementation. The added design/spec
+assertion also failed before those documents were synchronized. Every added behavior
+has a deliberate negative control. Baseline `npm test` passed 90/90 in 68.172 seconds.
+Final `npm test` passed 92/92 in 70.787 seconds; the repository-wide
+`LANE_TEST_NEGATIVE_CONTROL=1 npm test` run deliberately failed all 92 tests with zero
+passes in 70.762 seconds. Strict OpenSpec validation passed 16/16 with telemetry
+disabled and concurrency one. The recorded verification runs followed clear process
+probes and ran alone. One discarded
+diagnostic-only documentation rerun followed a completed focused run without a fresh
+system-wide probe; the corrected assertion was subsequently rerun after a clear probe.
+
+No live reviewer or Herdr mutation, alternate operating system, concurrent writer,
+push, promotion, archive, or change under `docs/reviews/` was performed. The final
+post-commit lane gate remains conversation-only evidence.

@@ -42,6 +42,9 @@ findings and mandatory Re-executed, Non-claims and Unverified sections.
 #### Scenario: Boundary blank lines
 - **WHEN** zero, one or two blank lines occur at the start of the record, after a section heading, before the next heading, or after the completion marker
 - **THEN** leading and trailing newline runs are normalized symmetrically and every valid finding reaches the public projection.
+#### Scenario: Malformed completed record
+- **WHEN** a completion marker is followed by a whitespace-only or tab-only line, or a completed record uses CRLF line endings
+- **THEN** the permissive completion probe detects the finished write and schema validation refuses it with exit 2 before the deadline instead of reporting a timeout.
 #### Scenario: Mismatched reviewed SHA
 - **WHEN** Reviewed commit differs from captured or current HEAD, even with the same abbreviation
 - **THEN** the review is refused, private evidence is retained and no public record is created.

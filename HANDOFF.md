@@ -549,3 +549,20 @@ Living log for agents maintaining this repository. Newest entry last.
 - No live reviewer/Herdr mutation, alternate host, push, promotion, archive, or
   `docs/reviews/` change was performed. The post-commit lane check remains the final
   conversation-only verification.
+
+## 2026-09-09 — foreground review round-five corrections
+
+- Made completion detection strictly more permissive than validation by trimming
+  trailing whitespace before the marker comparison. Accepted boundary fixtures all
+  traverse the probe, while whitespace-only, tab-only, and CRLF malformed endings
+  now fail fast with schema diagnostics instead of timing out.
+- Expanded unexpected-error recovery wording to require inspection of potentially
+  retained private and public evidence, with an injected post-publication failure
+  proving exit 2, empty stdout, path-free output, and public-record retention.
+- Documented consecutive entries for Findings, Non-claims, and Unverified and synced
+  the completion invariant into the review design and both specs. Final `npm test`
+  passed 92/92 in 70.787 seconds; all 92 deliberate controls failed with zero passes
+  in 70.762 seconds; strict OpenSpec validation passed 16/16.
+- No live reviewer/Herdr mutation, alternate host, push, promotion, archive, or
+  `docs/reviews/` change was performed. The post-commit lane check remains the final
+  conversation-only verification.

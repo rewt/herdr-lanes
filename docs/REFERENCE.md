@@ -364,9 +364,10 @@ lane-review/v1`, the captured full SHA/topic/round/review ID/base, and the uniqu
 ordered sections Findings, Re-executed, Non-claims, Unverified, Private identifiers,
 and Analysis. Findings are `None` or `[Major]`, `[Moderate]`, or `[Minor]` bullets
 with a repository-relative positive `file:line`, the structural ASCII ` - ` separator,
-and `Fix:`. Findings entries occupy consecutive lines with no blank line between them.
-Non-claims and Unverified are `None` or bullets. Private identifiers is a JSON array
-of nonempty strings; Analysis is private and may be empty.
+and `Fix:`. Findings, Non-claims, and Unverified entries each occupy consecutive lines
+with no blank line between them. Non-claims and Unverified are `None` or bullets.
+Private identifiers is a JSON array of nonempty strings; Analysis is private and may
+be empty.
 
 Re-executed is one JSON fenced array. Every object has exactly `command`, `cwd`
 (`lane` or `scratch`), integer `exit_code`, nonempty `result`, boolean `tests_pass`,

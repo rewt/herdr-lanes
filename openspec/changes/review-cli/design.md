@@ -110,6 +110,12 @@ no blank line between them. No other bold verdict tokens are allowed; historical
 records are not rewritten. Use mandatory, unique header lines followed by the exact
 sections below:
 
+The completion probe is deliberately more permissive than schema validation. It trims
+trailing whitespace, including carriage returns, before comparing the final content
+line with the completion marker. Every schema-valid record is therefore detected as
+complete, while malformed but finished output reaches validation immediately and
+receives a schema diagnostic instead of exhausting the review deadline.
+
 ```text
 **PASS**
 Schema: lane-review/v1

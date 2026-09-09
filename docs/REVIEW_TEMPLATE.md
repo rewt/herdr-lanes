@@ -78,11 +78,12 @@ despite the prohibition on repository changes:
 A chat verdict is insufficient. Do not write the public record. Write at most 1 MiB of
 valid UTF-8, use exactly one of the three bold verdicts on the first nonempty line, and
 finish with the marker. Leading and trailing blank-line runs around the whole record
-and each section are accepted. Findings entries occupy consecutive lines with no blank
-line between them. Use `None` when Findings, Non-claims, or Unverified is empty. Every
-finding needs a repository-relative file, positive line, and concrete fix. Private
-identifiers is a JSON array of nonempty names/tokens appearing in projected fields; an
-empty array is valid. Never include credentials.
+and each section are accepted. Findings, Non-claims, and Unverified entries each occupy
+consecutive lines with no blank line between them. Use `None` when Findings,
+Non-claims, or Unverified is empty. Every finding needs a repository-relative file,
+positive line, and concrete fix. Private identifiers is a JSON array of nonempty
+names/tokens appearing in projected fields; an empty array is valid. Never include
+credentials.
 
 ````text
 **PASS**
