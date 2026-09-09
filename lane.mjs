@@ -16,7 +16,7 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, writeFileSync,
 } from "node:fs";
-import { constants as osConstants, homedir } from "node:os";
+import { constants as osConstants, homedir, hostname, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -1266,6 +1266,241 @@ function validateReviewRecord(record, expected) {
   return { verdict: verdictMatch[1], sections, executions, identifiers, record: normalized };
 }
 
+const REVIEW_PLACEHOLDERS = {
+  "absolute-path": "[ABS_PATH]",
+  user: "[USER]",
+  host: "[HOST]",
+  private: "[PRIVATE]",
+};
+const REVIEW_PLACEHOLDER_PATTERN = /(\[(?:ABS_PATH|USER|HOST|PRIVATE)\])/gu;
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function reviewAliases(identifiers) {
+  let username;
+  let homeName;
+  let host;
+  try {
+    username = userInfo().username;
+    homeName = basename(homedir());
+    host = hostname();
+  } catch {
+    fail("cannot read local user and host aliases for review sanitization");
+  }
+  const automatic = [
+    [username, "user"],
+    [homeName, "user"],
+    [host, "host"],
+    [host.split(".")[0], "host"],
+  ];
+  const byValue = new Map();
+  for (const [value, category] of automatic) {
+    if (typeof value !== "string" || value === "") continue;
+    const key = value.toLocaleLowerCase("en-US");
+    if (!byValue.has(key)) byValue.set(key, { value, category, automatic: true });
+  }
+  const declared = [];
+  for (const value of identifiers) {
+    const key = value.toLocaleLowerCase("en-US");
+    if (byValue.has(key)) continue;
+    if (!declared.some((entry) => entry.key === key)) declared.push({ key, value });
+  }
+  for (let left = 0; left < declared.length; left += 1) {
+    for (let right = left + 1; right < declared.length; right += 1) {
+      if (declared[left].key.includes(declared[right].key) || declared[right].key.includes(declared[left].key)) {
+        fail("declared private identifiers are ambiguous by substring");
+      }
+    }
+  }
+  for (const entry of declared) byValue.set(entry.key, { value: entry.value, category: "private", automatic: false });
+  const precedence = { user: 0, host: 1, private: 2 };
+  return [...byValue.values()].sort((left, right) =>
+    [...right.value].length - [...left.value].length || precedence[left.category] - precedence[right.category]);
+}
+
+function replaceOutsidePlaceholders(value, replace) {
+  return value.split(REVIEW_PLACEHOLDER_PATTERN).map((part) =>
+    Object.values(REVIEW_PLACEHOLDERS).includes(part) ? part : replace(part)).join("");
+}
+
+function aliasRegex(alias) {
+  return new RegExp(`(?<![\\p{L}\\p{M}\\p{N}_])${escapeRegex(alias)}(?![\\p{L}\\p{M}\\p{N}_])`, "giu");
+}
+
+function containsAlias(value, aliases) {
+  return aliases.some((alias) => aliasRegex(alias.value).test(value.replace(REVIEW_PLACEHOLDER_PATTERN, "")));
+}
+
+function absolutePathPattern() {
+  return /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]*/giu;
+}
+
+function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
+  let value = input.normalize("NFC");
+  if (!allowGenerated && REVIEW_PLACEHOLDER_PATTERN.test(value)) fail("projected payload contains a reserved sanitizer placeholder");
+  REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
+  if (/[\u0000-\u001f\u007f\n\r]/u.test(value)) fail("projected payload must be single-line text");
+  if (/(?:file:\/\/\/|\b[A-Za-z]:[\\/]|\\\\|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/))[^,;\n]*\s+[^,;\n]*[\\/]/iu.test(value)) {
+    fail("projected payload contains an ambiguous absolute path");
+  }
+
+  const roots = [...new Set([context.path, REPO_ROOT].map((root) => realpathSync(root)))].sort((a, b) => b.length - a.length);
+  for (const root of roots) {
+    const pattern = new RegExp(
+      `${escapeRegex(root)}(?=$|[\\/\\s"'<>\`\\[\\],;:)])(?:[\\/][^\\s"'<>\`\\[\\],;:)]*)?`,
+      "gu",
+    );
+    value = replaceOutsidePlaceholders(value, (part) => part.replace(pattern, (match) => {
+      const converted = relative(root, match).split(sep).join("/") || ".";
+      context.counts["relative-path"] += 1;
+      return converted;
+    }));
+  }
+
+  value = replaceOutsidePlaceholders(value, (part) => part.replace(absolutePathPattern(), () => {
+    context.counts["absolute-path"] += 1;
+    return REVIEW_PLACEHOLDERS["absolute-path"];
+  }));
+  for (const alias of context.aliases) {
+    value = replaceOutsidePlaceholders(value, (part) => part.replace(aliasRegex(alias.value), () => {
+      context.counts[alias.category] += 1;
+      return REVIEW_PLACEHOLDERS[alias.category];
+    }));
+  }
+
+  const withoutPlaceholders = value.replace(REVIEW_PLACEHOLDER_PATTERN, "");
+  REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
+  if ([...withoutPlaceholders].some((character) => character.codePointAt(0) < 0x20 || character.codePointAt(0) > 0x7e)) {
+    fail("projected payload contains unsupported non-ASCII text");
+  }
+  if (/[`<>\[\]]|\*\*|__/u.test(withoutPlaceholders) || /%[0-9A-Fa-f]{2}|&(?:#?[A-Za-z0-9]+);|\\x[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}/u.test(withoutPlaceholders)) {
+    fail("projected payload contains unsupported markup or encoded text");
+  }
+  if (absolutePathPattern().test(withoutPlaceholders) || containsAlias(withoutPlaceholders, context.aliases)) {
+    fail("projected payload retains private path or alias content");
+  }
+  return value;
+}
+
+function assertProtectedPublicValue(value, aliases, label) {
+  if (containsAlias(value, aliases) || absolutePathPattern().test(value)) {
+    fail(`${label} contains a private alias or absolute path and cannot be rewritten safely`);
+  }
+  if (![...value].every((character) => character.codePointAt(0) >= 0x20 && character.codePointAt(0) <= 0x7e)) {
+    fail(`${label} contains unsupported non-ASCII text`);
+  }
+}
+
+function sanitizeReviewProjection(parsed, expected) {
+  const aliases = reviewAliases(parsed.identifiers);
+  for (const [label, value] of [
+    ["topic metadata", expected.topic],
+    ["base branch metadata", expected.baseBranch],
+  ]) assertProtectedPublicValue(value, aliases, label);
+  const context = {
+    path: expected.path,
+    aliases,
+    counts: { "absolute-path": 0, user: 0, host: 0, private: 0, "relative-path": 0 },
+  };
+  const modifiedExecutionFields = [];
+  const sanitize = (value) => sanitizePublicString(value, context);
+  const findingLines = parsed.sections.get("Findings") === "None"
+    ? ["None"]
+    : parsed.sections.get("Findings").split("\n").map((line) => {
+      const match = line.match(/^- \[(Major|Moderate|Minor)\] (.+):([1-9][0-9]*) - (.+); Fix: (.+)$/u);
+      const location = `${match[2]}:${match[3]}`;
+      assertProtectedPublicValue(location, aliases, "finding location");
+      return `- [${match[1]}] ${location} - ${sanitize(match[4])}; Fix: ${sanitize(match[5])}`;
+    });
+  const executions = parsed.executions.map((execution, index) => {
+    const projected = { ...execution };
+    for (const field of ["command", "result"]) {
+      projected[field] = sanitize(execution[field]);
+      if (projected[field] !== execution[field]) modifiedExecutionFields.push(`${index}.${field}`);
+    }
+    if (execution.witness !== null) {
+      projected.witness = { ...execution.witness };
+      for (const field of ["command", "result", "observed_failure"]) {
+        projected.witness[field] = sanitize(execution.witness[field]);
+        if (projected.witness[field] !== execution.witness[field]) modifiedExecutionFields.push(`${index}.witness.${field}`);
+      }
+    }
+    return projected;
+  });
+  const bullets = (name) => parsed.sections.get(name) === "None"
+    ? ["None"]
+    : parsed.sections.get(name).split("\n").map((line) => `- ${sanitize(line.slice(2))}`);
+  const nonClaims = bullets("Non-claims");
+  const unverified = bullets("Unverified");
+
+  const payloads = [
+    ...findingLines.filter((line) => line !== "None").map((line) => line.replace(/^- \[(?:Major|Moderate|Minor)\] [^ ]+ - /u, "")),
+    ...executions.flatMap((execution) => [
+      execution.command, execution.result,
+      ...(execution.witness === null ? [] : [execution.witness.command, execution.witness.result, execution.witness.observed_failure]),
+    ]),
+    ...nonClaims.filter((line) => line !== "None").map((line) => line.slice(2)),
+    ...unverified.filter((line) => line !== "None").map((line) => line.slice(2)),
+  ];
+  const verification = {
+    path: expected.path,
+    aliases,
+    counts: { "absolute-path": 0, user: 0, host: 0, private: 0, "relative-path": 0 },
+  };
+  for (let index = 0; index < payloads.length; index += 1) {
+    const payload = payloads[index];
+    const second = sanitizePublicString(payload, verification, { allowGenerated: true });
+    if (second !== payload) {
+      const categories = Object.entries(verification.counts).filter(([, count]) => count > 0).map(([name]) => name).join(",");
+      fail(`review sanitization is not idempotent at projected field ${index} (${categories || "text"})`);
+    }
+  }
+  if (Object.values(verification.counts).some((count) => count !== 0)) fail("review sanitization left a second-pass substitution");
+
+  const record = [
+    `**${parsed.verdict}**`,
+    "Schema: lane-review/v1",
+    `Reviewed commit: ${expected.head}`,
+    `Topic: ${expected.topic}`,
+    `Round: ${expected.round}`,
+    `Review ID: ${expected.reviewId}`,
+    `Base branch: ${expected.baseBranch}`,
+    `Base commit: ${expected.baseCommit}`,
+    "",
+    "## Findings",
+    ...findingLines,
+    "",
+    "## Re-executed",
+    "```json",
+    JSON.stringify(executions),
+    "```",
+    "",
+    "## Non-claims",
+    ...nonClaims,
+    "",
+    "## Unverified",
+    ...unverified,
+    "",
+    "## Sanitization",
+    `- absolute-path: ${context.counts["absolute-path"]}`,
+    `- user: ${context.counts.user}`,
+    `- host: ${context.counts.host}`,
+    `- private: ${context.counts.private}`,
+    `- relative-path: ${context.counts["relative-path"]}`,
+    `- redacted execution fields: ${modifiedExecutionFields.length === 0 ? "None" : modifiedExecutionFields.join(", ")}`,
+    "",
+    REVIEW_COMPLETE_MARKER,
+    "",
+  ].join("\n");
+  if (Buffer.byteLength(record) > 64 * 1024 || record.split("\n").length > 120) {
+    fail("sanitized public review exceeds 64 KiB or 120 lines");
+  }
+  if (record.includes("## Analysis") || record.includes("## Private identifiers")) fail("private-only sections reached public projection");
+  return record;
+}
+
 async function waitForPrivateReview(path, deadline, interrupted) {
   while (Date.now() <= deadline) {
     if (interrupted.value) fail(`review interrupted; the Herdr reviewer may still write late evidence to ${path}`);
@@ -1353,7 +1588,31 @@ async function review(topic, args) {
     if (git(["status", "--porcelain=v1"], { cwd: path }) !== "") {
       fail("review target worktree changed; private evidence and work were retained");
     }
+    if (Date.now() > deadline) fail("review timed out before public projection; private evidence was retained");
+    const publicRecord = sanitizeReviewProjection(parsed, {
+      head, topic, round: options.round, reviewId, baseBranch: MAIN, baseCommit, path,
+    });
+    if (Date.now() > deadline) fail("review timed out before public review creation; private evidence was retained");
+    try {
+      mkdirSync(dirname(publicPath), { recursive: true });
+      assertReviewOutputPath(path, publicRelative, { ignored: false, label: "public review output" });
+      writeFileSync(publicPath, publicRecord, { encoding: "utf8", flag: "wx", mode: 0o644 });
+    } catch (error) {
+      if (error?.code === "EEXIST") fail("public review output appeared concurrently; evidence was retained");
+      fail("public review output could not be created exclusively; private evidence was retained");
+    }
+    // Yield once so a concurrent filesystem mutation that races publication can
+    // become visible before the final Git integrity check.
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+    const finalHead = git(["rev-parse", "HEAD"], { cwd: path });
+    const finalBranch = tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: path });
+    const finalStatus = git(["status", "--porcelain=v1", "--untracked-files=all"], { cwd: path });
+    if (finalHead !== head || finalBranch !== branch || finalStatus !== `?? ${publicRelative.split(sep).join("/")}`) {
+      fail("mutation after public review creation caused late publication failure; inspect retained evidence before recovery");
+    }
+    if (Date.now() > deadline) fail("review timed out after public review creation; inspect retained evidence before recovery");
     process.stderr.write(`lane review: private review: ${privatePath}\n`);
+    process.stderr.write(`lane review: public review: ${publicPath}\n`);
     process.stdout.write(`${parsed.verdict}\n`);
     process.exitCode = parsed.verdict === "PASS" ? 0 : 1;
   } finally {

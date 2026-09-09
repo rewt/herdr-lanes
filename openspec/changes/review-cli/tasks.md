@@ -38,7 +38,7 @@ no public output; default-config waits for R-ii. Never mark partial combined wor
 
 ## 1. Lane-sized task
 
-- [ ] 1.1 Deliver the adjacent requirements/design, observe failing controls before behavior changes, write docs/reports/review-cli.md and a dated HANDOFF entry, commit, then obtain a passing GATE against the final commit.
+- [x] 1.1 Deliver the adjacent requirements/design, observe failing controls before behavior changes, write docs/reports/review-cli.md and a dated HANDOFF entry, commit, then obtain a passing GATE against the final commit.
 
 ## Acceptance checks
 

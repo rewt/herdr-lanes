@@ -14,10 +14,11 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, hostname, tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { parseVerdict } from "../board/board.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LANE = resolve(HERE, "..", "lane.mjs");
@@ -170,7 +171,8 @@ function writeFakeHerdr(fixture, options = {}) {
   const executable = join(fixture.bin, "herdr");
   const log = join(fixture.root, "herdr.jsonl");
   const state = join(fixture.root, "herdr-state.json");
-  const source = `#!${process.execPath}
+const source = `#!${process.execPath}
+import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 const args = process.argv.slice(2);
@@ -272,16 +274,17 @@ if (args[0] === "workspace" && args[1] === "list") {
 } else if (args[0] === "agent" && args[1] === "prompt") {
   if (process.env.FAKE_REVIEW_VERDICT) {
     const prompt = args[3];
+    const payload = JSON.parse(process.env.FAKE_REVIEW_PAYLOAD || "{}");
     const field = (label) => prompt.split("\\n").find((line) => line.startsWith(label + ": "))?.slice(label.length + 2);
     const privatePath = field("Private record file");
     const publicPath = field("Public record file (forbidden)");
     const reviewed = process.env.FAKE_REVIEW_MODE === "sha-mismatch" ? "0".repeat(40) : field("Reviewed commit");
-    const reexecuted = process.env.FAKE_REVIEW_MODE === "bad-witness"
+    const reexecuted = payload.reexecuted || (process.env.FAKE_REVIEW_MODE === "bad-witness"
       ? [{ command: "node --test", cwd: "scratch", exit_code: 0, result: "passed", tests_pass: true, witness: null }]
-      : [];
-    const finding = process.env.FAKE_REVIEW_MODE === "bad-finding"
+      : []);
+    const finding = payload.findings || (process.env.FAKE_REVIEW_MODE === "bad-finding"
       ? "- [Unknown] shared.txt:1 - unclear; Fix: change it"
-      : "None";
+      : "None");
     const marker = process.env.FAKE_REVIEW_MODE === "incomplete" ? "" : "\\n<!-- lane-review-complete -->";
     const record = [
       "**" + process.env.FAKE_REVIEW_VERDICT + "**",
@@ -289,7 +292,7 @@ if (args[0] === "workspace" && args[1] === "list") {
       "Reviewed commit: " + reviewed,
       "Topic: " + field("Topic"),
       "Round: " + field("Round"),
-      "Review ID: " + field("Review ID"),
+      "Review ID: " + (process.env.FAKE_REVIEW_MODE === "review-id-mismatch" ? "lr-wrong" : field("Review ID")),
       "Base branch: " + field("Base branch"),
       "Base commit: " + field("Base commit"),
       "",
@@ -302,18 +305,18 @@ if (args[0] === "workspace" && args[1] === "list") {
       "\`\`\`",
       "",
       "## Non-claims",
-      "None",
+      payload.nonclaims || "None",
       "",
       "## Unverified",
-      "- Live reviewer behavior was not exercised.",
+      payload.unverified || "- Live reviewer behavior was not exercised.",
       "",
       "## Private identifiers",
       "\`\`\`json",
-      "[]",
+      JSON.stringify(payload.identifiers || []),
       "\`\`\`",
       "",
       "## Analysis",
-      "Fixture review evidence." + marker,
+      (payload.analysis || "Fixture review evidence.") + marker,
       "",
     ].join("\\n");
     mkdirSync(dirname(privatePath), { recursive: true });
@@ -321,6 +324,15 @@ if (args[0] === "workspace" && args[1] === "list") {
     if (process.env.FAKE_REVIEW_MODE === "dirty-public") {
       mkdirSync(dirname(publicPath), { recursive: true });
       writeFileSync(publicPath, "reviewer wrote this\\n");
+    } else if (process.env.FAKE_REVIEW_MODE === "dirty-tracked") {
+      writeFileSync(process.env.FAKE_HERDR_LANE_PATH + "/shared.txt", "reviewer mutation\\n");
+    } else if (process.env.FAKE_REVIEW_MODE === "dirty-index") {
+      writeFileSync(process.env.FAKE_HERDR_LANE_PATH + "/indexed.txt", "indexed\\n");
+      execFileSync("git", ["-C", process.env.FAKE_HERDR_LANE_PATH, "add", "indexed.txt"]);
+    } else if (process.env.FAKE_REVIEW_MODE === "head-move") {
+      writeFileSync(process.env.FAKE_HERDR_LANE_PATH + "/moved.txt", "moved\\n");
+      execFileSync("git", ["-C", process.env.FAKE_HERDR_LANE_PATH, "add", "moved.txt"]);
+      execFileSync("git", ["-C", process.env.FAKE_HERDR_LANE_PATH, "commit", "-m", "move review head"]);
     }
   }
   result("cli:agent:prompt", { type: "agent_prompt", name: args[2] });
@@ -352,6 +364,7 @@ if (args[0] === "workspace" && args[1] === "list") {
     FAKE_HERDR_HIDE_OPENED_ON_FIRST_LIST: options.hideOpenedOnFirstList ? "1" : undefined,
     FAKE_REVIEW_VERDICT: options.reviewVerdict,
     FAKE_REVIEW_MODE: options.reviewMode,
+    FAKE_REVIEW_PAYLOAD: options.reviewPayload === undefined ? undefined : JSON.stringify(options.reviewPayload),
   });
   for (const [key, value] of Object.entries(fixture.env)) {
     if (value === undefined) delete fixture.env[key];
@@ -1705,6 +1718,7 @@ function makeReviewFixture(topic, options = {}) {
     initiallyOpened: true,
     reviewVerdict: options.verdict,
     reviewMode: options.mode,
+    reviewPayload: options.payload,
   });
   return { fixture, path, brief, fake };
 }
@@ -1732,7 +1746,7 @@ test("review requires explicit source, round, route, and bounded unique flags wi
   }
 });
 
-test("review dispatches once and accepts all canonical private verdicts without public output", () => {
+test("review dispatches once and publishes all canonical verdicts after private validation", () => {
   const cases = [["PASS", 0], ["NEEDS-WORK", 1], ["FAIL", 1]];
   const fixtures = [];
   try {
@@ -1747,13 +1761,163 @@ test("review dispatches once and accepts all canonical private verdicts without 
       const privatePath = join(review.fixture.repo, ".lane", "reviews", topic, `${head.slice(0, 7)}-r1.md`);
       const publicPath = join(review.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`);
       assert.ok(existsSync(privatePath));
-      assert.ok(!existsSync(publicPath));
-      assert.match(run.stderr, new RegExp(`private review: ${privatePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+      assert.ok(existsSync(publicPath));
+      assert.equal(parseVerdict(readFileSync(publicPath, "utf8")), verdict);
+      assert.match(run.stderr, new RegExp(`public review: ${publicPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
       assert.equal(review.fake.calls().filter((args) => args[0] === "agent" && args[1] === "prompt").length, 1);
     }
     negativeControl("canonical private verdict outcomes");
   } finally {
     for (const fixture of fixtures) fixture.cleanup();
+  }
+});
+
+test("review sanitizes deterministic aliases and path forms in a bounded public projection", () => {
+  const review = makeReviewFixture("review-sanitize", { verdict: "PASS" });
+  try {
+    const username = userInfo().username;
+    const homeName = homedir().split("/").filter(Boolean).at(-1);
+    const host = hostname();
+    review.fixture.env.FAKE_REVIEW_PAYLOAD = JSON.stringify({
+      findings: `- [Moderate] shared.txt:1 - User ${username} inspected ${review.path}/shared.txt; Fix: ask ${homeName} to use a relative path`,
+      reexecuted: [{
+        command: `node scripts/check.mjs ${review.path}/shared.txt --user ${username}`,
+        cwd: "scratch",
+        exit_code: 1,
+        result: `host ${host}; posix /opt/tools/check; drive C:\\Temp\\check.exe; unc \\\\server\\share\\check; url file:///var/tmp/check; prefix ${review.path}-private/secret`,
+        tests_pass: false,
+        witness: null,
+      }],
+      nonclaims: "- SECRETNAME was not independently authenticated.",
+      unverified: "- annex behavior remains unverified.",
+      identifiers: ["SecretName"],
+      analysis: `Private analysis keeps ${username}, ${host}, and /private/source/path.`,
+    });
+    const run = lane(review.fixture, ["review", "review-sanitize", "--round", "1", "--brief", review.brief]);
+    assert.equal(run.status, 0, run.stderr);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicPath = join(review.path, "docs", "reviews", "review-sanitize", `${head.slice(0, 7)}-r1.md`);
+    const publicRecord = readFileSync(publicPath, "utf8");
+    assert.match(publicRecord, /User \[USER\] inspected shared\.txt; Fix: ask \[USER\] to use a relative path/);
+    assert.match(publicRecord, /node scripts\/check\.mjs shared\.txt --user \[USER\]/);
+    assert.match(publicRecord, /host \[HOST\]; posix \[ABS_PATH\]; drive \[ABS_PATH\]; unc \[ABS_PATH\]; url \[ABS_PATH\]; prefix \[ABS_PATH\]/);
+    assert.match(publicRecord, /- \[PRIVATE\] was not independently authenticated\./);
+    assert.match(publicRecord, /- annex behavior remains unverified\./);
+    assert.match(publicRecord, /- absolute-path: 5\n- user: 3\n- host: 1\n- private: 1\n- relative-path: 2/);
+    assert.match(publicRecord, /- redacted execution fields: 0\.command, 0\.result/);
+    assert.doesNotMatch(publicRecord, /Private identifiers|## Analysis|Private analysis|private\/source/);
+    assert.ok(Buffer.byteLength(publicRecord) <= 64 * 1024);
+    assert.ok(publicRecord.split("\n").length <= 120);
+    negativeControl("sanitized public projection");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
+test("review sanitization preserves unrelated words and fails closed on ambiguous or unsupported payloads", () => {
+  const fixtures = [];
+  try {
+    const preserved = makeReviewFixture("review-boundary", { verdict: "PASS" });
+    fixtures.push(preserved.fixture);
+    preserved.fixture.env.FAKE_REVIEW_PAYLOAD = JSON.stringify({
+      findings: "- [Minor] shared.txt:1 - ANN met annex; Fix: keep annex unchanged",
+      identifiers: ["Ann"],
+      analysis: "Private only.",
+    });
+    const preservedRun = lane(preserved.fixture, ["review", "review-boundary", "--round", "1", "--brief", preserved.brief]);
+    assert.equal(preservedRun.status, 0, preservedRun.stderr);
+    const preservedHead = git(preserved.path, ["rev-parse", "HEAD"]);
+    const preservedPublic = readFileSync(join(
+      preserved.path, "docs", "reviews", "review-boundary", `${preservedHead.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    assert.match(preservedPublic, /\[PRIVATE\] met annex; Fix: keep annex unchanged/);
+
+    const cases = [
+      ["alias-ambiguity", { identifiers: ["Ann", "Anna"] }],
+      ["protected-location", { findings: "- [Major] shared.txt:1 - issue; Fix: change it", identifiers: ["shared"] }],
+      ["non-ascii", { findings: "- [Minor] shared.txt:1 - caf\u00e9 issue; Fix: use ASCII" }],
+      ["markup", { findings: "- [Minor] shared.txt:1 - `inline` issue; Fix: remove markup" }],
+      ["encoded", { unverified: "- Percent path %2Fsecret remains." }],
+      ["placeholder", { nonclaims: "- Existing [USER] marker." }],
+      ["ambiguous-path", { unverified: "- Inspect /tmp/path with spaces/file." }],
+    ];
+    for (const [suffix, payload] of cases) {
+      const topic = `review-${suffix}`;
+      const refused = makeReviewFixture(topic, { verdict: "PASS", payload });
+      fixtures.push(refused.fixture);
+      const run = lane(refused.fixture, ["review", topic, "--round", "1", "--brief", refused.brief]);
+      assert.equal(run.status, 2, `${suffix}\n${run.stderr}`);
+      assert.equal(run.stdout, "");
+      const head = git(refused.path, ["rev-parse", "HEAD"]);
+      assert.ok(!existsSync(join(refused.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`)));
+    }
+    negativeControl("sanitization boundaries and refusals");
+  } finally {
+    for (const fixture of fixtures) fixture.cleanup();
+  }
+});
+
+test("review publishes exclusively, leaves normal clean-tree commands refusing, and blocks the occupied round", () => {
+  const review = makeReviewFixture("review-public-boundary", { verdict: "PASS" });
+  try {
+    const first = lane(review.fixture, ["review", "review-public-boundary", "--round", "1", "--brief", review.brief]);
+    assert.equal(first.status, 0, first.stderr);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicPath = join(review.path, "docs", "reviews", "review-public-boundary", `${head.slice(0, 7)}-r1.md`);
+    assert.ok(existsSync(publicPath));
+    const prompts = review.fake.calls().filter((args) => args[0] === "agent" && args[1] === "prompt").length;
+    const second = lane(review.fixture, ["review", "review-public-boundary", "--round", "1", "--brief", review.brief]);
+    assert.equal(second.status, 2);
+    assert.equal(second.stdout, "");
+    assert.equal(review.fake.calls().filter((args) => args[0] === "agent" && args[1] === "prompt").length, prompts);
+    const check = lane(review.fixture, ["check", "--cmd", "true"], { cwd: review.path });
+    assert.equal(check.status, 1);
+    assert.match(check.stderr, /current worktree is not clean/);
+    const promote = lane(review.fixture, ["promote", "review-public-boundary"]);
+    assert.equal(promote.status, 1);
+    assert.match(promote.stderr, /lane worktree is not clean/);
+    negativeControl("exclusive publication and clean-tree refusal");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
+test("review late-publication mutation exits 2 and retains both evidence files", async () => {
+  const review = makeReviewFixture("review-late-public", { verdict: "PASS" });
+  try {
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const directory = join(review.path, "docs", "reviews", "review-late-public");
+    const publicPath = join(directory, `${head.slice(0, 7)}-r1.md`);
+    mkdirSync(directory, { recursive: true });
+    let mutated = false;
+    const mutator = setInterval(() => {
+      if (!mutated && existsSync(publicPath)) {
+        mutated = true;
+        writeFileSync(join(review.path, "late-mutation.txt"), "late\n");
+      }
+    }, 1);
+    const child = spawn(process.execPath, [
+      LANE, "review", "review-late-public", "--round", "1", "--brief", review.brief,
+    ], {
+      cwd: review.fixture.repo,
+      env: hermeticGitEnvironment(review.fixture.env),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    const result = await new Promise((resolvePromise) => child.once("close", (code) => resolvePromise(code)));
+    clearInterval(mutator);
+    assert.equal(result, 2, stderr);
+    assert.equal(stdout, "");
+    assert.ok(mutated);
+    assert.ok(existsSync(publicPath));
+    assert.ok(existsSync(join(review.fixture.repo, ".lane", "reviews", "review-late-public", `${head.slice(0, 7)}-r1.md`)));
+    assert.match(stderr, /mutation after public review creation|late publication/);
+    negativeControl("late publication evidence retention");
+  } finally {
+    review.fixture.cleanup();
   }
 });
 
@@ -1810,11 +1974,15 @@ test("review renders OpenSpec, supplemental literal input, gate, and captured co
 test("review refuses malformed private evidence, incomplete output, timeout, and lane mutation", () => {
   const cases = [
     ["sha-mismatch", "PASS", 2],
+    ["review-id-mismatch", "PASS", 2],
     ["bad-witness", "PASS", 2],
     ["bad-finding", "PASS", 2],
     ["incomplete", "PASS", 2],
     ["oversized", "PASS", 2],
     ["dirty-public", "PASS", 2],
+    ["dirty-tracked", "PASS", 2],
+    ["dirty-index", "PASS", 2],
+    ["head-move", "PASS", 2],
     ["missing", undefined, 2],
   ];
   const fixtures = [];
@@ -1823,13 +1991,13 @@ test("review refuses malformed private evidence, incomplete output, timeout, and
       const topic = `review-${mode}`;
       const review = makeReviewFixture(topic, { verdict, mode });
       fixtures.push(review.fixture);
+      const capturedHead = git(review.path, ["rev-parse", "HEAD"]);
       const run = lane(review.fixture, [
         "review", topic, "--round", "1", "--brief", review.brief, "--timeout", "1",
       ]);
       assert.equal(run.status, exit, `${mode}\n${run.stderr}`);
       assert.equal(run.stdout, "");
-      const head = git(review.path, ["rev-parse", "HEAD"]);
-      const privatePath = join(review.fixture.repo, ".lane", "reviews", topic, `${head.slice(0, 7)}-r1.md`);
+      const privatePath = join(review.fixture.repo, ".lane", "reviews", topic, `${capturedHead.slice(0, 7)}-r1.md`);
       if (verdict !== undefined) assert.ok(existsSync(privatePath));
       assert.ok(review.fake.calls().filter((args) => args[0] === "agent" && args[1] === "prompt").length === 1);
     }
@@ -1894,6 +2062,27 @@ test("review preflight requires ignored private and trackable absent public path
     const publicRun = lane(publicIgnored.fixture, ["review", "public-ignore", "--round", "1", "--brief", publicIgnored.brief]);
     assert.equal(publicRun.status, 2, publicRun.stderr);
     assert.equal(publicRun.stdout, "");
+
+    const existing = makeReviewFixture("existing-round", { verdict: "PASS" });
+    fixtures.push(existing.fixture);
+    const existingHead = git(existing.path, ["rev-parse", "HEAD"]);
+    const occupied = join(existing.fixture.repo, ".lane", "reviews", "existing-round", `${existingHead.slice(0, 7)}-r1.md`);
+    mkdirSync(dirname(occupied), { recursive: true });
+    writeFileSync(occupied, "existing private evidence\n");
+    const occupiedRun = lane(existing.fixture, ["review", "existing-round", "--round", "1", "--brief", existing.brief]);
+    assert.equal(occupiedRun.status, 2, occupiedRun.stderr);
+    assert.equal(occupiedRun.stdout, "");
+
+    const escaped = makeReviewFixture("symlink-private", { verdict: "PASS" });
+    fixtures.push(escaped.fixture);
+    const reviewsRoot = join(escaped.fixture.repo, ".lane", "reviews");
+    const outside = join(escaped.fixture.root, "outside-private");
+    mkdirSync(join(escaped.fixture.repo, ".lane"), { recursive: true });
+    mkdirSync(outside);
+    symlinkSync(outside, reviewsRoot);
+    const escapedRun = lane(escaped.fixture, ["review", "symlink-private", "--round", "1", "--brief", escaped.brief]);
+    assert.equal(escapedRun.status, 2, escapedRun.stderr);
+    assert.equal(escapedRun.stdout, "");
     negativeControl("review output path preflight");
   } finally {
     for (const fixture of fixtures) fixture.cleanup();

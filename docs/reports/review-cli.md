@@ -1,7 +1,7 @@
 # Foreground lane review implementation report
 
-Status: R-i private evidence is READY for its post-commit gate. R-ii public
-projection is not yet delivered.
+Status: READY for operator review and promotion after the required final post-commit
+gate. R-i private evidence and R-ii public projection are both delivered.
 
 ## R-i delivered behavior
 
@@ -64,7 +64,53 @@ not the truth or semantic strength of reviewer claims. R-i intentionally does no
 sanitize or publish private evidence; operators must not copy it into tracked files
 without separate inspection.
 
-No dependency, configuration key, fix loop, background watcher, promotion rule,
-wrapper, UI behavior, push, promotion, archive, or `docs/reviews/` record was added.
-R-ii will add deterministic sanitization and the after-check publication boundary in
-a separate commit before the combined task can be marked complete.
+At the R-i commit, no dependency, configuration key, fix loop, background watcher,
+promotion rule, wrapper, UI behavior, push, promotion, archive, or `docs/reviews/`
+record was added. R-ii then added sanitization and publication in the separate commit
+described below.
+
+## R-ii delivered behavior and evidence
+
+- Builds the public record only from parsed validated metadata, Findings,
+  Re-executed, Non-claims, and Unverified. Private identifiers, Analysis, unknown
+  fields, raw source, and transcripts never enter the projection.
+- Converts proven reviewed-repository paths before redacting POSIX, drive-letter,
+  UNC and file-URL paths. It derives automatic user/home/host aliases, merges declared
+  private aliases with user/host/private precedence, matches longest-first at
+  case-insensitive path-segment or Unicode word boundaries, and refuses ambiguous
+  declared substrings or protected locations.
+- Enforces the plain-ASCII payload contract and rejects controls, newlines, non-ASCII
+  residue, markup, reserved placeholders, percent/HTML/backslash encodings, residual
+  paths/aliases, and any non-idempotent second pass. Public records report exact
+  substitution/category counts and redacted execution field labels without originals.
+- Bounds public output to 120 lines/64 KiB, creates it exclusively only after the
+  unchanged-lane check, yields to expose publication races, and then requires the
+  captured HEAD/branch plus exactly the selected untracked public file. It never
+  stages or commits the result.
+- The five focused R-ii groups all failed before implementation. Final-audit
+  controls for preserving an ordinary repository-relative path and separating a
+  repository-name prefix also failed before their matcher fixes. Together they cover
+  all verdicts, fixed placeholders/counts, actual injected OS alias values,
+  related-word boundaries, declared ambiguity, protected file locations, ASCII/
+  markup/encoding/ambiguous-path refusal, Analysis omission, board verdict parsing,
+  clean-tree refusal, occupied rounds, and retained files on a late mutation.
+- Final combined `npm test` passed 81/81 in 35.956 seconds. The repository-wide
+  negative-control run deliberately failed all 81 tests with zero passes in 35.876
+  seconds. Strict OpenSpec validation passed 16/16 with telemetry disabled and
+  concurrency one. The final environment used Node.js v20.19.4, npm 10.8.2, Git
+  2.54.0, and OpenSpec 1.6.0. All test/validation runs were serialized after clear
+  probes.
+
+R-i's post-commit gate was
+`GATE 76cb545727ec953e5e73e1d48213f7898bf4fbb8 exit=0 (27.727s)`.
+The complete current OpenSpec now contains all review-cli requirement blocks, and the
+combined task is checked. The final R-ii commit still requires its own clean post-
+commit gate, which belongs in the operator conversation rather than this tracked file.
+
+No live reviewer or real Herdr mutation was run. OS aliases were obtained through the
+same Node APIs as production and injected into private fake-reviewer payloads without
+tracking their values; forced API failure and a distinct nested full/short hostname
+were not available on this host. The mechanical sanitizer cannot prove absence of an
+undeclared human name or arbitrary secret. No alternate host, permission race, live
+concurrent private writer, push, promotion, archive, or facilitator-owned review record
+was exercised or changed.

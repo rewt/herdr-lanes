@@ -122,9 +122,9 @@ silently becomes evidence for a newer commit.
 If the pre-agreed review split is selected, R-i ends at a validated private record
 with no public output; R-ii adds verified sanitization and the publication boundary.
 Default-config waits for that complete boundary, not just the private-only command.
-The currently delivered R-i slice therefore leaves the public record as a manual
-operator artifact; never copy private evidence without a separate public-safety
-inspection. The combined review-cli task remains incomplete until R-ii lands.
+The delivered command includes R-i and R-ii: private validation is followed by
+verified sanitization and the after-check publication boundary. The public record is
+still an untracked operator-inspected artifact; the CLI never commits it.
 
 Recommend a higher explicitly selected route for round 3 or later: review-xhigh
 for adversarial/crypto/semantics work, review-max after repeated NEEDS-WORK. Before

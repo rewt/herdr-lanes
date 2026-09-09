@@ -478,3 +478,26 @@ Living log for agents maintaining this repository. Newest entry last.
   evidence verification, sanitizer, public projection, or publication boundary was
   exercised. Public review evidence remains a manual operator artifact until R-ii.
   Nothing was pushed, promoted, archived, or written under `docs/reviews/`.
+
+## 2026-09-09 — foreground review R-ii public projection
+
+- Added deterministic sanitization and bounded public projection after private schema
+  validation and the unchanged-lane check. Repository/POSIX/drive/UNC/file-URL paths,
+  OS user/home/host aliases and declared private tokens use fixed placeholders with
+  exact counts, longest-first precedence, protected locations and idempotent rescans.
+- Enforced plain-ASCII payloads and fail-closed ambiguity, markup, encoding, residual,
+  reserved-placeholder, line/size and schema checks. Analysis/private identifiers are
+  omitted. The CLI creates the public record exclusively, leaves it untracked, and
+  rechecks HEAD/branch plus the exact single new file before any verdict.
+- Five focused R-ii groups failed before implementation; final-audit relative-path
+  preservation and repository-prefix controls also failed before their matcher fixes.
+  Final `npm test` passed 81/81 in 35.956 seconds; all 81 deliberate controls failed
+  with zero passes in
+  35.876 seconds; strict OpenSpec validation passed 16/16. Tests and validation ran
+  alone after clear load probes with Node.js v20.19.4, npm 10.8.2, Git 2.54.0, and
+  OpenSpec 1.6.0. R-i's post-commit gate passed 77/77 at `76cb545`.
+- README, REFERENCE, shared protocol, current OpenSpec and the implementation report
+  now describe the complete boundary, including late-publication/same-round recovery.
+  The combined change task is complete. No live reviewer/Herdr mutation, alternate
+  host, semantic secret proof, push, promotion, archive, or `docs/reviews/` change was
+  performed.

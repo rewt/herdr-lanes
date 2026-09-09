@@ -2,9 +2,8 @@
 
 ## Purpose
 
-Dispatch one independent review of a fixed lane commit and validate its private
-record through bounded foreground observation. Public projection is not yet part of
-the current capability.
+Dispatch one independent review of a fixed lane commit, validate its private
+record and generate public evidence through bounded foreground observation.
 
 ## Requirements
 
@@ -52,13 +51,37 @@ accepting a private review result.
 - **WHEN** HEAD moves or tracked/index/untracked state is dirty, including a reviewer-written public record
 - **THEN** the command exits 2, preserves all work/evidence, and neither resets files nor accepts the review.
 
+### Requirement: Orchestrator-only sanitized public record
+Only lane review SHALL generate docs/reviews/<topic>/<head7>-rN.md after validating
+the private canonical .lane/reviews/<topic>/<head7>-rN.md and verifying sanitization.
+#### Scenario: Sanitizable private evidence
+- **WHEN** a valid record contains removable absolute paths or declared/local user and host names
+- **THEN** the CLI publishes a bounded schema-preserving projection with explicit placeholders/redaction labels, retains exact private evidence and leaves the public record untracked.
+#### Scenario: Sanitization cannot be verified
+- **WHEN** private strings remain, encoding/markup is ambiguous, or redaction loses a finding's location/meaning
+- **THEN** the command exits 2, writes no public record, retains the private record and does not leak it through diagnostics.
+#### Scenario: Deterministic aliases and placeholders
+- **WHEN** injected OS username, home basename, full/short hostname and declared tokens occur in varied case and inside unrelated words
+- **THEN** only whole path-segment/word-boundary matches are replaced with the design's fixed placeholders and counts; substring collisions, protected locations and unsupported payloads refuse exactly as defined there.
+
+### Requirement: After-check publication boundary
+The complete review command SHALL require successful sanitized public generation
+and a final integrity check before returning a verdict, extending the private-only
+slice's validated-record completion point without weakening its checks.
+#### Scenario: Complete-command success
+- **WHEN** the private record passes validation and the lane is still clean at its captured HEAD
+- **THEN** only the CLI creates the public file without replacement, rechecks HEAD/tree allowing that file alone, and then emits the verdict with exit 0 or 1.
+#### Scenario: Mutation during publication
+- **WHEN** another mutation appears after public creation or a selected output already exists
+- **THEN** the command exits exactly 2 with no verdict, keeps existing evidence, and explains the inspection/commit/removal and explicit-round recovery rather than retrying.
+
 ### Requirement: Single dispatch bounded observation and explicit outcomes
 Review SHALL call the existing dispatch path once, default to review, enforce the
 documented --timeout and stop local observation without any follow-up lifecycle action.
 Refusals SHALL use an exit-2 boundary, never the shared exit-1 fail helper.
 #### Scenario: Private-only recorded verdict
 - **WHEN** the R-i slice obtains a validated private record and unchanged clean lane
-- **THEN** stdout is PASS with exit 0 or NEEDS-WORK/FAIL with exit 1, stderr names the private path, and no public output is created.
+- **THEN** stdout is PASS with exit 0 or NEEDS-WORK/FAIL with exit 1, stderr names the private path, and no public output is created; the complete command additionally satisfies After-check publication boundary before emitting a verdict.
 #### Scenario: Missing result or interrupted wait
 - **WHEN** dispatch stalls, the record stays missing/incomplete, timeout occurs, or observation is interrupted
 - **THEN** the command exits 2 with no verdict, closes local children/timers, keeps evidence and states that the Herdr reviewer may still write late output.
@@ -71,4 +94,4 @@ The implementation SHALL use built-ins-only fake-reviewer tests and document the
 command/template/protocol in usage, the README table, REFERENCE and shared rules.
 #### Scenario: No real agent or UI dependencies
 - **WHEN** the offline suite runs in cleaned temporary repositories
-- **THEN** a fake reviewer writing only the private file exercises the delivered slice's verdict/error paths and unchanged-tree refusal, with every refusal asserting exactly 2, without real Herdr, nested builds/tests or UI installation.
+- **THEN** a fake reviewer writing only the private file exercises the delivered slice's verdict/error paths and unchanged-tree refusal, with every refusal asserting exactly 2, without real Herdr, nested builds/tests or UI installation; public-projection coverage belongs to R-ii's requirement blocks.

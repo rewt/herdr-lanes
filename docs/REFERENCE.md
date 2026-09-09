@@ -307,7 +307,7 @@ agent names use a readable topic stem plus repository-identity and random hexade
 suffixes, while staying within Herdr's 32-character naming grammar. Lane never writes
 Git author name, email, signing, or other identity configuration.
 
-## Foreground review (private evidence slice)
+## Foreground review
 
 ```sh
 lane review <topic> --round N [--change <name>] [--brief <path>] \
@@ -379,17 +379,55 @@ selected private path with foreground timers. It does not infer completion from 
 or an agent footer, send follow-up actions, kill the reviewer, delete partial/late
 evidence, or leave a watcher behind.
 
-For this private-only R-i slice, stdout is exactly `PASS` with exit 0 or
-`NEEDS-WORK`/`FAIL` with exit 1; stderr names the private record. Every preflight,
-dispatch, timeout, incomplete/oversized/invalid record, moved/dirty target, signal,
-or pipe refusal exits exactly 2 with no verdict. A late reviewer may still finish the
-private file after timeout or interruption. Inspect and retain that evidence. To reuse
-the same HEAD and round, separately authorize removal only after ensuring the old
-reviewer cannot write; otherwise choose an explicit fresh round.
+Only after that unchanged-lane check, the CLI constructs a public envelope from the
+validated metadata, Findings, Re-executed, Non-claims, and Unverified sections. It
+never copies Analysis, Private identifiers, unknown fields, or raw transcripts. The
+public record preserves the verdict, full SHA, findings, evidence, and limits, adds a
+Sanitization section, stays within 120 lines and 64 KiB, and is created exclusively at:
 
-Public review records remain manual operator artifacts until R-ii adds verified
-sanitization and the after-check publication boundary. Do not treat private text as
-public-safe. Round 3 or later should explicitly select an operator-configured
+```text
+docs/reviews/<topic>/<head7>-r<N>.md
+```
+
+Every projected string is NFC-normalized. Proven paths inside the reviewed repository
+become repository-relative first. Other absolute POSIX, drive-letter, UNC, and
+file-URL paths become `[ABS_PATH]`. Case-insensitive whole path-segment or Unicode
+word-boundary matches for the current OS username/home basename, hostname/full first
+label, and declared private identifiers become `[USER]`, `[HOST]`, and `[PRIVATE]`.
+Matches run longest-first; equal aliases use user, then host, then private precedence.
+Automatic duplicates are removed. A proper substring relationship between distinct
+declared tokens refuses as ambiguous; nested automatic host aliases are safe under
+the longest-first rule.
+
+The Sanitization section records counts for absolute-path, user, host, private, and
+repository-relative conversions, including zero, plus modified execution fields by
+array index/name without original values. Generated placeholders are reserved and
+cannot be supplied by the reviewer. The checker refuses aliases in protected
+file:line or captured metadata, ambiguous paths, controls/newlines, non-ASCII residue,
+backticks, angle/square brackets, emphasis sequences, percent/HTML/backslash-encoded
+text, residual paths/aliases, and any non-idempotent second pass. Reviewer payloads
+are intentionally plain ASCII; schema tags, JSON fences and CLI placeholders are
+structural. The mechanical policy cannot prove that arbitrary prose contains no
+undeclared human name or secret, so the operator still inspects before committing.
+
+The CLI creates the public file only after sanitization and the pre-publication clean
+check, without replacement, staging, or committing. It then requires the same HEAD and
+branch with exactly that one new untracked file before emitting a verdict. stdout is
+exactly `PASS` with exit 0 or `NEEDS-WORK`/`FAIL` with exit 1; stderr names both files.
+Every preflight, dispatch, timeout, incomplete/oversized/invalid record, moved/dirty
+target, unverified sanitization, exclusive-write/final-integrity failure, signal, or
+pipe refusal exits exactly 2 with no verdict.
+
+A late reviewer may still finish the private file after timeout or interruption. A
+late-publication exit 2 can retain an untracked public file when a concurrent mutation
+is detected after creation; it is not a successful review result. Inspect both files
+and all work before deciding whether to commit or remove anything. A commit changes
+HEAD and needs a fresh gate plus an explicitly selected round. To reuse the same HEAD
+and round, separately authorize removal of both outputs only after ensuring the old
+reviewer cannot write and restoring a clean tree; otherwise retain the evidence and
+choose a fresh round. The CLI performs no cleanup or occupied-round bypass.
+
+Round 3 or later should explicitly select an operator-configured
 `review-xhigh` route for adversarial, cryptographic, or semantic work, or `review-max`
 after repeated NEEDS-WORK. This is advice only: review never advances a round, changes
 routes, loops, fixes, commits, promotes, or pushes.
