@@ -913,3 +913,31 @@ Living log for agents maintaining this repository. Newest entry last.
   alternate host, same-size/same-mtime adversarial rewrite, push, promotion, archive,
   Unix-socket `listen EPERM`, board-code edit, or `docs/reviews/` change occurred. The
   final post-commit `lane check` remains conversation-only evidence.
+
+## 2026-09-10 — review CLI precise paths Round 2 corrections
+
+- Replaced the closing-delimiter boundary exclusion with complete regex-literal and
+  command-substitution token skipping. Absolute POSIX paths following `)`, `]`, or
+  `}` are detected again; plain and quantifier regex literals remain literal, while
+  file URLs, drive paths, UNC paths, contiguous POSIX paths, and alias rescans retain
+  their existing handling.
+- Added a narrow refusal for a concrete absolute-path match followed by a space and a
+  next whitespace token containing a slash or backslash. Raised the explicit review
+  timeout minimum to three seconds and corrected the design's settle-before-validation
+  wording. REFERENCE and both OpenSpec requirements are synchronized.
+- Reduced the 39-invocation accepted-boundary matrix to four representative dispatched
+  fixtures while retaining zero/one/two-blank-line and boundary-category coverage.
+  The case fell from 113.762 to 11.092 seconds; final `npm test` passed 129/129 in
+  235.993 seconds, 102.177 seconds faster than the 338.171-second Round 2 baseline.
+- Before production changes, all four focused behavior/documentation groups failed in
+  31.819 seconds. After correction they passed in 51.564 seconds, and each retains a
+  deliberate `negativeControl`. The final negative run produced zero passes and all
+  129 deliberate failures in 234.225 seconds. An earlier complete attempt reported
+  `listen EPERM: operation not permitted` in sandboxed board socket coverage; the
+  final rerun reached the intended socket controls.
+- Strict OpenSpec validation passed 19/19; `git diff --check` and the added-line
+  public-text scan passed. Main remained at `3367cd5`, so no rebase was required.
+  Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+- No live reviewer/Herdr mutation, alternate host, push, promotion, archive,
+  board-code edit, or `docs/reviews/` change was performed. The final commit and
+  single post-commit gate remain conversation-only evidence.

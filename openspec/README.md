@@ -116,7 +116,8 @@ claim, Non-claims and Unverified. The exact schema is maintained in the change/s
 lane review enforces unchanged HEAD and a clean tree before/after the reviewer,
 waits for the completed private record's size and modification time to settle for
 two continuous seconds, re-reads its bytes, then validates that final read and
-sanitizes a public projection. Unverifiable
+sanitizes a public projection. Its explicit timeout therefore accepts three through
+7200 seconds. Unverifiable
 sanitization refuses publication. The CLI writes the public record only after
 those checks; it never stages or commits it. The operator inspects public safety
 and authorizes any subsequent commit/check/fix. A record's original SHA never

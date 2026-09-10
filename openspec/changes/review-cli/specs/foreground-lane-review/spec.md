@@ -74,8 +74,8 @@ the private canonical .lane/reviews/<topic>/<head7>-rN.md and verifying sanitiza
 - **WHEN** Re-executed command or witness-command strings contain shell syntax, markup characters or encoded-looking text
 - **THEN** path, alias, ASCII and reserved-placeholder checks still apply, encoded scratch rescans cannot hide an alias or path, remaining command characters are rendered verbatim inside the public JSON fence, and quoted punctuation and backslashes in prose are backslash-escaped only after sanitization and idempotence checks on the unescaped payload.
 #### Scenario: Concrete absolute paths and slash prose
-- **WHEN** a projected description contains a JavaScript regex literal with flags, a slash-delimited phrase, a non-file URL-like token and a real absolute path
-- **THEN** only the concrete contiguous absolute path is replaced, the other slash forms remain literal, and declared aliases retain their existing refusal rules.
+- **WHEN** a projected description contains complete plain-body and quantifier-ending JavaScript regex literals with flags, a command-substitution token, a slash-delimited phrase, a non-file URL-like token, or a real absolute path following `)`, `]`, or `}`
+- **THEN** complete syntax tokens and prose slash forms remain literal, concrete absolute paths are still replaced or refused in protected locations, an ambiguous spaced-path suffix refuses instead of being partially published, and declared aliases retain their existing refusal rules.
 
 ### Requirement: After-check publication boundary
 The complete review command SHALL require successful sanitized public generation
@@ -90,8 +90,11 @@ slice's validated-record completion point without weakening its checks.
 
 ### Requirement: Single dispatch bounded observation and explicit outcomes
 Review SHALL call the existing dispatch path once, default to review, enforce the
-documented --timeout and stop local observation without any follow-up lifecycle action.
+documented three-through-7200-second --timeout and stop local observation without any follow-up lifecycle action.
 Refusals SHALL use an exit-2 boundary, never the shared exit-1 fail helper.
+#### Scenario: Settle-compatible timeout
+- **WHEN** an explicit timeout is less than three seconds
+- **THEN** review exits 2 before dispatch because the deadline cannot accommodate the two-second settle window and polling interval.
 #### Scenario: Private-only recorded verdict
 - **WHEN** the R-i slice obtains a validated private record and unchanged clean lane
 - **THEN** stdout is PASS with exit 0 or NEEDS-WORK/FAIL with exit 1, stderr names the private path, and no public output is created; the complete command additionally satisfies After-check publication boundary before emitting a verdict.

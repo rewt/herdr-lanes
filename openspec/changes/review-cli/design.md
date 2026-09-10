@@ -9,7 +9,9 @@ lane review <topic> --round N [--brief <path>] [--change <name>] \
 
 --round is required: a positive safe integer, with no default or automatic next
 round. --route defaults to review; missing/unknown routes fail without falling back
-to engineer. --timeout defaults to 1800 seconds and accepts integers 1 through 7200.
+to engineer. --timeout defaults to 1800 seconds and accepts integers 3 through 7200;
+the lower bound leaves one polling interval beyond the required two-second settle
+window. Smaller values fail before dispatch.
 Reject duplicate/unknown flags, empty/missing values, invalid topics and operands
 before effects. No new config key, environment variable or runtime dependency.
 Until default-config ships, configure a review route before using this command;
@@ -113,8 +115,9 @@ header lines followed by the exact sections below:
 The completion probe is deliberately more permissive than schema validation. It trims
 trailing whitespace, including carriage returns, before comparing the final content
 line with the completion marker. Every schema-valid record is therefore detected as
-complete, while malformed but finished output reaches validation immediately and
-receives a schema diagnostic instead of exhausting the review deadline.
+complete, while malformed but finished output reaches validation after the required
+settle interval and receives a schema diagnostic instead of exhausting the review
+deadline.
 
 ```text
 **PASS**
@@ -218,10 +221,14 @@ Tests inject these exact OS values so host fixtures remain deterministic.
 First convert paths proven inside the reviewed repository to repository-relative
 paths. Replace other contiguous absolute POSIX tokens, drive-letter paths, UNC paths,
 and file URLs matched by the concrete absolute-path pattern, including their private
-segments. Do not infer a path by scanning from one slash across whitespace to another;
-JavaScript regex literals with flags, slash-delimited prose, and non-file URL-like
-tokens remain literal unless a contiguous token independently matches the concrete
-pattern. Then redact aliases, matching case-
+segments. Skip complete JavaScript regex-literal tokens with flags and complete shell
+command-substitution tokens before applying that pattern; regex bodies with plain or
+quantifier endings remain literal. Do not infer a path by scanning from one slash
+across whitespace to another. Slash-delimited prose and non-file URL-like tokens also
+remain literal. If a concrete absolute-path match is immediately followed by a space
+and the next whitespace-delimited token still contains a slash or backslash, refuse
+the ambiguous spaced path rather than publish a partially redacted suffix. Then
+redact aliases, matching case-
 insensitively at whole path segments (delimited by slash/backslash or string ends)
 or Unicode word boundaries (adjacent characters must not be letters, combining
 marks or numbers; underscore is therefore a boundary). Never substring-replace a username inside an

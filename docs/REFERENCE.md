@@ -447,8 +447,10 @@ spec. `--brief` names a literal supplemental or standalone source and resolves f
 the invoking directory. At least one source is required and both may be used. The
 route defaults to `review`; configure that named route before use until built-in
 defaults ship. `--timeout` is an end-to-end foreground deadline in whole seconds,
-defaults to 1800, and accepts 1 through 7200. Duplicate, missing, empty, unknown, or
-invalid options refuse before dispatch.
+defaults to 1800, and accepts 3 through 7200. The three-second minimum leaves one
+polling interval beyond the mandatory two-second record-settle window; smaller
+values refuse before dispatch. Duplicate, missing, empty, unknown, or invalid
+options refuse before dispatch.
 
 Review locates `lane/<topic>` through Git worktree metadata from any checkout of the
 same repository and verifies its branch and canonical common-directory identity. It
@@ -530,10 +532,15 @@ docs/reviews/<topic>/<head7>-r<N>.md
 Every projected string is NFC-normalized. Proven paths inside the reviewed repository
 become repository-relative first. Other contiguous absolute POSIX tokens, drive-letter
 paths, UNC paths, and file URLs matched by the concrete path pattern become
-`[ABS_PATH]`. The checker does not scan from one slash across whitespace to another:
-JavaScript regex literals with flags, slash-delimited prose, and non-file URL-like
-tokens remain literal unless a contiguous token independently matches the concrete
-pattern. Case-insensitive whole path-segment or Unicode
+`[ABS_PATH]`. Before applying that pattern, the checker skips complete JavaScript
+regex-literal tokens with flags and complete shell command-substitution tokens, so
+their slash syntax remains literal. Plain and quantifier-ending regex bodies are
+covered. Slash-delimited prose and non-file URL-like tokens also remain literal.
+The checker does not infer a path by scanning from one slash across whitespace to
+another. It does, however, refuse an ambiguous spaced path when a concrete absolute
+path match is immediately followed by a space and the next whitespace-delimited
+token still contains a slash or backslash; partial redaction must not publish a
+possible path suffix. Case-insensitive whole path-segment or Unicode
 word-boundary matches for the current OS username/home basename, hostname/full first
 label, and declared private identifiers become `[USER]`, `[HOST]`, and `[PRIVATE]`.
 Matches run longest-first; equal aliases use user, then host, then private precedence.

@@ -54,3 +54,37 @@ resolution edge, same-size/same-mtime adversarial rewrite, push, promotion, arch
 or change under `docs/reviews/` was performed. The metadata checks narrow the rewrite
 race but do not provide an OS-level lock against a write beginning after the final
 read. The final clean-commit gate remains conversation-only evidence.
+
+## Round 2 corrections
+
+- Restored the concrete POSIX start boundary after `)`, `]`, and `}`. Complete
+  JavaScript regex-literal tokens with flags and shell command-substitution tokens
+  are skipped as syntax instead, so plain and quantifier-ending regex bodies project
+  literally while protected locations containing delimiter-following absolute paths
+  refuse.
+- Reintroduced a narrow ambiguity refusal: when a concrete absolute-path match is
+  followed by a space and the next whitespace-delimited token still contains a path
+  separator, publication stops instead of exposing a possible spaced-path suffix.
+  The check runs before repository-root conversion and the existing alias rescan is
+  unchanged.
+- Raised the explicit timeout floor from one to three seconds so a caller-selected
+  deadline can include the two-second settle window and a polling interval. Corrected
+  the design to place malformed-record validation after that settle interval.
+- Reduced the accepted blank-boundary end-to-end matrix from 39 invocations to four
+  representative fixtures. It retains record-start, after-heading, before-heading,
+  after-marker, and zero/one/two-blank-line coverage without paying 39 settle windows.
+- The four focused behavior/documentation groups failed before production changes
+  with zero passes in 31.819 seconds. After correction, all four passed in 51.564
+  seconds; each group retains its deliberate `negativeControl`.
+- The final ordinary `npm test` passed 129/129 with zero skips in 235.993 seconds.
+  The representative boundary test took 11.092 seconds, down from 113.762 seconds in
+  the 338.171-second Round 2 baseline; the complete suite improved by 102.177 seconds.
+- The final `LANE_TEST_NEGATIVE_CONTROL=1 npm test` produced zero passes and all 129
+  deliberate failures in 234.225 seconds. An earlier complete attempt also reached
+  zero passes and 129 failures but its sandboxed board socket coverage reported
+  `listen EPERM: operation not permitted`; the final rerun reached the intended
+  socket controls.
+- Strict OpenSpec validation passed all 19 items. `git diff --check` and the added-line
+  public-text scan passed, and main remained at `3367cd5`, so no rebase was required.
+  Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+  The final commit and post-commit gate are recorded in the operator conversation.

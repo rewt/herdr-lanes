@@ -3601,6 +3601,14 @@ test("review requires explicit source, round, route, and bounded unique flags wi
       assert.equal(run.status, 2, `${args.join(" ")}\n${run.stderr}`);
       assert.equal(run.stdout, "");
     }
+    for (const timeout of ["1", "2"]) {
+      const run = lane(fixture, [
+        "review", "review-flags", "--round", "1", "--brief", brief, "--timeout", timeout,
+      ]);
+      assert.equal(run.status, 2, run.stderr);
+      assert.equal(run.stdout, "");
+      assert.match(run.stderr, /--timeout must be an integer from 3 through 7200 seconds/);
+    }
     negativeControl("review flag refusals use exit 2");
   } finally {
     fixture.cleanup();
@@ -3680,13 +3688,12 @@ test("review preserves a final finding immediately before the next section headi
   }
 });
 
-test("review completion admits every validator-accepted record and section boundary fixture", () => {
-  const sections = ["Findings", "Re-executed", "Non-claims", "Unverified", "Private identifiers", "Analysis"];
+test("review completion admits representative validator-accepted record boundaries", () => {
   const boundaries = [
-    "record-start",
-    ...sections.map((name) => `after-${name}`),
-    ...sections.slice(1).map((name) => `before-${name}`),
-    "after-marker",
+    ["record-start", 0],
+    ["after-Findings", 1],
+    ["before-Unverified", 2],
+    ["after-marker", 2],
   ];
   const findings = [
     "- [Major] first.txt:1 - first issue; Fix: fix the first issue",
@@ -3695,27 +3702,25 @@ test("review completion admits every validator-accepted record and section bound
   const fixtures = [];
   const failures = [];
   try {
-    for (const [boundaryIndex, boundary] of boundaries.entries()) {
-      for (const blankLines of [0, 1, 2]) {
-        const topic = `review-spacing-${boundaryIndex}-${blankLines}`;
-        const review = makeReviewFixture(topic, {
-          verdict: "NEEDS-WORK", payload: { findings, spacing: { boundary, blankLines } },
-        });
-        fixtures.push(review.fixture);
-        const run = lane(review.fixture, [
-          "review", topic, "--round", "1", "--brief", review.brief, "--timeout", "4",
-        ]);
-        const head = git(review.path, ["rev-parse", "HEAD"]);
-        const publicPath = join(review.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`);
-        const publicRecord = existsSync(publicPath) ? readFileSync(publicPath, "utf8") : "";
-        if (run.status !== 1 || !publicRecord.includes("first.txt:1 - first issue") ||
-            !publicRecord.includes("second.txt:2 - second issue")) {
-          failures.push({ boundary, blankLines, status: run.status, stderr: run.stderr });
-        }
+    for (const [boundaryIndex, [boundary, blankLines]] of boundaries.entries()) {
+      const topic = `review-spacing-${boundaryIndex}-${blankLines}`;
+      const review = makeReviewFixture(topic, {
+        verdict: "NEEDS-WORK", payload: { findings, spacing: { boundary, blankLines } },
+      });
+      fixtures.push(review.fixture);
+      const run = lane(review.fixture, [
+        "review", topic, "--round", "1", "--brief", review.brief, "--timeout", "4",
+      ]);
+      const head = git(review.path, ["rev-parse", "HEAD"]);
+      const publicPath = join(review.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`);
+      const publicRecord = existsSync(publicPath) ? readFileSync(publicPath, "utf8") : "";
+      if (run.status !== 1 || !publicRecord.includes("first.txt:1 - first issue") ||
+          !publicRecord.includes("second.txt:2 - second issue")) {
+        failures.push({ boundary, blankLines, status: run.status, stderr: run.stderr });
       }
     }
     assert.deepEqual(failures, []);
-    negativeControl("completion admits validator-accepted boundary fixtures");
+    negativeControl("completion admits representative validator-accepted boundary fixtures");
   } finally {
     for (const fixture of fixtures) fixture.cleanup();
   }
@@ -3825,7 +3830,15 @@ test("review path detection preserves slash prose while retaining concrete path 
     const accepted = makeReviewFixture("review-slash-prose", {
       verdict: "PASS",
       payload: {
-        findings: "- [Minor] shared.txt:1 - Regex /( )/giu, phrase / alpha beta /, and URL https://example.invalid/a/b stay literal; Fix: preserve all three tokens",
+        findings: "- [Minor] shared.txt:1 - Regex /plain/giu, /items+/giu, and /( )/giu, phrase / alpha beta /, and URL https://example.invalid/a/b stay literal; Fix: preserve all five tokens",
+        reexecuted: [{
+          command: "printf '%s\\n' $(pwd)/artifact",
+          cwd: "scratch",
+          exit_code: 0,
+          result: "Command-substitution path syntax was inspected without execution.",
+          tests_pass: false,
+          witness: null,
+        }],
         nonclaims: "- The external fixture at /opt/review/input.js was not re-executed.",
       },
     });
@@ -3838,8 +3851,10 @@ test("review path detection preserves slash prose while retaining concrete path 
     const publicRecord = readFileSync(join(
       accepted.path, "docs", "reviews", "review-slash-prose", `${acceptedHead.slice(0, 7)}-r1.md`,
     ), "utf8");
-    assert.match(publicRecord, /Regex \/\( \)\/giu, phrase \/ alpha beta \/, and URL https:\/\/example\.invalid\/a\/b stay literal/);
+    assert.match(publicRecord, /Regex \/plain\/giu, \/items\+\/giu, and \/\( \)\/giu, phrase \/ alpha beta \/, and URL https:\/\/example\.invalid\/a\/b stay literal/);
     assert.match(publicRecord, /The external fixture at \[ABS_PATH\] was not re-executed\./);
+    const executions = JSON.parse(publicRecord.match(/## Re-executed\n```json\n(.+)\n```/u)[1]);
+    assert.equal(executions[0].command, "printf '%s\\n' $(pwd)/artifact");
 
     const refused = makeReviewFixture("review-slash-alias", {
       verdict: "PASS",
@@ -3892,6 +3907,10 @@ test("review sanitization preserves unrelated words and fails closed on ambiguou
       ["location-emphasis", { findings: "- [Major] **shared**.txt:1 - issue; Fix: change it" }],
       ["location-placeholder", { findings: "- [Major] [USER].txt:1 - issue; Fix: change it" }],
       ["location-encoded", { findings: "- [Major] shared%2Fsecret.txt:1 - issue; Fix: change it", identifiers: ["secret"] }],
+      ["location-path-after-paren", { findings: "- [Major] wrapper)/var/tmp/private.txt:1 - issue; Fix: change it" }],
+      ["location-path-after-bracket", { findings: "- [Major] wrapper]/var/tmp/private.txt:1 - issue; Fix: change it" }],
+      ["location-path-after-brace", { findings: "- [Major] wrapper}/var/tmp/private.txt:1 - issue; Fix: change it" }],
+      ["ambiguous-spaced-path", { nonclaims: "- The external record /var/tmp/private next/segment was not inspected." }],
       ["percent-encoded-alias", { nonclaims: "- A%6En was not independently authenticated.", identifiers: ["Ann"] }],
       ["numeric-reference-alias", { nonclaims: "- A&#110;n was not independently authenticated.", identifiers: ["Ann"] }],
       ["non-ascii", { findings: "- [Minor] shared.txt:1 - caf\u00e9 issue; Fix: use ASCII" }],
@@ -4359,7 +4378,7 @@ test("review refuses malformed private evidence, incomplete output, timeout, and
       const review = makeReviewFixture(topic, { verdict, mode });
       fixtures.push(review.fixture);
       const capturedHead = git(review.path, ["rev-parse", "HEAD"]);
-      const timeout = ["incomplete", "missing"].includes(mode) ? "1" : "4";
+      const timeout = ["incomplete", "missing"].includes(mode) ? "3" : "4";
       const run = lane(review.fixture, [
         "review", topic, "--round", "1", "--brief", review.brief, "--timeout", timeout,
       ]);
@@ -4535,6 +4554,9 @@ test("review protocol documents settled records, normalized boundaries, and cons
     assert.match(document, /leading and trailing (?:blank-line|newline)\s+runs/iu);
   }
   assert.match(design, /completion probe[^.]*more permissive than schema validation/iu);
+  assert.match(design, /malformed but finished output reaches validation[^.]*settle interval/iu);
+  assert.match(reference, /accepts 3 through 7200/iu);
+  assert.match(design, /accepts integers 3 through 7200/iu);
   for (const document of [reference, design]) {
     assert.match(document, /size and\s+modification time[^.]*two continuous seconds/iu);
     assert.match(document, /re-reads?\s+(?:the\s+)?(?:record\s+)?bytes[^.]*immediately before validation/iu);

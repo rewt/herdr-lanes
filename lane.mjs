@@ -1256,6 +1256,7 @@ function dispatch(topic, promptText, options = {}) {
 const REVIEW_MAX_PRIVATE_BYTES = 1024 * 1024;
 const REVIEW_COMPLETE_MARKER = "<!-- lane-review-complete -->";
 const REVIEW_SETTLE_MS = 2_000;
+const REVIEW_MIN_TIMEOUT_SECONDS = Math.floor(REVIEW_SETTLE_MS / 1_000) + 1;
 const REVIEW_SECTIONS = [
   "Findings", "Re-executed", "Non-claims", "Unverified", "Private identifiers", "Analysis",
 ];
@@ -1277,8 +1278,8 @@ function parseReviewOptions(args) {
     else options[flag.slice(2)] = value;
   }
   if (!Number.isSafeInteger(options.round) || options.round < 1) fail("--round must be a positive safe integer");
-  if (!Number.isInteger(options.timeout) || options.timeout < 1 || options.timeout > 7200) {
-    fail("--timeout must be an integer from 1 through 7200 seconds");
+  if (!Number.isInteger(options.timeout) || options.timeout < REVIEW_MIN_TIMEOUT_SECONDS || options.timeout > 7200) {
+    fail(`--timeout must be an integer from ${REVIEW_MIN_TIMEOUT_SECONDS} through 7200 seconds`);
   }
   if (options.change === undefined && options.brief === undefined) fail("review requires --change or --brief");
   if (typeof options.route !== "string" || options.route === "") fail("--route must not be empty");
@@ -1642,7 +1643,120 @@ function containsAlias(value, aliases) {
 }
 
 function absolutePathPattern() {
-  return /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\)\]}])\/(?!\/)[^\s"'<>`\[\],;:()]+/giu;
+  return /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]+/giu;
+}
+
+function commandSubstitutionTokenEnd(value, start) {
+  if (value.slice(start, start + 2) !== "$(") return undefined;
+  let depth = 1;
+  let quote;
+  for (let index = start + 2; index < value.length; index += 1) {
+    const character = value[index];
+    if (character === "\\" && quote !== "'") {
+      index += 1;
+      continue;
+    }
+    if (quote !== undefined) {
+      if (character === quote) quote = undefined;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+    } else if (character === "(") {
+      depth += 1;
+    } else if (character === ")" && --depth === 0) {
+      let end = index + 1;
+      while (end < value.length && !/[\s,;:]/u.test(value[end])) end += 1;
+      return end;
+    }
+  }
+  return undefined;
+}
+
+function regexLiteralTokenEnd(value, start) {
+  if (value[start] !== "/" || value[start + 1] === "/") return undefined;
+  const before = value[start - 1];
+  if (before !== undefined && /[-\p{L}\p{M}\p{N}_.\/\\]/u.test(before)) return undefined;
+  let escaped = false;
+  let inCharacterClass = false;
+  for (let index = start + 1; index < value.length; index += 1) {
+    const character = value[index];
+    if (character === "\n" || character === "\r") return undefined;
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character === "[") {
+      inCharacterClass = true;
+      continue;
+    }
+    if (character === "]" && inCharacterClass) {
+      inCharacterClass = false;
+      continue;
+    }
+    if (character !== "/" || inCharacterClass) continue;
+    let end = index + 1;
+    const flags = new Set();
+    while (end < value.length && /[dgimsuvy]/u.test(value[end]) && !flags.has(value[end])) {
+      flags.add(value[end]);
+      end += 1;
+    }
+    if (flags.size === 0) continue;
+    if (end < value.length && /[\p{L}\p{M}\p{N}_]/u.test(value[end])) continue;
+    return end;
+  }
+  return undefined;
+}
+
+function replaceOutsidePathSyntax(value, replace) {
+  const ranges = [];
+  for (let index = 0; index < value.length;) {
+    const end = commandSubstitutionTokenEnd(value, index) ?? regexLiteralTokenEnd(value, index);
+    if (end === undefined) {
+      index += 1;
+      continue;
+    }
+    ranges.push([index, end]);
+    index = end;
+  }
+  let cursor = 0;
+  let output = "";
+  for (const [start, end] of ranges) {
+    output += replace(value.slice(cursor, start)) + value.slice(start, end);
+    cursor = end;
+  }
+  return output + replace(value.slice(cursor));
+}
+
+function replaceConcreteAbsolutePaths(value, replace) {
+  return replaceOutsidePlaceholders(value, (part) =>
+    replaceOutsidePathSyntax(part, (candidate) => candidate.replace(absolutePathPattern(), replace)));
+}
+
+function containsConcreteAbsolutePath(value) {
+  let found = false;
+  replaceConcreteAbsolutePaths(value, (match) => {
+    found = true;
+    return match;
+  });
+  return found;
+}
+
+function containsAmbiguousAbsolutePath(value) {
+  let found = false;
+  replaceOutsidePlaceholders(value, (part) => replaceOutsidePathSyntax(part, (candidate) => {
+    for (const match of candidate.matchAll(absolutePathPattern())) {
+      const remainder = candidate.slice(match.index + match[0].length);
+      const continuation = remainder.match(/^ +([^\s]+)/u);
+      if (continuation !== null && /[\\/]/u.test(continuation[1])) found = true;
+    }
+    return candidate;
+  }));
+  return found;
 }
 
 function decodeReviewRescanText(input) {
@@ -1680,6 +1794,7 @@ function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
   if (!allowGenerated && REVIEW_PLACEHOLDER_PATTERN.test(value)) fail("projected payload contains a reserved sanitizer placeholder");
   REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
   if (/[\u0000-\u001f\u007f\n\r]/u.test(value)) fail("projected payload must be single-line text");
+  if (containsAmbiguousAbsolutePath(value)) fail("projected payload contains an ambiguous absolute path");
 
   const roots = [...new Set([context.path, REPO_ROOT].map((root) => realpathSync(root)))].sort((a, b) => b.length - a.length);
   for (const root of roots) {
@@ -1694,10 +1809,10 @@ function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
     }));
   }
 
-  value = replaceOutsidePlaceholders(value, (part) => part.replace(absolutePathPattern(), () => {
+  value = replaceConcreteAbsolutePaths(value, () => {
     context.counts["absolute-path"] += 1;
     return REVIEW_PLACEHOLDERS["absolute-path"];
-  }));
+  });
   for (const alias of context.aliases) {
     value = replaceOutsidePlaceholders(value, (part) => part.replace(aliasRegex(alias.value), () => {
       context.counts[alias.category] += 1;
@@ -1709,7 +1824,7 @@ function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
   const withoutPlaceholders = value.replace(REVIEW_PLACEHOLDER_PATTERN, "");
   REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
   const rescanText = decodeReviewRescanText(withoutPlaceholders);
-  if (absolutePathPattern().test(rescanText) || containsAlias(rescanText, context.aliases)) {
+  if (containsConcreteAbsolutePath(rescanText) || containsAlias(rescanText, context.aliases)) {
     fail("projected payload retains private path or alias content");
   }
   return value;
@@ -1728,7 +1843,7 @@ function assertProtectedPublicValue(value, aliases, label, { payload = false } =
       fail(`${label} contains unsupported markup or encoded text`);
     }
   }
-  if (containsAlias(value, aliases) || absolutePathPattern().test(value)) {
+  if (containsAlias(value, aliases) || containsConcreteAbsolutePath(value)) {
     fail(`${label} contains a private alias or absolute path and cannot be rewritten safely`);
   }
   if (![...value].every((character) => character.codePointAt(0) >= 0x20 && character.codePointAt(0) <= 0x7e)) {
