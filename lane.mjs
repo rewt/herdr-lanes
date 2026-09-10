@@ -501,6 +501,22 @@ function futureRealPath(path) {
   return { path: resolve(realAncestor, ...suffix), ancestor: realAncestor };
 }
 
+function futureRegistryRealPath(path) {
+  const suffix = [];
+  let ancestor = resolve(path);
+  while (!entryExists(ancestor)) {
+    const parent = dirname(ancestor);
+    if (parent === ancestor) throw new Error(`session registry path has no resolvable ancestor: ${path}`);
+    suffix.unshift(basename(ancestor));
+    ancestor = parent;
+  }
+  try {
+    return resolve(realpathSync(ancestor), ...suffix);
+  } catch (error) {
+    throw new Error(`session registry path cannot resolve ${ancestor}: ${error.message}`);
+  }
+}
+
 function assertNoRegistrySymlink(path) {
   const offset = relative(REPO_ROOT, path);
   let cursor = REPO_ROOT;
@@ -508,7 +524,9 @@ function assertNoRegistrySymlink(path) {
     cursor = join(cursor, part);
     if (!entryExists(cursor)) break;
     if (lstatSync(cursor).isSymbolicLink()) {
-      throw new Error(`registry path uses a symlink: ${cursor}`);
+      throw new Error(
+        `registry path uses a symlink: ${cursor}; replace the symlinked component with a real repository-local path`,
+      );
     }
   }
 }
@@ -522,16 +540,16 @@ function registryIgnored(path) {
 function preflightRegistryAutomation({ create = true } = {}) {
   const path = registryPathFor(REPO_ROOT, CONFIG);
   const directory = registryDirectoryFor(path);
-  assertNoRegistrySymlink(path);
-  assertNoRegistrySymlink(directory);
-  const resolvedPath = futureRealPath(path).path;
-  const resolvedDirectory = futureRealPath(directory).path;
+  const resolvedPath = futureRegistryRealPath(path);
+  const resolvedDirectory = futureRegistryRealPath(directory);
   if (!within(resolvedPath, REPO_ROOT) || !within(resolvedDirectory, REPO_ROOT)) {
     throw new Error("automated session metadata requires a repository-local registry; configure registry inside the canonical checkout");
   }
+  assertNoRegistrySymlink(path);
+  assertNoRegistrySymlink(directory);
   const registryRelative = relative(REPO_ROOT, path);
   const directoryRelative = relative(REPO_ROOT, directory);
-  const tracked = git(["ls-files", "--", registryRelative, `${directoryRelative}/`]);
+  const tracked = git(["ls-files", "--", registryRelative, `${directoryRelative}/`], { cwd: REPO_ROOT });
   if (tracked !== "") {
     throw new Error(`session registry is tracked (${tracked.split("\n")[0]}); remove it from git and keep it as local display metadata`);
   }
@@ -549,7 +567,10 @@ function preflightRegistryAutomation({ create = true } = {}) {
     writeFileSync(probe, "");
     unlinkSync(probe);
   } catch (error) {
-    throw new Error(`session registry sidecar directory is not writable: ${error.message}`);
+    throw new Error(
+      `session registry sidecar directory is not writable: ${error.message}; ` +
+      "make the sidecar directory writable or configure another ignored repository-local registry",
+    );
   }
   return path;
 }
@@ -965,9 +986,10 @@ function firstProseLine(text) {
 }
 
 function dispatchGoal(topic, promptText, briefPath) {
-  const selected = briefPath === undefined
+  const heading = firstBriefHeading(promptText ?? "");
+  const selected = heading ?? (briefPath === undefined
     ? promptText?.split(/\r?\n/u).find((line) => line.trim() !== "")?.trim()
-    : firstBriefHeading(promptText ?? "") ?? firstProseLine(promptText ?? "");
+    : firstProseLine(promptText ?? ""));
   return [...(selected ?? topic)].slice(0, 200).join("");
 }
 
@@ -2003,7 +2025,7 @@ function close(topic) {
         repoId: REPO_IDENTITY,
         topic,
       });
-      if (result.errors.length > 0) throw new Error(result.errors.join("; "));
+      for (const error of result.errors) process.stderr.write(`lane: warning: session registry: ${error}\n`);
       if (result.marked > 0) process.stdout.write(`marked ${result.marked} session${result.marked === 1 ? "" : "s"} done\n`);
     } catch (error) {
       fail(`lane closed; metadata update failed: ${error.message}`);

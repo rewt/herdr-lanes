@@ -7,7 +7,7 @@ import { freemem, loadavg } from "node:os";
 import { basename, isAbsolute, resolve } from "node:path";
 
 import { HerdrClient } from "./herdr-client.mjs";
-import { loadRegistry, markSessionDone } from "./registry.mjs";
+import { loadRegistry } from "./registry.mjs";
 
 export { loadRegistry, markSessionDone } from "./registry.mjs";
 

@@ -96,9 +96,9 @@ in that workspace, verifies its repository identity and cwd, then sends the brie
 New workspace labels include root, repository, and topic identity and are bounded to
 64 Unicode code points; agent names include a repository-identity and random suffix.
 After successful delivery it writes one gitignored display record under
-`<registry>.d/`; file briefs use their first Markdown heading outside fenced code as
-the board goal. A post-delivery metadata failure is reported as partial success and
-never causes the brief to be replayed.
+`<registry>.d/`; file briefs and inline Markdown prompts use their first heading
+outside fenced code as the board goal. A post-delivery metadata failure is reported
+as partial success and never causes the brief to be replayed.
 
 `lane status` shows each lane's commits ahead/behind main, dirty state, rebase state,
 and files changed by more than one lane. Keep concurrent lanes in separate files when

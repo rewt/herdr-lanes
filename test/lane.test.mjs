@@ -173,7 +173,7 @@ function writeFakeHerdr(fixture, options = {}) {
   const state = join(fixture.root, "herdr-state.json");
 const source = `#!${process.execPath}
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 const args = process.argv.slice(2);
 const log = process.env.FAKE_HERDR_LOG;
@@ -381,6 +381,10 @@ if (args[0] === "workspace" && args[1] === "list") {
     rmSync(process.env.FAKE_HERDR_BREAK_REGISTRY, { recursive: true, force: true });
     writeFileSync(process.env.FAKE_HERDR_BREAK_REGISTRY, "not a directory\\n");
   }
+  if (process.env.FAKE_HERDR_BREAK_REGISTRY_LINK) {
+    rmSync(process.env.FAKE_HERDR_BREAK_REGISTRY_LINK, { recursive: true, force: true });
+    symlinkSync(process.env.FAKE_HERDR_DANGLING_TARGET, process.env.FAKE_HERDR_BREAK_REGISTRY_LINK);
+  }
   result("cli:agent:prompt", { type: "agent_prompt", name: args[2] });
 } else if (args[0] === "tab" && args[1] === "close") {
   result("cli:tab:close", { type: "tab_close", tab_id: args[2] });
@@ -415,6 +419,8 @@ if (args[0] === "workspace" && args[1] === "list") {
     FAKE_HERDR_AGENT_CWD: options.agentCwd,
     FAKE_HERDR_PROMPT_FAIL: options.promptFail ? "1" : undefined,
     FAKE_HERDR_BREAK_REGISTRY: options.breakRegistry,
+    FAKE_HERDR_BREAK_REGISTRY_LINK: options.breakRegistryLink,
+    FAKE_HERDR_DANGLING_TARGET: options.danglingTarget,
   });
   for (const [key, value] of Object.entries(fixture.env)) {
     if (value === undefined) delete fixture.env[key];
@@ -1516,6 +1522,7 @@ test("dispatch records canonical session metadata with fenced-heading, prose, in
       expectedGoal: "First prose line",
     },
     { topic: "inline-goal", prompt: "Inline session goal\nignored", expectedGoal: "Inline session goal" },
+    { topic: "inline-heading", prompt: "# Review session goal #\nignored", expectedGoal: "Review session goal" },
     { topic: "bounded-goal", prompt: "x".repeat(205), expectedGoal: "x".repeat(200) },
     { topic: "empty-goal", expectedGoal: "empty-goal" },
   ];
@@ -1576,6 +1583,27 @@ test("dispatch records canonical session metadata with fenced-heading, prose, in
   }
 });
 
+function expectUnsafeDispatchRefusal({ topic, configure, setup, afterOpen, fromLane = false, expected }) {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  try {
+    configure?.(fixture);
+    setup(fixture);
+    const path = openLane(fixture, topic);
+    afterOpen?.(fixture);
+    const fake = writeFakeHerdr(fixture, {
+      lanePath: path,
+      branch: `lane/${topic}`,
+      initiallyOpened: true,
+    });
+    const run = lane(fixture, ["dispatch", topic, "do the work"], { cwd: fromLane ? path : fixture.repo });
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, expected);
+    assert.deepEqual(fake.calls(), []);
+  } finally {
+    fixture.cleanup();
+  }
+}
+
 test("dispatch refuses unsafe registries and unreadable briefs before every Herdr call", () => {
   const scenarios = [
     {
@@ -1615,26 +1643,6 @@ test("dispatch refuses unsafe registries and unreadable briefs before every Herd
       expected: /repository-local registry/u,
     },
     {
-      topic: "symlink-registry",
-      setup(fixture) {
-        ignoreLaneState(fixture);
-        mkdirSync(join(fixture.repo, ".lane"), { recursive: true });
-        const outside = join(fixture.root, "outside-sidecars");
-        mkdirSync(outside);
-        symlinkSync(outside, join(fixture.repo, ".lane", "sessions.json.d"));
-      },
-      expected: /registry.*symlink/u,
-    },
-    {
-      topic: "unwritable-registry",
-      setup(fixture) {
-        ignoreLaneState(fixture);
-        mkdirSync(join(fixture.repo, ".lane"), { recursive: true });
-        writeFileSync(join(fixture.repo, ".lane", "sessions.json.d"), "not a directory\n");
-      },
-      expected: /registry.*writable/u,
-    },
-    {
       topic: "missing-brief",
       setup(fixture) { ignoreLaneState(fixture); },
       operand(fixture) { return `@${join(fixture.root, "missing.md")}`; },
@@ -1647,13 +1655,16 @@ test("dispatch refuses unsafe registries and unreadable briefs before every Herd
       scenario.configure?.(fixture);
       scenario.setup(fixture);
       const path = openLane(fixture, scenario.topic);
+      scenario.afterOpen?.(fixture);
       const fake = writeFakeHerdr(fixture, {
         lanePath: path,
         branch: `lane/${scenario.topic}`,
         initiallyOpened: true,
       });
       const operand = scenario.operand?.(fixture) ?? "do the work";
-      const run = lane(fixture, ["dispatch", scenario.topic, operand]);
+      const run = lane(fixture, ["dispatch", scenario.topic, operand], {
+        cwd: scenario.fromLane ? path : fixture.repo,
+      });
       assert.equal(run.status, 1);
       assert.match(run.stderr, scenario.expected);
       assert.deepEqual(fake.calls(), []);
@@ -1662,6 +1673,69 @@ test("dispatch refuses unsafe registries and unreadable briefs before every Herd
     }
   }
   negativeControl("unsafe dispatch registry preflight");
+});
+
+test("dispatch checks tracked registry state in the canonical checkout from a lane", () => {
+  expectUnsafeDispatchRefusal({
+    topic: "canonical-tracked-registry",
+    setup(fixture) { ignoreLaneState(fixture); },
+    afterOpen(fixture) {
+      mkdirSync(join(fixture.repo, ".lane"), { recursive: true });
+      writeFileSync(join(fixture.repo, ".lane", "sessions.json"), "[]\n");
+      git(fixture.repo, ["add", "-f", ".lane/sessions.json"]);
+      git(fixture.repo, ["commit", "-m", "track registry only on main"], { stdio: "ignore" });
+    },
+    fromLane: true,
+    expected: /registry.*tracked/u,
+  });
+  negativeControl("canonical registry tracked-state preflight");
+});
+
+test("dispatch reports repository containment before an external symlink", () => {
+  expectUnsafeDispatchRefusal({
+    topic: "external-symlink-registry",
+    configure(fixture) {
+      writeConfig(fixture, { main: "main", validate: "true", registry: ".lane/registry-link/sessions.json" });
+    },
+    setup(fixture) {
+      ignoreLaneState(fixture);
+      mkdirSync(join(fixture.repo, ".lane"), { recursive: true });
+      const outside = join(fixture.root, "outside-registry");
+      mkdirSync(outside);
+      symlinkSync(outside, join(fixture.repo, ".lane", "registry-link"));
+    },
+    expected: /repository-local registry.*configure registry inside/u,
+  });
+  negativeControl("registry containment before symlink refusal");
+});
+
+test("dispatch symlink refusal names the repository-local correction", () => {
+  expectUnsafeDispatchRefusal({
+    topic: "local-symlink-registry",
+    configure(fixture) {
+      writeConfig(fixture, { main: "main", validate: "true", registry: ".lane/registry-link/sessions.json" });
+    },
+    setup(fixture) {
+      ignoreLaneState(fixture);
+      mkdirSync(join(fixture.repo, ".lane", "real-registry"), { recursive: true });
+      symlinkSync(join(fixture.repo, ".lane", "real-registry"), join(fixture.repo, ".lane", "registry-link"));
+    },
+    expected: /registry path uses a symlink.*replace.*real repository-local path/u,
+  });
+  negativeControl("registry symlink correction guidance");
+});
+
+test("dispatch unwritable-sidecar refusal names both corrections", () => {
+  expectUnsafeDispatchRefusal({
+    topic: "unwritable-registry",
+    setup(fixture) {
+      ignoreLaneState(fixture);
+      mkdirSync(join(fixture.repo, ".lane"), { recursive: true });
+      writeFileSync(join(fixture.repo, ".lane", "sessions.json.d"), "not a directory\n");
+    },
+    expected: /registry.*writable.*make the sidecar directory writable.*configure another ignored repository-local registry/u,
+  });
+  negativeControl("registry unwritable correction guidance");
 });
 
 test("dispatch writes no record on cwd, start, or prompt failure and reports post-prompt persistence as partial success", async () => {
@@ -1673,6 +1747,15 @@ test("dispatch writes no record on cwd, start, or prompt failure and reports pos
       topic: "record-failure",
       options: (fixture) => ({ breakRegistry: join(fixture.repo, ".lane", "sessions.json.d") }),
       expected: /partial success.*brief was already sent.*live agent/u,
+      promptCount: 1,
+    },
+    {
+      topic: "path-resolution-failure",
+      options: (fixture) => ({
+        breakRegistryLink: join(fixture.repo, ".lane", "sessions.json.d"),
+        danglingTarget: join(fixture.root, "missing-registry-target"),
+      }),
+      expected: /partial success.*cannot resolve.*live agent/u,
       promptCount: 1,
     },
   ];
@@ -1850,6 +1933,7 @@ test("close marks exact repository topic sessions done only after git close succ
     writeFakeHerdr(fixture, { lanePath: otherPath, branch: "lane/other-topic", initiallyOpened: true });
     assert.equal(lane(fixture, ["dispatch", "other-topic", "other"]).status, 0);
     const { loadRegistry } = await registryApi();
+    writeFileSync(join(fixture.repo, ".lane", "sessions.json.d", "unrelated-malformed.json"), "{\n");
     writeFileSync(join(path, "dirty.txt"), "dirty\n");
     const refused = lane(fixture, ["close", "close-sessions"]);
     assert.equal(refused.status, 1);
@@ -1859,6 +1943,7 @@ test("close marks exact repository topic sessions done only after git close succ
     writeFakeHerdr(fixture, { lanePath: path, branch: "lane/close-sessions", initiallyOpened: true });
     const closed = lane(fixture, ["close", "close-sessions"]);
     assert.equal(closed.status, 0, closed.stderr);
+    assert.match(closed.stderr, /warning: session registry.*unrelated-malformed\.json/u);
     const sessions = loadRegistry(fixture.repo, { registry: ".lane/sessions.json" }).sessions;
     assert.ok(sessions.filter((session) => session.topic === "close-sessions").every((session) => session.done));
     assert.ok(sessions.filter((session) => session.topic === "other-topic").every((session) => !session.done));
@@ -1885,21 +1970,25 @@ test("failed archive and post-close metadata writes preserve honest completion s
     const { loadRegistry } = await registryApi();
     assert.ok(loadRegistry(archiveFixture.repo).sessions.every((session) => !session.done));
 
+    ignoreLaneState(metadataFixture);
     const metadataPath = openLane(metadataFixture, "metadata-failure");
     commitFile(metadataPath, "lane-change.txt", "unmerged\n", "leave lane unmerged");
-    const external = join(metadataFixture.root, "external-sessions.json");
-    writeFileSync(external, `${JSON.stringify([{
-      name: "legacy-close", workspace: "legacy-workspace", lane: "metadata-failure",
-      role: "agent", report: "docs/reports/metadata-failure.md", deadline: null, done: false,
-    }])}\n`);
-    writeConfig(metadataFixture, { main: "main", validate: "true", registry: external });
+    writeFakeHerdr(metadataFixture, {
+      lanePath: metadataPath,
+      branch: "lane/metadata-failure",
+      initiallyOpened: true,
+    });
+    assert.equal(lane(metadataFixture, ["dispatch", "metadata-failure", "record me"]).status, 0);
+    const metadataRegistry = join(metadataFixture.repo, ".lane", "sessions.json");
+    const [metadataSession] = loadRegistry(metadataFixture.repo).sessions;
+    mkdirSync(join(`${metadataRegistry}.d`, `${metadataSession.session_id}.done.json`));
     const metadataClose = lane(metadataFixture, ["close", "metadata-failure"]);
     assert.equal(metadataClose.status, 1);
     assert.match(metadataClose.stderr, /lane closed; metadata update failed/u);
     assert.ok(!existsSync(metadataPath));
     assert.ok(!refExists(metadataFixture.repo, "refs/heads/lane/metadata-failure"));
     assert.ok(refExists(metadataFixture.repo, "refs/tags/archive/lane/metadata-failure"));
-    assert.equal(JSON.parse(readFileSync(external, "utf8"))[0].done, false);
+    assert.equal(loadRegistry(metadataFixture.repo).sessions[0].done, false);
     negativeControl("archive and post-close metadata failure boundaries");
   } finally {
     archiveFixture.cleanup();

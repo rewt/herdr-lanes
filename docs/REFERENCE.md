@@ -327,10 +327,11 @@ Before any Herdr call, dispatch also requires the configured registry and its si
 directory to resolve inside the canonical checkout without symlinks, remain untracked,
 be covered by `.gitignore`, and have a writable sidecar directory. Existing external
 registries remain readable by the board but cannot receive automated records. File
-briefs retain their resolved absolute source path; their goal is the first ATX
-Markdown heading outside fenced code, otherwise the first nonempty prose line. Inline
-prompts use their first nonempty line, and empty dispatch uses the topic. Goals are
-limited to 200 Unicode code points; full prompt text is never copied into metadata.
+briefs retain their resolved absolute source path. File and inline goals use the first
+ATX Markdown heading outside fenced code with its heading syntax removed. Without a
+heading, files use the first nonempty prose line, inline prompts use their first
+nonempty line, and empty dispatch uses the topic. Goals are limited to 200 Unicode
+code points; full prompt text is never copied into metadata.
 
 The record is created only after successful startup, cwd verification, and prompt
 delivery (or verified readiness for empty dispatch). Startup, cwd, and prompt failures
@@ -545,7 +546,8 @@ session matching the canonical repository and exact topic. Dirty refusal or arch
 failure leaves completion unchanged; promotion alone never marks done. With no
 registry state, close remains Git-only and creates no metadata. A post-close metadata
 error exits nonzero with `lane closed; metadata update failed` and does not recreate
-the already-closed lane.
+the already-closed lane. Read errors from unrelated registry records are warnings:
+healthy matching sessions are still marked and a successful close remains successful.
 
 ```sh
 lane seams
