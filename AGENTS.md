@@ -43,6 +43,13 @@ paths are outside the canonical checkout, with no automatic temporary-directory
 fallback. Existing registered worktrees remain usable without automatic migration.
 Lane commands do not set git identity; git configuration remains authoritative.
 
+The session registry and completion markers are gitignored local display metadata.
+Dispatch may record a session and close may mark its sessions done; the board may
+discover sessions and explicitly mark a row done. This data must never authorize,
+schedule, retry, lease, validate, promote, push, or delete work. Concurrent metadata
+updates must not lose unrelated sessions. No daemon or background job coordination
+is added.
+
 ## Documentation priority
 
 The README must lead with one copyable path: install, configure a target repository,

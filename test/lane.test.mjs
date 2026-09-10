@@ -18,7 +18,7 @@ import { homedir, hostname, tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { parseVerdict } from "../board/board.mjs";
+import { collectReportStates, parseVerdict } from "../board/board.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LANE = resolve(HERE, "..", "lane.mjs");
@@ -261,17 +261,19 @@ if (args[0] === "workspace" && args[1] === "list") {
     pane_id: "w-lane:p2", foreground_cwd: process.env.FAKE_HERDR_LANE_PATH,
   } });
 } else if (args[0] === "agent" && args[1] === "start") {
+  if (process.env.FAKE_HERDR_START_FAIL === "1") process.exit(3);
   state.agent = args[2];
   save();
   result("cli:agent:start", { type: "agent_start", name: state.agent, pane_id: "w-lane:p2" });
 } else if (args[0] === "agent" && args[1] === "list") {
   result("cli:agent:list", { type: "agent_list", agents: state.agent ? [{
-    agent_status: "idle", cwd: process.env.FAKE_HERDR_LANE_PATH, name: state.agent,
+    agent_status: "idle", cwd: process.env.FAKE_HERDR_AGENT_CWD || process.env.FAKE_HERDR_LANE_PATH, name: state.agent,
     pane_id: "w-lane:p2", workspace_id: "w-lane",
   }] : [] });
 } else if (args[0] === "agent" && args[1] === "read") {
   process.stdout.write("");
 } else if (args[0] === "agent" && args[1] === "prompt") {
+  if (process.env.FAKE_HERDR_PROMPT_FAIL === "1") process.exit(4);
   if (process.env.FAKE_REVIEW_VERDICT) {
     const prompt = args[3];
     const payload = JSON.parse(process.env.FAKE_REVIEW_PAYLOAD || "{}");
@@ -375,6 +377,10 @@ if (args[0] === "workspace" && args[1] === "list") {
       rmSync(process.env.FAKE_HERDR_LANE_PATH, { recursive: true, force: true });
     }
   }
+  if (process.env.FAKE_HERDR_BREAK_REGISTRY) {
+    rmSync(process.env.FAKE_HERDR_BREAK_REGISTRY, { recursive: true, force: true });
+    writeFileSync(process.env.FAKE_HERDR_BREAK_REGISTRY, "not a directory\\n");
+  }
   result("cli:agent:prompt", { type: "agent_prompt", name: args[2] });
 } else if (args[0] === "tab" && args[1] === "close") {
   result("cli:tab:close", { type: "tab_close", tab_id: args[2] });
@@ -405,6 +411,10 @@ if (args[0] === "workspace" && args[1] === "list") {
     FAKE_REVIEW_VERDICT: options.reviewVerdict,
     FAKE_REVIEW_MODE: options.reviewMode,
     FAKE_REVIEW_PAYLOAD: options.reviewPayload === undefined ? undefined : JSON.stringify(options.reviewPayload),
+    FAKE_HERDR_START_FAIL: options.startFail ? "1" : undefined,
+    FAKE_HERDR_AGENT_CWD: options.agentCwd,
+    FAKE_HERDR_PROMPT_FAIL: options.promptFail ? "1" : undefined,
+    FAKE_HERDR_BREAK_REGISTRY: options.breakRegistry,
   });
   for (const [key, value] of Object.entries(fixture.env)) {
     if (value === undefined) delete fixture.env[key];
@@ -416,6 +426,25 @@ if (args[0] === "workspace" && args[1] === "list") {
       return readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
     },
   };
+}
+
+async function registryApi() {
+  return import("../board/registry.mjs");
+}
+
+function runRegistryChild(source, args, env = process.env) {
+  return new Promise((resolveChild, rejectChild) => {
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", source, ...args], {
+      env: hermeticGitEnvironment(env),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", rejectChild);
+    child.on("close", (status) => resolveChild({ status, stdout, stderr }));
+  });
 }
 
 test("open creates a lane and refuses duplicate, invalid, and unresolved inputs", () => {
@@ -1174,6 +1203,7 @@ test("same-named repositories in equal-labeled roots keep distinct paths, labels
       const rootIdentity = realpathSync(join(fixture.root, `development-${index === 0 ? "a" : "b"}`, "same-root"));
       writeFileSync(join(rootIdentity, ".lane.json"), `${JSON.stringify({ validate: "true" })}\n`);
       fixture.env = discoveredEnv(fixture, { HOME: join(fixture.root, `development-${index === 0 ? "a" : "b"}`) });
+      ignoreLaneState(fixture);
       const path = join(rootIdentity, ".worktrees", "same-repo", "lane-shared-topic");
       const identity = repositoryIdentity(fixture.repo);
       const readableLabel = "same-root/same-repo:lane-shared-topic";
@@ -1354,6 +1384,7 @@ test("stale Herdr checkout metadata is not used for dispatch or close", () => {
   const dispatchFixture = makeFixture();
   const closeFixture = makeFixture();
   try {
+    ignoreLaneState(dispatchFixture);
     const dispatchPath = openLane(dispatchFixture, "stale-dispatch");
     const dispatchFake = writeFakeHerdr(dispatchFixture, {
       lanePath: dispatchPath,
@@ -1451,6 +1482,7 @@ test("open refreshes Herdr workspaces after a failed create before accepting fal
 test("dispatch refreshes Herdr workspaces before accepting newly visible metadata", () => {
   const fixture = makeFixture();
   try {
+    ignoreLaneState(fixture);
     const path = openLane(fixture, "dispatch-refresh");
     const fake = writeFakeHerdr(fixture, {
       lanePath: path,
@@ -1466,6 +1498,443 @@ test("dispatch refreshes Herdr workspaces before accepting newly visible metadat
       0,
     );
     negativeControl("dispatch workspace refresh");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("dispatch records canonical session metadata with fenced-heading, prose, inline, and empty fallbacks", async () => {
+  const scenarios = [
+    {
+      topic: "file-heading",
+      brief: "```md\n# Not the goal\n```\n\n## Actual session goal ##\nBody\n",
+      expectedGoal: "Actual session goal",
+    },
+    {
+      topic: "file-prose",
+      brief: "```\nfenced text\n```\n\nFirst prose line\nSecond line\n",
+      expectedGoal: "First prose line",
+    },
+    { topic: "inline-goal", prompt: "Inline session goal\nignored", expectedGoal: "Inline session goal" },
+    { topic: "bounded-goal", prompt: "x".repeat(205), expectedGoal: "x".repeat(200) },
+    { topic: "empty-goal", expectedGoal: "empty-goal" },
+  ];
+  for (const scenario of scenarios) {
+    const fixture = makeFixture({
+      main: "main",
+      validate: "true",
+      registry: ".lane/sessions.json",
+      routes: { engineer: { kind: "codex", model: "engineer-model" } },
+    });
+    try {
+      ignoreLaneState(fixture);
+      const path = openLane(fixture, scenario.topic);
+      const briefPath = scenario.brief === undefined ? undefined : join(fixture.root, `${scenario.topic}.md`);
+      if (briefPath !== undefined) writeFileSync(briefPath, scenario.brief);
+      fixture.env.HERDR_SOCKET_PATH = join(fixture.root, "herdr.sock");
+      const fake = writeFakeHerdr(fixture, {
+        lanePath: path,
+        branch: `lane/${scenario.topic}`,
+        initiallyOpened: true,
+      });
+      const operand = briefPath === undefined
+        ? (scenario.prompt === undefined ? [] : [scenario.prompt])
+        : [`@${briefPath}`];
+      const dispatched = lane(fixture, ["dispatch", scenario.topic, "--route", "engineer", ...operand], { cwd: path });
+      assert.equal(dispatched.status, 0, dispatched.stderr);
+      const { loadRegistry } = await registryApi();
+      const loaded = loadRegistry(fixture.repo, { registry: ".lane/sessions.json" });
+      assert.equal(loaded.errors.length, 0);
+      assert.equal(loaded.sessions.length, 1);
+      const [session] = loaded.sessions;
+      assert.match(session.session_id, /^[0-9a-f-]{36}$/u);
+      assert.equal(session.repo_id, repositoryIdentity(fixture.repo));
+      assert.equal(session.root_id, realpathSync(dirname(fixture.repo)));
+      assert.equal(session.repo, fixture.repo);
+      assert.equal(session.topic, scenario.topic);
+      assert.match(session.name, /^lane-/u);
+      assert.equal(session.workspace, "w-lane");
+      assert.equal(session.pane, "w-lane:p2");
+      assert.equal(session.server, fixture.env.HERDR_SOCKET_PATH);
+      assert.equal(session.lane, `lane/${scenario.topic}`);
+      assert.equal(session.role, "engineer");
+      assert.equal(session.brief, briefPath ?? null);
+      assert.equal(session.goal, scenario.expectedGoal);
+      assert.equal(session.report, `docs/reports/${scenario.topic}.md`);
+      assert.equal(session.deadline, null);
+      assert.equal(session.done, false);
+      assert.match(session.created_at, /^\d{4}-\d\d-\d\dT/u);
+      assert.ok(existsSync(join(fixture.repo, ".lane", "sessions.json.d", `${session.session_id}.json`)));
+      assert.ok(!existsSync(join(path, ".lane", "sessions.json.d")));
+      assert.equal(git(fixture.repo, ["status", "--porcelain=v1"]), "");
+      assert.equal(fake.calls().filter((args) => args[0] === "agent" && args[1] === "prompt").length,
+        scenario.prompt === undefined && scenario.brief === undefined ? 0 : 1);
+      negativeControl(`dispatch metadata ${scenario.topic}`);
+    } finally {
+      fixture.cleanup();
+    }
+  }
+});
+
+test("dispatch refuses unsafe registries and unreadable briefs before every Herdr call", () => {
+  const scenarios = [
+    {
+      topic: "unignored-registry",
+      setup() {},
+      expected: /registry.*gitignored.*\.gitignore/u,
+    },
+    {
+      topic: "tracked-registry",
+      setup(fixture) {
+        ignoreLaneState(fixture);
+        mkdirSync(join(fixture.repo, ".lane"), { recursive: true });
+        writeFileSync(join(fixture.repo, ".lane", "sessions.json"), "[]\n");
+        git(fixture.repo, ["add", "-f", ".lane/sessions.json"]);
+        git(fixture.repo, ["commit", "-m", "track unsafe registry"], { stdio: "ignore" });
+      },
+      expected: /registry.*tracked/u,
+    },
+    {
+      topic: "tracked-sidecar",
+      setup(fixture) {
+        ignoreLaneState(fixture);
+        const directory = join(fixture.repo, ".lane", "sessions.json.d");
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(join(directory, "tracked.json"), "{}\n");
+        git(fixture.repo, ["add", "-f", ".lane/sessions.json.d/tracked.json"]);
+        git(fixture.repo, ["commit", "-m", "track unsafe sidecar"], { stdio: "ignore" });
+      },
+      expected: /registry.*tracked/u,
+    },
+    {
+      topic: "external-registry",
+      configure(fixture) {
+        writeConfig(fixture, { main: "main", validate: "true", registry: join(fixture.root, "external.json") });
+      },
+      setup(fixture) { writeFileSync(join(fixture.root, "external.json"), "[]\n"); },
+      expected: /repository-local registry/u,
+    },
+    {
+      topic: "symlink-registry",
+      setup(fixture) {
+        ignoreLaneState(fixture);
+        mkdirSync(join(fixture.repo, ".lane"), { recursive: true });
+        const outside = join(fixture.root, "outside-sidecars");
+        mkdirSync(outside);
+        symlinkSync(outside, join(fixture.repo, ".lane", "sessions.json.d"));
+      },
+      expected: /registry.*symlink/u,
+    },
+    {
+      topic: "unwritable-registry",
+      setup(fixture) {
+        ignoreLaneState(fixture);
+        mkdirSync(join(fixture.repo, ".lane"), { recursive: true });
+        writeFileSync(join(fixture.repo, ".lane", "sessions.json.d"), "not a directory\n");
+      },
+      expected: /registry.*writable/u,
+    },
+    {
+      topic: "missing-brief",
+      setup(fixture) { ignoreLaneState(fixture); },
+      operand(fixture) { return `@${join(fixture.root, "missing.md")}`; },
+      expected: /cannot read dispatch brief/u,
+    },
+  ];
+  for (const scenario of scenarios) {
+    const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+    try {
+      scenario.configure?.(fixture);
+      scenario.setup(fixture);
+      const path = openLane(fixture, scenario.topic);
+      const fake = writeFakeHerdr(fixture, {
+        lanePath: path,
+        branch: `lane/${scenario.topic}`,
+        initiallyOpened: true,
+      });
+      const operand = scenario.operand?.(fixture) ?? "do the work";
+      const run = lane(fixture, ["dispatch", scenario.topic, operand]);
+      assert.equal(run.status, 1);
+      assert.match(run.stderr, scenario.expected);
+      assert.deepEqual(fake.calls(), []);
+    } finally {
+      fixture.cleanup();
+    }
+  }
+  negativeControl("unsafe dispatch registry preflight");
+});
+
+test("dispatch writes no record on cwd, start, or prompt failure and reports post-prompt persistence as partial success", async () => {
+  const scenarios = [
+    { topic: "cwd-failure", options: (fixture) => ({ agentCwd: join(fixture.root, "wrong-cwd") }), expected: /brief NOT sent/u },
+    { topic: "start-failure", options: () => ({ startFail: true }), expected: /agent start never succeeded/u },
+    { topic: "prompt-failure", options: () => ({ promptFail: true }), expected: /prompt command failed/u },
+    {
+      topic: "record-failure",
+      options: (fixture) => ({ breakRegistry: join(fixture.repo, ".lane", "sessions.json.d") }),
+      expected: /partial success.*brief was already sent.*live agent/u,
+      promptCount: 1,
+    },
+  ];
+  for (const scenario of scenarios) {
+    const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+    try {
+      ignoreLaneState(fixture);
+      const path = openLane(fixture, scenario.topic);
+      const fake = writeFakeHerdr(fixture, {
+        lanePath: path,
+        branch: `lane/${scenario.topic}`,
+        initiallyOpened: true,
+        ...scenario.options(fixture),
+      });
+      const run = lane(fixture, ["dispatch", scenario.topic, "deliver this once"]);
+      assert.equal(run.status, 1);
+      assert.match(run.stderr, scenario.expected);
+      const promptCalls = fake.calls().filter((args) => args[0] === "agent" && args[1] === "prompt");
+      assert.equal(promptCalls.length, scenario.promptCount ?? (scenario.topic === "prompt-failure" ? 1 : 0));
+      const { loadRegistry } = await registryApi();
+      if (scenario.topic !== "record-failure") {
+        assert.equal(loadRegistry(fixture.repo, { registry: ".lane/sessions.json" }).sessions.length, 0);
+      }
+      if (scenario.topic === "record-failure") {
+        assert.ok(!fake.calls().some((args) => args[0] === "tab" && args[1] === "close"));
+      }
+    } finally {
+      fixture.cleanup();
+    }
+  }
+  negativeControl("honest dispatch failures and no replay");
+});
+
+test("independent record writes and simultaneous done markers retain all sessions", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-session-concurrency-test-")));
+  const registryPath = join(root, ".lane", "sessions.json");
+  const moduleUrl = new URL("../board/registry.mjs", import.meta.url).href;
+  const record = (sessionId, topic) => ({
+    session_id: sessionId,
+    repo_id: join(root, "repo.git"),
+    root_id: root,
+    repo: join(root, "repo"),
+    topic,
+    name: `${topic}-agent`,
+    workspace: `w-${topic}`,
+    pane: `p-${topic}`,
+    server: join(root, "herdr.sock"),
+    lane: `lane/${topic}`,
+    role: "engineer",
+    brief: null,
+    goal: topic,
+    report: `docs/reports/${topic}.md`,
+    deadline: null,
+    done: false,
+    created_at: "2026-09-09T12:00:00.000Z",
+  });
+  try {
+    mkdirSync(dirname(registryPath), { recursive: true });
+    const legacy = [{
+      name: "legacy-agent", workspace: "legacy-workspace", lane: "legacy",
+      role: "agent", report: "legacy.md", deadline: null, done: false,
+    }];
+    writeFileSync(registryPath, `${JSON.stringify(legacy)}\n`);
+    const writeSource = `import { writeSessionRecord } from ${JSON.stringify(moduleUrl)}; writeSessionRecord(process.argv[1], JSON.parse(process.argv[2]));`;
+    const records = [record("11111111-1111-4111-8111-111111111111", "alpha"), record("22222222-2222-4222-8222-222222222222", "beta")];
+    const writes = await Promise.all(records.map((item) => runRegistryChild(writeSource, [registryPath, JSON.stringify(item)])));
+    assert.deepEqual(writes.map((run) => run.status), [0, 0], writes.map((run) => run.stderr).join("\n"));
+    const { loadRegistry } = await registryApi();
+    let loaded = loadRegistry(root, { registry: registryPath });
+    assert.deepEqual(
+      loaded.sessions.map((session) => session.name).sort(),
+      ["alpha-agent", "beta-agent", "legacy-agent"],
+    );
+    assert.deepEqual(JSON.parse(readFileSync(registryPath, "utf8")), legacy);
+
+    const doneSource = `import { markSessionDone } from ${JSON.stringify(moduleUrl)}; markSessionDone(process.argv[1], process.argv[2]);`;
+    const marks = await Promise.all([...records, records[0]].map((item) => runRegistryChild(doneSource, [registryPath, item.session_id])));
+    assert.deepEqual(marks.map((run) => run.status), [0, 0, 0], marks.map((run) => run.stderr).join("\n"));
+    loaded = loadRegistry(root, { registry: registryPath });
+    assert.ok(loaded.sessions.filter((session) => session.topic).every((session) => session.done));
+    assert.equal(loaded.sessions.find((session) => session.name === "legacy-agent").done, false);
+    assert.equal(loaded.sessions.length, 3);
+    negativeControl("concurrent session records and done markers");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("registry reads legacy arrays, sidecar records, done markers, and localized malformed entries", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-session-legacy-test-")));
+  const registryPath = join(root, ".lane", "sessions.json");
+  try {
+    mkdirSync(dirname(registryPath), { recursive: true });
+    writeFileSync(registryPath, `${JSON.stringify([{
+      name: "legacy-agent",
+      workspace: "legacy-workspace",
+      lane: "legacy-topic",
+      role: "reviewer",
+      report: "legacy/report.md",
+      deadline: null,
+      done: false,
+      tripwires: ["STOP"],
+    }, { name: "broken-entry" }], null, 2)}\n`);
+    const { loadRegistry, markSessionDone, writeSessionRecord } = await registryApi();
+    const fresh = {
+      session_id: "33333333-3333-4333-8333-333333333333",
+      repo_id: join(root, "repo.git"), root_id: root, repo: root, topic: "fresh-topic",
+      name: "fresh-agent", workspace: "fresh-workspace", pane: "fresh-pane", server: "local",
+      lane: "lane/fresh-topic", role: "engineer", brief: null, goal: "Fresh", report: "docs/reports/fresh-topic.md",
+      deadline: null, done: false, created_at: "2026-09-09T12:00:00.000Z",
+    };
+    writeSessionRecord(registryPath, fresh);
+    writeFileSync(join(`${registryPath}.d`, "malformed.json"), "{\n");
+    let loaded = loadRegistry(root, { registry: registryPath });
+    assert.equal(loaded.sessions.length, 2);
+    assert.equal(loaded.errors.length, 2);
+    const legacy = loaded.sessions.find((session) => session.name === "legacy-agent");
+    assert.match(legacy.session_id, /^legacy-[0-9a-f]{64}$/u);
+    assert.deepEqual(legacy.tripwires, ["STOP"]);
+    markSessionDone(registryPath, legacy.session_id);
+    loaded = loadRegistry(root, { registry: registryPath });
+    assert.equal(loaded.sessions.find((session) => session.name === "legacy-agent").done, true);
+    assert.equal(loaded.sessions.find((session) => session.name === "fresh-agent").done, false);
+    negativeControl("legacy and localized registry reads");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("board completion refuses unignored and external registry writes", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  const externalRoot = realpathSync(mkdtempSync(join(tmpdir(), "lane-external-registry-test-")));
+  const record = (repo, sessionId) => ({
+    session_id: sessionId, repo_id: repositoryIdentity(repo), root_id: dirname(repo), repo,
+    topic: "board-done", name: "board-agent", workspace: "board-workspace", pane: "board-pane",
+    server: "local", lane: "lane/board-done", role: "agent", brief: null, goal: "Board done",
+    report: "docs/reports/board-done.md", deadline: null, done: false,
+    created_at: "2026-09-09T12:00:00.000Z",
+  });
+  try {
+    const { markSessionDone, writeSessionRecord } = await registryApi();
+    const local = join(fixture.repo, ".lane", "sessions.json");
+    const first = record(fixture.repo, "44444444-4444-4444-8444-444444444444");
+    writeSessionRecord(local, first);
+    assert.throws(
+      () => markSessionDone(local, first.session_id, { repoRoot: fixture.repo }),
+      /registry must be gitignored/u,
+    );
+    assert.ok(!existsSync(join(`${local}.d`, `${first.session_id}.done.json`)));
+
+    const external = join(externalRoot, "sessions.json");
+    const second = record(fixture.repo, "55555555-5555-4555-8555-555555555555");
+    writeSessionRecord(external, second);
+    assert.throws(
+      () => markSessionDone(external, second.session_id, { repoRoot: fixture.repo }),
+      /repository-local registry/u,
+    );
+    assert.ok(!existsSync(join(`${external}.d`, `${second.session_id}.done.json`)));
+    negativeControl("board completion registry safety");
+  } finally {
+    fixture.cleanup();
+    rmSync(externalRoot, { recursive: true, force: true });
+  }
+});
+
+test("close marks exact repository topic sessions done only after git close succeeds", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  try {
+    ignoreLaneState(fixture);
+    const path = openLane(fixture, "close-sessions");
+    const otherPath = openLane(fixture, "other-topic");
+    writeFakeHerdr(fixture, { lanePath: path, branch: "lane/close-sessions", initiallyOpened: true });
+    assert.equal(lane(fixture, ["dispatch", "close-sessions", "first"]).status, 0);
+    assert.equal(lane(fixture, ["dispatch", "close-sessions", "second"]).status, 0);
+    writeFakeHerdr(fixture, { lanePath: otherPath, branch: "lane/other-topic", initiallyOpened: true });
+    assert.equal(lane(fixture, ["dispatch", "other-topic", "other"]).status, 0);
+    const { loadRegistry } = await registryApi();
+    writeFileSync(join(path, "dirty.txt"), "dirty\n");
+    const refused = lane(fixture, ["close", "close-sessions"]);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /lane worktree is not clean/u);
+    assert.ok(loadRegistry(fixture.repo, { registry: ".lane/sessions.json" }).sessions.every((session) => !session.done));
+    rmSync(join(path, "dirty.txt"));
+    writeFakeHerdr(fixture, { lanePath: path, branch: "lane/close-sessions", initiallyOpened: true });
+    const closed = lane(fixture, ["close", "close-sessions"]);
+    assert.equal(closed.status, 0, closed.stderr);
+    const sessions = loadRegistry(fixture.repo, { registry: ".lane/sessions.json" }).sessions;
+    assert.ok(sessions.filter((session) => session.topic === "close-sessions").every((session) => session.done));
+    assert.ok(sessions.filter((session) => session.topic === "other-topic").every((session) => !session.done));
+    assert.ok(!refExists(fixture.repo, "refs/heads/lane/close-sessions"));
+    negativeControl("close completion ordering");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("failed archive and post-close metadata writes preserve honest completion state", async () => {
+  const archiveFixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  const metadataFixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  try {
+    ignoreLaneState(archiveFixture);
+    const archivePath = openLane(archiveFixture, "archive-failure");
+    commitFile(archivePath, "lane-change.txt", "unmerged\n", "leave lane unmerged");
+    writeFakeHerdr(archiveFixture, { lanePath: archivePath, branch: "lane/archive-failure", initiallyOpened: true });
+    assert.equal(lane(archiveFixture, ["dispatch", "archive-failure", "archive me"]).status, 0);
+    git(archiveFixture.repo, ["tag", "archive/lane/archive-failure", "lane/archive-failure"]);
+    const archiveClose = lane(archiveFixture, ["close", "archive-failure"]);
+    assert.equal(archiveClose.status, 1);
+    assert.ok(refExists(archiveFixture.repo, "refs/heads/lane/archive-failure"));
+    const { loadRegistry } = await registryApi();
+    assert.ok(loadRegistry(archiveFixture.repo).sessions.every((session) => !session.done));
+
+    const metadataPath = openLane(metadataFixture, "metadata-failure");
+    commitFile(metadataPath, "lane-change.txt", "unmerged\n", "leave lane unmerged");
+    const external = join(metadataFixture.root, "external-sessions.json");
+    writeFileSync(external, `${JSON.stringify([{
+      name: "legacy-close", workspace: "legacy-workspace", lane: "metadata-failure",
+      role: "agent", report: "docs/reports/metadata-failure.md", deadline: null, done: false,
+    }])}\n`);
+    writeConfig(metadataFixture, { main: "main", validate: "true", registry: external });
+    const metadataClose = lane(metadataFixture, ["close", "metadata-failure"]);
+    assert.equal(metadataClose.status, 1);
+    assert.match(metadataClose.stderr, /lane closed; metadata update failed/u);
+    assert.ok(!existsSync(metadataPath));
+    assert.ok(!refExists(metadataFixture.repo, "refs/heads/lane/metadata-failure"));
+    assert.ok(refExists(metadataFixture.repo, "refs/tags/archive/lane/metadata-failure"));
+    assert.equal(JSON.parse(readFileSync(external, "utf8"))[0].done, false);
+    negativeControl("archive and post-close metadata failure boundaries");
+  } finally {
+    archiveFixture.cleanup();
+    metadataFixture.cleanup();
+  }
+});
+
+test("relative reports resolve in the lane checkout before canonical post-close fallback", () => {
+  const fixture = makeFixture();
+  try {
+    const path = openLane(fixture, "report-resolution");
+    const report = "docs/reports/report-resolution.md";
+    mkdirSync(join(path, "docs", "reports"), { recursive: true });
+    mkdirSync(join(fixture.repo, "docs", "reports"), { recursive: true });
+    writeFileSync(join(path, report), "**PASS**\n");
+    writeFileSync(join(fixture.repo, report), "**FAIL**\n");
+    const sessions = [{ lane: "lane/report-resolution", report }];
+    assert.equal(collectReportStates(fixture.repo, sessions).get(report).verdict, "PASS");
+    rmSync(join(path, report));
+    assert.equal(collectReportStates(fixture.repo, sessions).get(report).verdict, "FAIL");
+    negativeControl("lane-first report resolution");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("git-only close with no registry creates no metadata store", () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  try {
+    const path = openLane(fixture, "no-registry-close");
+    const closed = lane(fixture, ["close", "no-registry-close"]);
+    assert.equal(closed.status, 0, closed.stderr);
+    assert.ok(!existsSync(path));
+    assert.ok(!existsSync(join(fixture.repo, ".lane")));
+    negativeControl("close without registry metadata");
   } finally {
     fixture.cleanup();
   }

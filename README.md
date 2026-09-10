@@ -95,6 +95,10 @@ usable. `lane` never changes git author configuration.
 in that workspace, verifies its repository identity and cwd, then sends the brief.
 New workspace labels include root, repository, and topic identity and are bounded to
 64 Unicode code points; agent names include a repository-identity and random suffix.
+After successful delivery it writes one gitignored display record under
+`<registry>.d/`; file briefs use their first Markdown heading outside fenced code as
+the board goal. A post-delivery metadata failure is reported as partial success and
+never causes the brief to be replayed.
 
 `lane status` shows each lane's commits ahead/behind main, dirty state, rebase state,
 and files changed by more than one lane. Keep concurrent lanes in separate files when
@@ -148,7 +152,11 @@ lane board --once
 ```
 
 Run the interactive view in a Herdr pane; use `--once` for plain, scriptable
-output. A report is incomplete without the `GATE` line printed by `lane check`.
+output. The board reads legacy JSON-array entries plus immutable per-session files in
+`<registry>.d/`. Board completion and successful `lane close` write independent
+atomic done markers; this metadata is display-only and never controls validation,
+promotion, scheduling, retries, or deletion. A report is incomplete without the
+`GATE` line printed by `lane check`.
 Run `lane check` again after the last commit; before handoff, the board's `GATE`
 column must read `exit=0 @<head7>` against the lane's current HEAD.
 

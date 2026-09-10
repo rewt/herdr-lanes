@@ -14,12 +14,21 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync,
 } from "node:fs";
 import { constants as osConstants, homedir, hostname, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+
+import {
+  loadRegistry,
+  markTopicSessionsDone,
+  newSessionId,
+  registryDirectoryFor,
+  registryPathFor,
+  writeSessionRecord,
+} from "./board/registry.mjs";
 
 const IS_REVIEW_COMMAND = process.argv[2] === "review";
 
@@ -492,6 +501,59 @@ function futureRealPath(path) {
   return { path: resolve(realAncestor, ...suffix), ancestor: realAncestor };
 }
 
+function assertNoRegistrySymlink(path) {
+  const offset = relative(REPO_ROOT, path);
+  let cursor = REPO_ROOT;
+  for (const part of offset.split(sep).filter(Boolean)) {
+    cursor = join(cursor, part);
+    if (!entryExists(cursor)) break;
+    if (lstatSync(cursor).isSymbolicLink()) {
+      throw new Error(`registry path uses a symlink: ${cursor}`);
+    }
+  }
+}
+
+function registryIgnored(path) {
+  return spawnSync("git", ["-C", REPO_ROOT, "check-ignore", "--quiet", "--no-index", "--", relative(REPO_ROOT, path)], {
+    stdio: "ignore",
+  }).status === 0;
+}
+
+function preflightRegistryAutomation({ create = true } = {}) {
+  const path = registryPathFor(REPO_ROOT, CONFIG);
+  const directory = registryDirectoryFor(path);
+  assertNoRegistrySymlink(path);
+  assertNoRegistrySymlink(directory);
+  const resolvedPath = futureRealPath(path).path;
+  const resolvedDirectory = futureRealPath(directory).path;
+  if (!within(resolvedPath, REPO_ROOT) || !within(resolvedDirectory, REPO_ROOT)) {
+    throw new Error("automated session metadata requires a repository-local registry; configure registry inside the canonical checkout");
+  }
+  const registryRelative = relative(REPO_ROOT, path);
+  const directoryRelative = relative(REPO_ROOT, directory);
+  const tracked = git(["ls-files", "--", registryRelative, `${directoryRelative}/`]);
+  if (tracked !== "") {
+    throw new Error(`session registry is tracked (${tracked.split("\n")[0]}); remove it from git and keep it as local display metadata`);
+  }
+  if (!registryIgnored(path) || !registryIgnored(directory) || !registryIgnored(join(directory, ".write-probe"))) {
+    throw new Error(
+      `session registry must be gitignored before dispatch; add ${registryRelative} and ${directoryRelative}/ to .gitignore or configure another repository-local ignored registry`,
+    );
+  }
+  if (existsSync(path)) loadRegistry(REPO_ROOT, CONFIG);
+  if (!create) return path;
+  try {
+    mkdirSync(directory, { recursive: true });
+    if (!lstatSync(directory).isDirectory()) throw new Error("sidecar path is not a directory");
+    const probe = join(directory, `.write-probe-${process.pid}-${randomBytes(4).toString("hex")}`);
+    writeFileSync(probe, "");
+    unlinkSync(probe);
+  } catch (error) {
+    throw new Error(`session registry sidecar directory is not writable: ${error.message}`);
+  }
+  return path;
+}
+
 function repositoryContaining(path) {
   try {
     const root = execFileSync(
@@ -872,12 +934,55 @@ function seams(pattern) {
 // steer). Rule inheritance: codex reads AGENTS.md natively; claude reads
 // CLAUDE.md (a one-line `@AGENTS.md` import keeps them one file); brief other
 // kinds to read the repository's instructions.
+function firstBriefHeading(text) {
+  let fence;
+  for (const line of text.split(/\r?\n/u)) {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/u)?.[1];
+    if (marker !== undefined) {
+      if (fence === undefined) fence = { character: marker[0], length: marker.length };
+      else if (marker[0] === fence.character && marker.length >= fence.length) fence = undefined;
+      continue;
+    }
+    if (fence !== undefined) continue;
+    const heading = line.match(/^ {0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/u)?.[1]?.trim();
+    if (heading) return heading;
+  }
+  return undefined;
+}
+
+function firstProseLine(text) {
+  let fence;
+  for (const line of text.split(/\r?\n/u)) {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/u)?.[1];
+    if (marker !== undefined) {
+      if (fence === undefined) fence = { character: marker[0], length: marker.length };
+      else if (marker[0] === fence.character && marker.length >= fence.length) fence = undefined;
+      continue;
+    }
+    if (fence === undefined && line.trim() !== "") return line.trim();
+  }
+  return undefined;
+}
+
+function dispatchGoal(topic, promptText, briefPath) {
+  const selected = briefPath === undefined
+    ? promptText?.split(/\r?\n/u).find((line) => line.trim() !== "")?.trim()
+    : firstBriefHeading(promptText ?? "") ?? firstProseLine(promptText ?? "");
+  return [...(selected ?? topic)].slice(0, 200).join("");
+}
+
 function dispatch(topic, promptText, options = {}) {
   repositoryRoot({ requiredBy: "dispatch" });
   const branch = laneBranch(topic);
   const resolved = resolveDispatch(options);
   const path = worktreeFor(branch);
   if (path === undefined) fail(`lane ${branch} has no worktree; open it first`);
+  let registryPath;
+  try {
+    registryPath = preflightRegistryAutomation();
+  } catch (error) {
+    fail(error.message);
+  }
   const workspaces = herdrJson(["workspace", "list"], { deadline: options.deadline })?.workspaces;
   if (workspaces === undefined) fail("herdr is unavailable; dispatch requires the herdr server");
   const label = workspaceLabel(topic, path, workspaces);
@@ -972,10 +1077,48 @@ function dispatch(topic, promptText, options = {}) {
     fail(`agent '${agentName}' is running in '${cwdCheck.cwd}', not the lane worktree ${path}; tab closed, brief NOT sent`);
   }
   if (promptText !== undefined && promptText.trim() !== "") {
-    execFileSync("herdr", ["agent", "prompt", agentName, promptText], {
-      stdio: options.silent ? ["ignore", "ignore", "pipe"] : "inherit",
-      ...(options.deadline === undefined ? {} : { timeout: Math.max(1, options.deadline - Date.now()) }),
-    });
+    try {
+      execFileSync("herdr", ["agent", "prompt", agentName, promptText], {
+        stdio: options.silent ? ["ignore", "ignore", "pipe"] : "inherit",
+        ...(options.deadline === undefined ? {} : { timeout: Math.max(1, options.deadline - Date.now()) }),
+      });
+    } catch {
+      fail(
+        `prompt command failed for live agent '${agentName}' in workspace ${workspaceId} (pane ${pane}); ` +
+        "delivery outcome is unknown and no session record was written; inspect the agent before deciding whether to resend",
+      );
+    }
+  }
+  const record = {
+    session_id: newSessionId(),
+    repo_id: REPO_IDENTITY,
+    root_id: ROOT_IDENTITY,
+    repo: REPO_ROOT,
+    topic,
+    name: agentName,
+    workspace: workspaceId,
+    pane,
+    server: process.env.HERDR_SOCKET_PATH ?? join(homedir(), ".config", "herdr", "herdr.sock"),
+    lane: branch,
+    role: options.route ?? "agent",
+    brief: options.briefPath ?? null,
+    goal: dispatchGoal(topic, promptText, options.briefPath),
+    report: `docs/reports/${topic}.md`,
+    deadline: null,
+    done: false,
+    created_at: new Date().toISOString(),
+  };
+  try {
+    registryPath = preflightRegistryAutomation();
+    writeSessionRecord(registryPath, record);
+  } catch (error) {
+    const action = promptText !== undefined && promptText.trim() !== ""
+      ? "the brief was already sent"
+      : "the agent was already started and verified ready";
+    fail(
+      `partial success: ${action}, but session metadata could not be written (${error.message}); ` +
+      `live agent '${agentName}' remains in workspace ${workspaceId} (pane ${pane}); do not replay dispatch`,
+    );
   }
   if (!options.silent) {
     process.stdout.write(
@@ -1851,6 +1994,21 @@ function close(topic) {
     git(["branch", "-D", branch]);
     process.stdout.write(`archived unmerged lane as tag ${tag}, then deleted branch\n`);
   }
+  const configuredRegistry = registryPathFor(REPO_ROOT, CONFIG);
+  if (existsSync(configuredRegistry) || existsSync(registryDirectoryFor(configuredRegistry))) {
+    try {
+      const registryPath = preflightRegistryAutomation();
+      const result = markTopicSessionsDone(registryPath, {
+        repoRoot: REPO_ROOT,
+        repoId: REPO_IDENTITY,
+        topic,
+      });
+      if (result.errors.length > 0) throw new Error(result.errors.join("; "));
+      if (result.marked > 0) process.stdout.write(`marked ${result.marked} session${result.marked === 1 ? "" : "s"} done\n`);
+    } catch (error) {
+      fail(`lane closed; metadata update failed: ${error.message}`);
+    }
+  }
 }
 
 function board(args) {
@@ -1930,9 +2088,16 @@ switch (command) {
     }
     let promptText;
     if (positional.length > 0) {
-      promptText = positional[0].startsWith("@")
-        ? readFileSync(positional[0].slice(1), "utf8")
-        : positional.join(" ");
+      if (positional[0].startsWith("@")) {
+        options.briefPath = resolve(CALLER_CWD, positional[0].slice(1));
+        try {
+          promptText = readFileSync(options.briefPath, "utf8");
+        } catch (error) {
+          fail(`cannot read dispatch brief ${options.briefPath}: ${error.message}`);
+        }
+      } else {
+        promptText = positional.join(" ");
+      }
     }
     dispatch(topic, promptText, options);
     break;
@@ -1994,7 +2159,8 @@ switch (command) {
         "  config           print resolved configuration as key, JSON value, and source\n" +
         "  dispatch <topic> [--route <name>] [--kind <agent>] [--model <m>] [@brief-file | prompt]\n" +
         "                   start a visible agent session (any herdr kind) in the\n" +
-        "                   lane's workspace; defaults in .lane.json routes/dispatch\n" +
+        "                   lane's workspace and record display metadata; defaults\n" +
+        "                   in .lane.json routes/dispatch\n" +
         "  review <topic> --round N [--brief <path>] [--change <name>]\n" +
         "                   [--route <name>] [--timeout <seconds>]\n" +
         "                   run one foreground independent review; route defaults to\n" +
@@ -2007,7 +2173,8 @@ switch (command) {
         "                   validate this clean worktree and record its HEAD gate\n" +
         "  board [--once]   watch registered lane sessions; --once prints plain text\n" +
         `  promote <topic>  validate then fast-forward ${MAIN} (clean + rebased + green only)\n` +
-        "  close <topic>    remove worktree; delete merged branch or archive-tag unmerged\n",
+        "  close <topic>    remove worktree; delete merged branch or archive-tag unmerged;\n" +
+        "                   mark matching display sessions done after git succeeds\n",
     );
     process.exit(1);
 }

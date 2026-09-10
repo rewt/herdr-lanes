@@ -38,7 +38,7 @@ Every key is optional. A repository can inherit reusable settings from one paren
 | `main` | `main` | Local integration branch |
 | `worktree_root` | see below | Shared base directory for repository worktree containers |
 | `validate` | `npm test` | Shell command required for promotion |
-| `registry` | `.lane/sessions.json` | Gitignored JSON array of sessions displayed by `board` |
+| `registry` | `.lane/sessions.json` | Gitignored legacy session array and base path for per-session display records |
 | `prepare` | none | `{unless, run}` steps for fresh worktrees |
 | `dispatch.kind` | `claude` | Herdr agent kind |
 | `dispatch.model` | none | Model passed to the agent |
@@ -204,14 +204,30 @@ From a linked worktree, `lane board` retargets the canonical checkout and passes
 resolved main branch and inherited registry explicitly, while descendant lane commands
 retain normal layered configuration resolution.
 
-The configured registry is a JSON array. Every entry has string fields `name`
+The configured registry may be a legacy JSON array. Every legacy entry has string fields `name`
 (the Herdr agent name), `workspace` (workspace ID or label), `lane` (topic or
 `lane/<topic>` branch), `role`, and `report` (absolute or repository-relative
 path), plus `deadline` (an ISO-8601 timestamp or `null`) and `done` (boolean).
 Optional `tripwires` is an array of literal output substrings. The default registry
 path is `.lane/sessions.json`. The configured registry path must be covered by the
-target repository's `.gitignore`; otherwise creating it, or marking a session done,
-makes the canonical checkout dirty and blocks `lane promote`.
+target repository's `.gitignore`.
+
+Automated dispatch does not rewrite that shared array. It writes one immutable JSON
+record per successful session at `<registry>.d/<session-id>.json`; completion is an
+atomic `<registry>.d/<session-id>.done.json` marker. The board merges both formats,
+derives deterministic IDs for legacy entries, overlays completion markers, and
+reports malformed entries locally while retaining healthy sessions. Concurrent
+record and marker writes therefore do not lose unrelated sessions. This is local
+display metadata only: it does not authorize, schedule, retry, lease, validate,
+promote, push, or delete work.
+
+New records contain `session_id`, canonical `repo_id`, development `root_id`,
+canonical `repo`, `topic`, actual Herdr `name`, opaque `workspace` and `pane`, local
+`server` endpoint, full `lane` branch, selected route `role` (or `agent`), absolute
+source `brief` path or null, bounded `goal`, conventional `report`, null `deadline`,
+false `done`, and UTC `created_at`. The conventional report is
+`docs/reports/<topic>.md`; the board looks in the lane checkout first and the
+canonical checkout after promotion or close. A missing report has no implied verdict.
 
 The board joins each entry with the Herdr snapshot, the lane worktree, and its report.
 It shows agent status and pane ID, commits ahead of the configured main branch, dirty
@@ -306,6 +322,21 @@ Herdr by real path. A failed cwd check closes the tab without sending the brief.
 agent names use a readable topic stem plus repository-identity and random hexadecimal
 suffixes, while staying within Herdr's 32-character naming grammar. Lane never writes
 Git author name, email, signing, or other identity configuration.
+
+Before any Herdr call, dispatch also requires the configured registry and its sidecar
+directory to resolve inside the canonical checkout without symlinks, remain untracked,
+be covered by `.gitignore`, and have a writable sidecar directory. Existing external
+registries remain readable by the board but cannot receive automated records. File
+briefs retain their resolved absolute source path; their goal is the first ATX
+Markdown heading outside fenced code, otherwise the first nonempty prose line. Inline
+prompts use their first nonempty line, and empty dispatch uses the topic. Goals are
+limited to 200 Unicode code points; full prompt text is never copied into metadata.
+
+The record is created only after successful startup, cwd verification, and prompt
+delivery (or verified readiness for empty dispatch). Startup, cwd, and prompt failures
+create no record. If persistence fails after delivery, dispatch exits nonzero, names
+the live agent/workspace/pane, says whether the brief was already sent, and does not
+prompt again or close the working agent.
 
 ## Foreground review
 
@@ -509,6 +540,13 @@ exit status.
 `lane close <topic>` requires a clean lane worktree. A merged branch is deleted. An
 unmerged branch is tagged as `archive/lane/<topic>` before deletion.
 
+Only after those Git operations succeed, close writes done markers for every known
+session matching the canonical repository and exact topic. Dirty refusal or archive
+failure leaves completion unchanged; promotion alone never marks done. With no
+registry state, close remains Git-only and creates no metadata. A post-close metadata
+error exits nonzero with `lane closed; metadata update failed` and does not recreate
+the already-closed lane.
+
 ```sh
 lane seams
 lane open resumed-task archive/lane/old-task
@@ -522,6 +560,9 @@ lane open resumed-task archive/lane/old-task
 | `worktree path already exists` | Choose another root/topic, or move the occupant yourself only after verifying ownership |
 | `unsafe worktree path` | Move the configured base outside checkouts and remove symlink escapes; no fallback path is selected |
 | `worktree path belongs to another repository` | Give the repositories distinct worktree bases |
+| `session registry must be gitignored before dispatch` | Ignore both the configured path and `<registry>.d/`, or configure another repository-local ignored path |
+| `partial success: ... brief was already sent` | Inspect and continue the named live agent; do not replay dispatch |
+| `lane closed; metadata update failed` | Git close already succeeded; repair the local registry without recreating the lane |
 | `registered worktree ... is missing` | Run `git worktree prune`, then reopen or recover the lane as appropriate |
 | `repository identity mismatch` | Treat the Herdr entry as stale; reopen the correct canonical repository workspace |
 | `herdr workspace: none` | Start Herdr in the canonical checkout and retry dispatch |

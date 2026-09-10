@@ -1,16 +1,15 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  existsSync,
-  mkdirSync,
   readFileSync,
-  renameSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import { freemem, loadavg } from "node:os";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { basename, isAbsolute, resolve } from "node:path";
 
 import { HerdrClient } from "./herdr-client.mjs";
+import { loadRegistry, markSessionDone } from "./registry.mjs";
+
+export { loadRegistry, markSessionDone } from "./registry.mjs";
 
 const TABLE_COLUMNS = [
   ["NAME", "name", 20],
@@ -36,35 +35,6 @@ function truncate(value, width) {
 
 function pad(value, width) {
   return truncate(value, width).padEnd(width);
-}
-
-function registryPathFor(repoRoot, config = {}) {
-  const configured = config.registry ?? ".lane/sessions.json";
-  return isAbsolute(configured) ? configured : resolve(repoRoot, configured);
-}
-
-export function loadRegistry(repoRoot, config = {}) {
-  const path = registryPathFor(repoRoot, config);
-  if (!existsSync(path)) return { path, sessions: [], exists: false };
-  const parsed = JSON.parse(readFileSync(path, "utf8"));
-  if (!Array.isArray(parsed)) throw new Error(`lane board registry must be a JSON array: ${path}`);
-  for (const [index, session] of parsed.entries()) {
-    for (const key of ["name", "workspace", "lane", "role", "report"]) {
-      if (typeof session?.[key] !== "string" || session[key] === "") {
-        throw new Error(`lane board registry entry ${index} needs a non-empty ${key}`);
-      }
-    }
-    if (session.tripwires !== undefined && !Array.isArray(session.tripwires)) {
-      throw new Error(`lane board registry entry ${index} tripwires must be an array`);
-    }
-    if ((session.deadline !== null && typeof session.deadline !== "string") || typeof session.done !== "boolean") {
-      throw new Error(`lane board registry entry ${index} needs deadline (string or null) and done (boolean)`);
-    }
-    if ((session.tripwires ?? []).some((pattern) => typeof pattern !== "string" || pattern === "")) {
-      throw new Error(`lane board registry entry ${index} tripwires must contain non-empty strings`);
-    }
-  }
-  return { path, sessions: parsed, exists: true };
 }
 
 export function parseVerdict(text) {
@@ -172,6 +142,7 @@ export function joinBoardRows({
       tripwire: live.tripwire ?? "-",
       output: live.lastOutput ?? "-",
       done: session.done ? "yes" : "no",
+      sessionId: session.session_id,
       workspace: workspace?.workspace_id,
       checkoutPath: workspace?.worktree?.checkout_path,
     };
@@ -232,14 +203,22 @@ export function collectGitStates(repoRoot, main, registry, snapshot) {
 
 export function collectReportStates(repoRoot, registry) {
   const states = new Map();
+  const trees = worktrees(repoRoot);
   for (const session of registry) {
-    const path = isAbsolute(session.report) ? session.report : resolve(repoRoot, session.report);
-    try {
-      const text = readFileSync(path, "utf8");
-      const mtime = statSync(path).mtime.toISOString().slice(5, 16).replace("T", " ");
-      states.set(session.report, { verdict: parseVerdict(text), mtime });
-    } catch {
-      // A missing report is normal while the session is working.
+    const branch = session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`;
+    const checkout = trees.find((tree) => tree.branch === branch)?.path;
+    const candidates = isAbsolute(session.report)
+      ? [session.report]
+      : [...(checkout === undefined ? [] : [resolve(checkout, session.report)]), resolve(repoRoot, session.report)];
+    for (const path of candidates) {
+      try {
+        const text = readFileSync(path, "utf8");
+        const mtime = statSync(path).mtime.toISOString().slice(5, 16).replace("T", " ");
+        states.set(session.report, { verdict: parseVerdict(text), mtime });
+        break;
+      } catch {
+        // Try the canonical checkout after the lane; a missing report is normal.
+      }
     }
   }
   return states;
@@ -341,11 +320,12 @@ export function footerLine(stats) {
   return `load ${load} | free ${stats.freeMemory} | workers vitest=${workers.vitest ?? 0} cargo=${workers.cargo ?? 0} go=${workers.go ?? 0} rustc=${workers.rustc ?? 0}`;
 }
 
-export function renderPlainBoard(rows, stats, { connection = "offline", missingRegistry } = {}) {
+export function renderPlainBoard(rows, stats, { connection = "offline", missingRegistry, registryErrors = [] } = {}) {
   const registryNotice = missingRegistry === undefined ? [] : [`registry not found: ${missingRegistry}`];
   return [
     `lane board (${connection})`,
     ...registryNotice,
+    ...registryErrors.map((error) => `registry error: ${error}`),
     ...tableLines(rows),
     footerLine(stats),
   ].join("\n") + "\n";
@@ -353,22 +333,9 @@ export function renderPlainBoard(rows, stats, { connection = "offline", missingR
 
 export function interactiveMessage(state, message) {
   if (message) return message;
+  if (state.errors?.length > 0) return `registry error: ${state.errors[0]}`;
   if (state.exists === false) return `registry not found: ${state.path}`;
   return "↑/↓ select · a attach command · d done · r refresh · q quit";
-}
-
-export function markSessionDone(registryPath, name) {
-  const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-  if (!Array.isArray(registry)) {
-    throw new Error(`lane board registry must be a JSON array: ${registryPath}`);
-  }
-  const session = registry.find((candidate) => candidate.name === name);
-  if (session === undefined) throw new Error(`session not found in registry: ${name}`);
-  session.done = true;
-  mkdirSync(dirname(registryPath), { recursive: true });
-  const temporary = `${registryPath}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(registry, null, 2)}\n`);
-  renameSync(temporary, registryPath);
 }
 
 export async function collectBoardState({ repoRoot, config = {}, client, runtime = new Map(), now = new Date() }) {
@@ -409,6 +376,7 @@ export async function runOnce({ repoRoot, config = {} }) {
     process.stdout.write(renderPlainBoard(state.rows, state.stats, {
       connection: state.connection,
       missingRegistry: state.exists ? undefined : state.path,
+      registryErrors: state.errors,
     }));
   } finally {
     client.close();

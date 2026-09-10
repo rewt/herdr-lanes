@@ -12,6 +12,7 @@ import {
   countWorkers,
   interactiveMessage,
   joinBoardRows,
+  loadRegistry,
   markSessionDone,
   parseVerdict,
   renderPlainBoard,
@@ -188,7 +189,8 @@ test("report verdicts are explicit and marking done updates the registry", () =>
   try {
     markSessionDone(registryPath, "api-agent");
     const updated = JSON.parse(readFileSync(registryPath, "utf8"));
-    assert.equal(updated[0].done, true);
+    assert.equal(updated[0].done, false);
+    assert.equal(loadRegistry(root).sessions[0].done, true);
     negativeControl("board registry updates");
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -130,7 +130,7 @@ function BoardApp({ repoRoot, config }) {
       const row = state.rows[selected];
       if (row === undefined) return;
       try {
-        markSessionDone(state.path, row.name);
+        markSessionDone(state.path, row.sessionId, { repoRoot });
         setMessage(`marked ${row.name} done`);
         void refresh();
       } catch (error) {
