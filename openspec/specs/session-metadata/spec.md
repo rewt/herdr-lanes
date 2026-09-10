@@ -38,7 +38,9 @@ the existing agent identity and SHALL not replay the action.
 
 ### Requirement: Completion follows git close
 Close SHALL mark all known records for its exact repository/topic done only after
-successful git close, while retaining existing dirty/archive safeguards.
+successful git close, while retaining existing dirty/archive safeguards. A registry
+policy refusal after successful Git close SHALL warn without changing the successful
+exit status; an actual completion-marker write failure SHALL remain nonzero.
 #### Scenario: Close refused
 - **WHEN** a dirty worktree or failed archive step prevents close
 - **THEN** no record is marked done and recoverable git state is preserved.
@@ -48,3 +50,6 @@ successful git close, while retaining existing dirty/archive safeguards.
 #### Scenario: No registry
 - **WHEN** a git-only lane closes with no metadata store
 - **THEN** close succeeds without creating a store or requiring Herdr.
+#### Scenario: Metadata policy or write failure after close
+- **WHEN** Git close succeeds and the configured registry is external, unignored, or tracked
+- **THEN** close warns and exits zero without writing markers, while an actual marker write failure exits nonzero and reports that the lane is already closed.

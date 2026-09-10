@@ -15,8 +15,10 @@ The board must read this format in this same lane, before any new UX lands.
 Resolve registry relative to the canonical checkout, even during lane dispatch/close.
 For automated writes require the array and sidecar directory to be untracked and
 gitignored within that checkout, with symlink/escape protection. Existing external
-registries can remain read-only board inputs; automation refuses them with guidance
-to configure an ignored repository-local path. Never edit .gitignore automatically.
+registries can remain read-only board inputs; dispatch automation refuses them with
+guidance to configure an ignored repository-local path. After Git close succeeds,
+an external, unignored, or tracked registry produces a warning without changing the
+successful exit status. Never edit .gitignore automatically.
 
 Record fields: session_id, repo_id, root_id, repo (canonical checkout), topic, name,
 workspace (opaque ID), pane, server (local endpoint identity), lane (full branch),
@@ -29,9 +31,10 @@ produce localized errors rather than silently dropping all healthy sessions.
 
 For @file dispatch, retain the resolved source path and use the first ATX Markdown
 heading outside fenced code as goal, removing heading syntax. If absent use the
-first nonempty prose line; inline prompt uses its first nonempty line. Empty prompt
-uses the topic. Store at most 200 Unicode code points of goal; keep full brief text
-only in its file. Report convention is `docs/reports/<topic>.md`,
+first nonempty prose line. An inline prompt uses its first nonempty line outside
+fenced code, removing ATX syntax only when that line is itself a heading. Empty or
+fence-only input uses the topic. Store at most 200 Unicode code points of goal; keep
+full brief text only in its file. Report convention is `docs/reports/<topic>.md`,
 resolved first in the lane checkout, then canonical checkout after promotion/close.
 A missing report stays missing: dispatch does not fabricate a verdict or report.
 The stable topic path does not drift when work crosses midnight. Preserve explicit
@@ -57,6 +60,7 @@ Discovery will still show the unregistered live agent once that phase lands.
 
 Mark sessions for the exact repo/topic done only after git close completes.
 Failed dirty close or archive creation leaves metadata unfinished. A post-close
-metadata error reports "lane closed; metadata update failed" without recreating or
-deleting work. Promoting alone does not mark done. Git-only close still works with
-no registry or Herdr, and must not create empty registry state.
+marker write error reports "lane closed; metadata update failed" without recreating
+or deleting work. A registry policy refusal after successful Git close is warning-only.
+Promoting alone does not mark done. Git-only close still works with no registry or
+Herdr, and must not create empty registry state.

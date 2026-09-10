@@ -29,6 +29,7 @@ import {
   registryPathFor,
   writeSessionRecord,
 } from "./board/registry.mjs";
+import { herdrSocketPath } from "./board/herdr-client.mjs";
 
 const IS_REVIEW_COMMAND = process.argv[2] === "review";
 
@@ -537,13 +538,15 @@ function registryIgnored(path) {
   }).status === 0;
 }
 
+class RegistryPolicyError extends Error {}
+
 function preflightRegistryAutomation({ create = true } = {}) {
   const path = registryPathFor(REPO_ROOT, CONFIG);
   const directory = registryDirectoryFor(path);
   const resolvedPath = futureRegistryRealPath(path);
   const resolvedDirectory = futureRegistryRealPath(directory);
   if (!within(resolvedPath, REPO_ROOT) || !within(resolvedDirectory, REPO_ROOT)) {
-    throw new Error("automated session metadata requires a repository-local registry; configure registry inside the canonical checkout");
+    throw new RegistryPolicyError("automated session metadata requires a repository-local registry; configure registry inside the canonical checkout");
   }
   assertNoRegistrySymlink(path);
   assertNoRegistrySymlink(directory);
@@ -551,10 +554,10 @@ function preflightRegistryAutomation({ create = true } = {}) {
   const directoryRelative = relative(REPO_ROOT, directory);
   const tracked = git(["ls-files", "--", registryRelative, `${directoryRelative}/`], { cwd: REPO_ROOT });
   if (tracked !== "") {
-    throw new Error(`session registry is tracked (${tracked.split("\n")[0]}); remove it from git and keep it as local display metadata`);
+    throw new RegistryPolicyError(`session registry is tracked (${tracked.split("\n")[0]}); remove it from git and keep it as local display metadata`);
   }
   if (!registryIgnored(path) || !registryIgnored(directory) || !registryIgnored(join(directory, ".write-probe"))) {
-    throw new Error(
+    throw new RegistryPolicyError(
       `session registry must be gitignored before dispatch; add ${registryRelative} and ${directoryRelative}/ to .gitignore or configure another repository-local ignored registry`,
     );
   }
@@ -955,6 +958,10 @@ function seams(pattern) {
 // steer). Rule inheritance: codex reads AGENTS.md natively; claude reads
 // CLAUDE.md (a one-line `@AGENTS.md` import keeps them one file); brief other
 // kinds to read the repository's instructions.
+function atxHeading(line) {
+  return line.match(/^ {0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/u)?.[1]?.trim();
+}
+
 function firstBriefHeading(text) {
   let fence;
   for (const line of text.split(/\r?\n/u)) {
@@ -965,7 +972,7 @@ function firstBriefHeading(text) {
       continue;
     }
     if (fence !== undefined) continue;
-    const heading = line.match(/^ {0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/u)?.[1]?.trim();
+    const heading = atxHeading(line);
     if (heading) return heading;
   }
   return undefined;
@@ -986,10 +993,11 @@ function firstProseLine(text) {
 }
 
 function dispatchGoal(topic, promptText, briefPath) {
-  const heading = firstBriefHeading(promptText ?? "");
-  const selected = heading ?? (briefPath === undefined
-    ? promptText?.split(/\r?\n/u).find((line) => line.trim() !== "")?.trim()
-    : firstProseLine(promptText ?? ""));
+  const text = promptText ?? "";
+  const firstContent = firstProseLine(text);
+  const selected = briefPath === undefined
+    ? (atxHeading(firstContent ?? "") ?? firstContent)
+    : (firstBriefHeading(text) ?? firstContent);
   return [...(selected ?? topic)].slice(0, 200).join("");
 }
 
@@ -1120,7 +1128,7 @@ function dispatch(topic, promptText, options = {}) {
     name: agentName,
     workspace: workspaceId,
     pane,
-    server: process.env.HERDR_SOCKET_PATH ?? join(homedir(), ".config", "herdr", "herdr.sock"),
+    server: herdrSocketPath(),
     lane: branch,
     role: options.route ?? "agent",
     brief: options.briefPath ?? null,
@@ -2028,7 +2036,11 @@ function close(topic) {
       for (const error of result.errors) process.stderr.write(`lane: warning: session registry: ${error}\n`);
       if (result.marked > 0) process.stdout.write(`marked ${result.marked} session${result.marked === 1 ? "" : "s"} done\n`);
     } catch (error) {
-      fail(`lane closed; metadata update failed: ${error.message}`);
+      if (error instanceof RegistryPolicyError) {
+        process.stderr.write(`lane: warning: session registry: ${error.message}\n`);
+      } else {
+        fail(`lane closed; metadata update failed: ${error.message}`);
+      }
     }
   }
 }

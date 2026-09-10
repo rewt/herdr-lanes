@@ -3,13 +3,13 @@ import net from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-function defaultSocketPath() {
+export function herdrSocketPath() {
   return process.env.HERDR_SOCKET_PATH ?? join(homedir(), ".config", "herdr", "herdr.sock");
 }
 
 export class HerdrClient extends EventEmitter {
   constructor({
-    socketPath = defaultSocketPath(),
+    socketPath = herdrSocketPath(),
     requestTimeoutMs = 2_000,
     minBackoffMs = 250,
     maxBackoffMs = 5_000,

@@ -22,6 +22,7 @@ import { collectReportStates, parseVerdict } from "../board/board.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LANE = resolve(HERE, "..", "lane.mjs");
+const HERDR_CLIENT = resolve(HERE, "..", "board", "herdr-client.mjs");
 const GIT = execFileSync("/bin/sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
 const HEAD = execFileSync("/bin/sh", ["-c", "command -v head"], { encoding: "utf8" }).trim();
 const HAS_HERDR = spawnSync("/bin/sh", ["-c", "command -v herdr"], { stdio: "ignore" }).status === 0;
@@ -1523,6 +1524,21 @@ test("dispatch records canonical session metadata with fenced-heading, prose, in
     },
     { topic: "inline-goal", prompt: "Inline session goal\nignored", expectedGoal: "Inline session goal" },
     { topic: "inline-heading", prompt: "# Review session goal #\nignored", expectedGoal: "Review session goal" },
+    {
+      topic: "inline-fenced",
+      prompt: "```md\n# Not the goal\n```\n\nFirst inline prose\n## Later heading\n",
+      expectedGoal: "First inline prose",
+    },
+    {
+      topic: "inline-prose-first",
+      prompt: "Operator instruction\n\n## Later heading\n",
+      expectedGoal: "Operator instruction",
+    },
+    {
+      topic: "inline-only-fenced",
+      prompt: "~~~md\n# Not the goal\n~~~\n",
+      expectedGoal: "inline-only-fenced",
+    },
     { topic: "bounded-goal", prompt: "x".repeat(205), expectedGoal: "x".repeat(200) },
     { topic: "empty-goal", expectedGoal: "empty-goal" },
   ];
@@ -1580,6 +1596,27 @@ test("dispatch records canonical session metadata with fenced-heading, prose, in
     } finally {
       fixture.cleanup();
     }
+  }
+});
+
+test("one exported Herdr socket-path helper supplies the board client and dispatch records", async () => {
+  const { HerdrClient, herdrSocketPath } = await import(HERDR_CLIENT);
+  assert.equal(typeof herdrSocketPath, "function");
+  const previous = process.env.HERDR_SOCKET_PATH;
+  const expected = join(tmpdir(), "herdr-lanes-shared-socket.sock");
+  try {
+    process.env.HERDR_SOCKET_PATH = expected;
+    assert.equal(herdrSocketPath(), expected);
+    const client = new HerdrClient();
+    assert.equal(client.socketPath, expected);
+    client.close();
+    const source = readFileSync(LANE, "utf8");
+    assert.match(source, /server:\s*herdrSocketPath\(\)/u);
+    assert.doesNotMatch(source, /server:\s*process\.env\.HERDR_SOCKET_PATH/u);
+    negativeControl("shared Herdr socket-path helper");
+  } finally {
+    if (previous === undefined) delete process.env.HERDR_SOCKET_PATH;
+    else process.env.HERDR_SOCKET_PATH = previous;
   }
 });
 
@@ -1919,6 +1956,56 @@ test("board completion refuses unignored and external registry writes", async ()
     fixture.cleanup();
     rmSync(externalRoot, { recursive: true, force: true });
   }
+});
+
+test("close warns and succeeds when registry policy refuses automated metadata", () => {
+  const scenarios = [
+    {
+      topic: "external-close-registry",
+      configure(fixture) {
+        const registry = join(fixture.root, "external-sessions.json");
+        writeConfig(fixture, { main: "main", validate: "true", registry });
+        writeFileSync(registry, "[]\n");
+      },
+      expected: /repository-local registry/u,
+    },
+    {
+      topic: "unignored-close-registry",
+      configure(fixture) {
+        mkdirSync(join(fixture.repo, ".lane"), { recursive: true });
+        writeFileSync(join(fixture.repo, ".lane", "sessions.json"), "[]\n");
+      },
+      expected: /registry.*gitignored/u,
+    },
+    {
+      topic: "tracked-close-registry",
+      configure(fixture) {
+        ignoreLaneState(fixture);
+        mkdirSync(join(fixture.repo, ".lane"), { recursive: true });
+        writeFileSync(join(fixture.repo, ".lane", "sessions.json"), "[]\n");
+        git(fixture.repo, ["add", "-f", ".lane/sessions.json"]);
+        git(fixture.repo, ["commit", "-m", "track registry"], { stdio: "ignore" });
+      },
+      expected: /registry.*tracked/u,
+    },
+  ];
+  for (const scenario of scenarios) {
+    const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+    try {
+      scenario.configure(fixture);
+      const path = openLane(fixture, scenario.topic);
+      const closed = lane(fixture, ["close", scenario.topic]);
+      assert.equal(closed.status, 0, closed.stderr);
+      assert.match(closed.stderr, /warning: session registry/u);
+      assert.match(closed.stderr, scenario.expected);
+      assert.doesNotMatch(closed.stderr, /lane closed; metadata update failed/u);
+      assert.ok(!existsSync(path));
+      assert.ok(!refExists(fixture.repo, `refs/heads/lane/${scenario.topic}`));
+    } finally {
+      fixture.cleanup();
+    }
+  }
+  negativeControl("close policy refusal warning boundary");
 });
 
 test("close marks exact repository topic sessions done only after git close succeeds", async () => {
