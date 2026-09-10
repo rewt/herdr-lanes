@@ -52,6 +52,7 @@ const snapshot = {
   protocol: 20,
   version: "0.8.2",
   agents: [{
+    agent: "codex",
     name: "api-agent",
     workspace_id: "w1",
     pane_id: "w1:p2",
@@ -77,7 +78,13 @@ test("registered sessions join live, git, report, deadline, and tripwire state",
       gateColor: "green",
     }]]),
     reportStates: new Map([["reports/api.md", { verdict: "PASS", mtime: "09-08 09:30" }]]),
-    runtime: new Map([["w1:p2", { lastOutput: "finished proof", tripwire: "TRIPWIRE" }]]),
+    runtime: new Map([["w1:p2", {
+      messageText: "finished proof",
+      messageSource: "assistant-preview",
+      messageKind: "codex",
+      messageAvailable: true,
+      tripwire: "TRIPWIRE",
+    }]]),
     now: new Date("2026-09-08T16:00:00Z"),
   });
   assert.equal(rows[0].status, "working");
@@ -92,16 +99,12 @@ test("registered sessions join live, git, report, deadline, and tripwire state",
   negativeControl("joined board row");
 });
 
-test("subscriptions include status, last-line, and configured output matchers", () => {
+test("subscriptions include status, output changes, and configured tripwire matchers", () => {
   assert.deepEqual(buildSubscriptions(registry, snapshot), [
     { type: "pane.agent_status_changed", pane_id: "w1:p2" },
     {
-      type: "pane.output_matched",
+      type: "pane.output_changed",
       pane_id: "w1:p2",
-      source: "recent_unwrapped",
-      lines: 1,
-      strip_ansi: true,
-      match: { type: "regex", value: ".+" },
     },
     {
       type: "pane.output_matched",
@@ -152,7 +155,7 @@ test("narrow pane rendering keeps every line within the terminal width", () => {
   assert.match(lines.join("\n"), /report /);
   assert.match(lines.join("\n"), /gate /);
   assert.match(lines.join("\n"), /deadline .*tripwire /);
-  assert.match(lines.join("\n"), /output /);
+  assert.match(lines.join("\n"), /message /);
   negativeControl("narrow board rendering");
 });
 
@@ -167,6 +170,7 @@ test("wide layout uses its derived width and carries the exact gate offset", () 
   assert.ok(almostWide.every((line) => line.length <= 180));
 
   const wide = tableLineEntries([row], { width: 183 });
+  assert.match(wide[0].text, /LAST MESSAGE/u);
   const body = wide.find((entry) => entry.rowIndex === 0);
   assert.equal(body.text.slice(body.gateStart, body.gateStart + body.gateText.length), gate);
   assert.notEqual(body.gateStart, body.text.indexOf(gate));

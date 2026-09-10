@@ -268,8 +268,9 @@ Repository records contain canonical `repo_id`, development `root_id`, canonical
 - `gate` (`state`, `head`, `exit_code`, `signal`), where state is `pass`, `fail`,
   `stale`, or `missing`;
 - `report` (`path`, UTC `mtime`, `verdict`, `reviewed_head`); and
-- `last_message` (`text`, source `pane-output`, UTC `observed_at`, `truncated`,
-  `available`).
+- `last_message` (`text`, source `assistant-preview` or `unavailable`, agent `kind`,
+  UTC `observed_at`, pane `revision`, `truncated`, `stale`, `available`, separately
+  labeled `raw_excerpt`, and a nullable `limitation`).
 
 `last_message` and `tripwire` are unavailable outside `lane board --watch --json`;
 only that live subscription populates them.
@@ -278,9 +279,28 @@ Unknown scalar values are `null` and carry `available: false` where defined; the
 never reported as clean or passing. Consumers must accept absent optional v1 fields
 and ignore unknown fields. Row IDs come from immutable session identity and remain
 stable across sorting and refresh. Gate-head mismatch and observation staleness are
-independent. Report freshness is unknown when `reviewed_head` is absent. This phase's
-message is the historical pane-output sample, not a claim about the assistant's most
-recent semantic message.
+independent. Report freshness is unknown when `reviewed_head` is absent. Message
+coverage is `assistant-preview`, `partial`, or `unavailable`; individual read errors
+are localized with source `message` and do not discard Git/report state.
+
+For registered Codex and Claude agents, the board reads `recent_unwrapped` text with
+an explicit 200-line request and retains at most the final 16 KiB. Small
+kind-specific adapters strip ANSI/control sequences and recognize only documented
+assistant, prompt, tool, status, and footer boundaries. The detail value preserves
+the last confidently bounded multiline assistant block; the table summarizes its
+first substantive line. Tool-only, footer-only, unsupported, or otherwise ambiguous
+text yields `source: "unavailable"`, never a guessed message. A bounded
+`raw_excerpt` may still be present with `source: "pane-output"` so consumers cannot
+confuse terminal text with an assistant response. Truncation is reported whether it
+came from Herdr or the local byte bound; when truncated text contains no confident
+answer, `limitation` says so without promising recoverable alternate-screen history.
+
+Preview state is memory-only and keyed to the pane occupant's Herdr agent-session
+identity, with a conservative agent/name/pane/revision fallback. A late response is
+discarded when that identity changes. Read errors retain a matching previous preview
+only with `stale: true`; no output is copied into tracked reports. One-shot modes read
+each supported pane once. A watch reads on its five-second refresh and after status or
+output changes, coalescing events to no more than one read per pane per second.
 
 One watch invocation owns one observation client. SIGINT, SIGTERM, downstream pipe
 closure, and fatal read-service errors permanently close subscriptions, pending
@@ -317,8 +337,9 @@ canonical checkout after promotion or close. A missing report has no implied ver
 The board joins each entry with the Herdr snapshot, the lane worktree, and its report.
 It shows agent status and pane ID, commits ahead of the configured main branch, dirty
 state, gate state, report mtime and verdict, overdue state, the latest tripwire match,
-and the last matched output line. The footer samples one-minute load, free memory, and
-processes whose commands identify them as `vitest`, `cargo`, `go`, or `rustc` workers.
+and the last substantive message summary. The footer samples one-minute load, free
+memory, and processes whose commands identify them as `vitest`, `cargo`, `go`, or
+`rustc` workers.
 
 The `GATE` column reads `<lane worktree>/.lane/gate.json` and compares its full
 `head` with that worktree's current HEAD:
@@ -343,8 +364,8 @@ table status line. Quit, EOF, signals, render failure, or unmount permanently st
 observer, reconnect timer, and pending action children; late output cannot restart an
 observer or replay an action. Herdr sets `HERDR_SOCKET_PATH` inside its panes. Outside
 Herdr, `--once` degrades to offline status while retaining git, report, deadline, and
-host data. `TRIPWIRE` and `LAST OUTPUT` are live-only columns populated by interactive
-subscriptions, so they display `-` under `--once`.
+host data. `TRIPWIRE` remains live-only; online one-shot and watch reads
+use the same message adapters, while offline message state is unavailable.
 
 ## Workspace setup
 

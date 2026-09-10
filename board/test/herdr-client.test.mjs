@@ -89,6 +89,48 @@ test("snapshot preserves request ids and returns protocol state", async () => {
   negativeControl("Herdr snapshot request");
 });
 
+test("pane reads use the bounded recent-unwrapped protocol shape", async () => {
+  const requests = [];
+  const connect = fakeServer((socket, request) => {
+    requests.push(request);
+    socket.receive({
+      id: request.id,
+      result: {
+        type: "pane_read",
+        read: {
+          pane_id: "w1:p1",
+          workspace_id: "w1",
+          tab_id: "w1:t1",
+          source: "recent_unwrapped",
+          format: "text",
+          text: "visible output",
+          revision: 12,
+          truncated: false,
+        },
+      },
+    });
+  });
+  const client = new HerdrClient({ socketPath: "fake.sock", connect });
+  try {
+    const read = await client.readPane("w1:p1", { source: "recent_unwrapped", lines: 200 });
+    assert.equal(read.text, "visible output");
+    assert.deepEqual(requests[0], {
+      id: requests[0].id,
+      method: "pane.read",
+      params: {
+        pane_id: "w1:p1",
+        source: "recent_unwrapped",
+        lines: 200,
+        format: "text",
+        strip_ansi: true,
+      },
+    });
+    negativeControl("bounded Herdr pane read");
+  } finally {
+    client.close();
+  }
+});
+
 test("subscriptions emit events and reconnect with bounded backoff", async () => {
   const requests = [];
   let connection = 0;

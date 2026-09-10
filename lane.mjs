@@ -40,6 +40,7 @@ import {
 } from "./board/board.mjs";
 import { verifyCanonicalSession, verifyFocusSelection } from "./board/actions.mjs";
 import { HerdrClient, herdrSocketPath } from "./board/herdr-client.mjs";
+import { refreshMessagePreviews } from "./board/message-preview.mjs";
 
 const IS_REVIEW_COMMAND = process.argv[2] === "review";
 const CALLER_CWD = process.cwd();
@@ -2341,9 +2342,12 @@ function writeBoardJson(state) {
 async function watchBoard() {
   const client = new HerdrClient({ requestTimeoutMs: 500 });
   const runtime = new Map();
+  const previewTimers = new Map();
+  const previewLastRead = new Map();
   let state;
   let refreshTimer;
   let refreshPending = false;
+  let previewReadsPending = 0;
   let subscriptionSignature = "";
   let stopped = false;
   let exitStatus = 0;
@@ -2354,6 +2358,8 @@ async function watchBoard() {
     stopped = true;
     clearInterval(refreshTimer);
     refreshTimer = undefined;
+    for (const timer of previewTimers.values()) clearTimeout(timer);
+    previewTimers.clear();
     client.close();
     finish();
   };
@@ -2367,12 +2373,18 @@ async function watchBoard() {
     client.subscribe(subscriptions);
   };
   const refresh = async () => {
-    if (stopped || refreshPending) return;
+    if (stopped || refreshPending || previewReadsPending > 0) return;
     refreshPending = true;
     try {
       const next = await collectBoardState({ repoRoot: REPO_ROOT, config: CONFIG, client, runtime });
       if (stopped) return;
       state = next;
+      const sampledAt = Date.now();
+      for (const agent of state.snapshot.agents ?? []) {
+        if (runtime.get(agent.pane_id)?.messageObservedAt !== undefined) {
+          previewLastRead.set(agent.pane_id, sampledAt);
+        }
+      }
       writeBoardJson(state);
       installSubscriptions(state);
     } catch (error) {
@@ -2385,8 +2397,60 @@ async function watchBoard() {
       refreshPending = false;
     }
   };
+
+  const schedulePreview = (paneId) => {
+    if (stopped || typeof paneId !== "string" || previewTimers.has(paneId)) return;
+    const delay = Math.max(0, 1_000 - (Date.now() - (previewLastRead.get(paneId) ?? 0)));
+    const timer = setTimeout(async () => {
+      previewTimers.delete(paneId);
+      if (stopped) return;
+      const remaining = 1_000 - (Date.now() - (previewLastRead.get(paneId) ?? 0));
+      if (remaining > 0 || refreshPending || previewReadsPending > 0) {
+        const retry = setTimeout(() => {
+          previewTimers.delete(paneId);
+          schedulePreview(paneId);
+        }, Math.max(remaining, 25));
+        previewTimers.set(paneId, retry);
+        return;
+      }
+      previewLastRead.set(paneId, Date.now());
+      previewReadsPending += 1;
+      try {
+        const result = await refreshMessagePreviews({
+          registry: state.sessions,
+          snapshot: state.snapshot,
+          runtime,
+          client,
+          paneIds: [paneId],
+          currentSnapshot: () => state.snapshot,
+        });
+        if (stopped || result.updated === 0) return;
+        state = {
+          ...state,
+          runtime,
+          messageErrors: result.errors,
+          rows: joinBoardRows({
+            registry: state.sessions,
+            snapshot: state.snapshot,
+            gitStates: state.gitStates,
+            reportStates: state.reportStates,
+            runtime,
+          }),
+        };
+        writeBoardJson(state);
+      } finally {
+        previewReadsPending -= 1;
+      }
+    }, delay);
+    previewTimers.set(paneId, timer);
+  };
+
   const onEvent = (event) => {
     if (stopped || state === undefined) return;
+    if (event.event === "pane.output_changed") {
+      schedulePreview(event.data?.pane_id);
+      return;
+    }
     const snapshot = {
       ...state.snapshot,
       agents: state.snapshot.agents.map((agent) => ({ ...agent })),
@@ -2405,6 +2469,7 @@ async function watchBoard() {
       }),
     };
     writeBoardJson(state);
+    if (event.event === "pane.agent_status_changed") schedulePreview(event.data?.pane_id);
   };
   const onConnectionError = (error) => {
     if (!stopped) process.stderr.write(`lane board: Herdr observation: ${error.message}\n`);

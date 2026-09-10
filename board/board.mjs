@@ -7,6 +7,11 @@ import { freemem, loadavg } from "node:os";
 import { basename, isAbsolute, resolve } from "node:path";
 
 import { HerdrClient } from "./herdr-client.mjs";
+import {
+  messageOccupantId,
+  refreshMessagePreviews,
+  supportsMessagePreview,
+} from "./message-preview.mjs";
 import { loadRegistry } from "./registry.mjs";
 import {
   renderPlainBoard,
@@ -44,10 +49,14 @@ function branchForSession(session) {
 function resolveSessionContext(session, state) {
   const workspace = workspaceFor(session, state.snapshot);
   const agent = agentFor(session, workspace, state.snapshot);
+  const cached = state.runtime.get(agent?.pane_id) ?? {};
+  const live = cached.occupantId === undefined || cached.occupantId === messageOccupantId(agent)
+    ? cached
+    : {};
   return {
     workspace,
     agent,
-    live: state.runtime.get(agent?.pane_id) ?? {},
+    live,
     git: state.gitStates.get(session.lane) ?? {},
     report: state.reportStates.get(session.report) ?? {},
     branch: branchForSession(session),
@@ -69,17 +78,17 @@ function tabIdFor(agent, snapshot) {
 export function buildSubscriptions(registry, snapshot) {
   const subscriptions = [];
   for (const session of registry) {
-    const paneId = paneIdFor(session, snapshot);
+    const workspace = workspaceFor(session, snapshot);
+    const agent = agentFor(session, workspace, snapshot);
+    const paneId = agent?.pane_id;
     if (paneId === undefined) continue;
     subscriptions.push({ type: "pane.agent_status_changed", pane_id: paneId });
-    subscriptions.push({
-      type: "pane.output_matched",
-      pane_id: paneId,
-      source: "recent_unwrapped",
-      lines: 1,
-      strip_ansi: true,
-      match: { type: "regex", value: ".+" },
-    });
+    if (supportsMessagePreview(agent.agent)) {
+      subscriptions.push({
+        type: "pane.output_changed",
+        pane_id: paneId,
+      });
+    }
     for (const pattern of session.tripwires ?? []) {
       subscriptions.push({
         type: "pane.output_matched",
@@ -104,18 +113,26 @@ export function applyHerdrEvent(snapshot, runtime, registry, event) {
   if (event.event !== "pane.output_matched") return;
   const previous = runtime.get(data.pane_id) ?? {};
   const readText = data.read?.text ?? "";
-  const lastOutput = data.matched_line
-    ?? readText.split("\n").map((line) => line.trim()).filter(Boolean).at(-1)
-    ?? previous.lastOutput;
   const session = registry.find((candidate) => paneIdFor(candidate, snapshot) === data.pane_id);
   const tripwire = (session?.tripwires ?? []).find(
     (pattern) => `${data.matched_line ?? readText}`.includes(pattern),
   ) ?? previous.tripwire;
   runtime.set(data.pane_id, {
-    lastOutput,
+    ...previous,
     tripwire,
     observedAt: new Date().toISOString(),
   });
+}
+
+function messageSummary(live) {
+  if (live.messageSource === "assistant-preview" && typeof live.messageText === "string") {
+    return live.messageText.split("\n").find((line) => line.trim() !== "") ?? "message unavailable";
+  }
+  if (live.messageRawExcerpt?.text) {
+    const excerpt = live.messageRawExcerpt.text.split("\n").find((line) => line.trim() !== "") ?? "";
+    return `message unavailable; pane output: ${excerpt}`;
+  }
+  return live.messageSource === "unavailable" ? "message unavailable" : "-";
 }
 
 export function joinBoardRows({
@@ -153,7 +170,7 @@ export function joinBoardRows({
         : report.verdict === "-" ? report.mtime : `${report.verdict}@${report.mtime}`,
       deadline,
       tripwire: live.tripwire ?? "-",
-      output: live.lastOutput ?? "-",
+      output: messageSummary(live),
       done: session.done ? "yes" : "no",
       sessionId: session.session_id,
       workspace: workspace?.workspace_id,
@@ -300,9 +317,18 @@ export async function collectBoardState({ repoRoot, config = {}, client, runtime
   let snapshot = { protocol: undefined, version: undefined, agents: [], panes: [], workspaces: [] };
   let connection = "offline";
   let snapshotError;
+  let messageErrors = [];
   try {
     snapshot = await client.snapshot();
     connection = `Herdr ${snapshot.version ?? "?"} / protocol ${snapshot.protocol ?? "?"}`;
+    const previews = await refreshMessagePreviews({
+      registry: loaded.sessions,
+      snapshot,
+      runtime,
+      client,
+      now,
+    });
+    messageErrors = previews.errors;
   } catch (error) {
     snapshotError = error.message;
     // Git and report state remain useful when Herdr is unavailable.
@@ -325,6 +351,7 @@ export async function collectBoardState({ repoRoot, config = {}, client, runtime
     stats: systemStats(),
     connection,
     snapshotError,
+    messageErrors,
     runtime,
   };
 }
@@ -357,19 +384,33 @@ function structuredReportState(report = {}) {
   };
 }
 
-function structuredLastMessage(runtime = {}) {
-  const available = typeof runtime.lastOutput === "string" && runtime.lastOutput !== "";
-  const limit = 500;
-  const truncated = available && [...runtime.lastOutput].length > limit;
+function structuredLastMessage(runtime = {}, agent) {
+  const available = runtime.messageSource === "assistant-preview"
+    && typeof runtime.messageText === "string"
+    && runtime.messageText !== "";
   return {
-    text: available
-      ? (truncated ? `${[...runtime.lastOutput].slice(0, limit - 1).join("")}…` : runtime.lastOutput)
-      : null,
-    source: "pane-output",
-    observed_at: available ? (runtime.observedAt ?? null) : null,
-    truncated,
+    text: available ? runtime.messageText : null,
+    source: available ? "assistant-preview" : "unavailable",
+    kind: runtime.messageKind ?? agent?.agent ?? null,
+    observed_at: runtime.messageObservedAt ?? null,
+    revision: Number.isInteger(runtime.messageRevision) ? runtime.messageRevision : null,
+    truncated: runtime.messageTruncated === true,
+    stale: runtime.messageStale === true,
     available,
+    raw_excerpt: runtime.messageRawExcerpt ?? null,
+    limitation: runtime.messageLimitation ?? null,
   };
+}
+
+function messageCoverage(state) {
+  if (state.snapshotError !== undefined) return "unavailable";
+  const readable = state.sessions
+    .map((session) => agentFor(session, workspaceFor(session, state.snapshot), state.snapshot))
+    .filter((agent) => supportsMessagePreview(agent?.agent) && typeof agent.pane_id === "string");
+  if (readable.length === 0) return "unavailable";
+  const messages = readable.map((agent) => structuredLastMessage(state.runtime.get(agent.pane_id), agent));
+  if ((state.messageErrors ?? []).length > 0 || messages.some((message) => !message.available)) return "partial";
+  return "assistant-preview";
 }
 
 export function boardSnapshotDocument({
@@ -415,7 +456,7 @@ export function boardSnapshotDocument({
       report: structuredReportState(report),
       deadline: session.deadline,
       overdue: Number.isFinite(deadlineTime) ? !session.done && deadlineTime < capturedAt.valueOf() : false,
-      last_message: structuredLastMessage(live),
+      last_message: structuredLastMessage(live, agent),
       tripwire: live.tripwire ?? null,
       stale: state.snapshotError !== undefined,
     };
@@ -431,7 +472,7 @@ export function boardSnapshotDocument({
       repository: "complete",
       registry: registryCoverage,
       herdr: state.snapshotError === undefined ? "connected" : "unavailable",
-      messages: "pane-output",
+      messages: messageCoverage(state),
     },
     repositories: [{
       repo_id: repoId,
@@ -450,6 +491,7 @@ export function boardSnapshotDocument({
     errors: [
       ...state.errors.map((message) => ({ source: "registry", message })),
       ...(state.snapshotError === undefined ? [] : [{ source: "herdr", message: state.snapshotError }]),
+      ...(state.messageErrors ?? []).map((message) => ({ source: "message", message })),
     ],
   };
 }

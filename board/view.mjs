@@ -9,7 +9,7 @@ const TABLE_COLUMNS = [
   ["REPORT", "report", 20],
   ["DEADLINE", "deadline", 12],
   ["TRIPWIRE", "tripwire", 14],
-  ["LAST OUTPUT", "output", 28],
+  ["LAST MESSAGE", "output", 28],
   ["DONE", "done", 4],
 ];
 const WIDE_TABLE_WIDTH = TABLE_COLUMNS.reduce((total, [, , width]) => total + width, 0)
@@ -44,6 +44,17 @@ function reportCell(report = {}) {
     : `${report.verdict}@${mtime}`;
 }
 
+function messageCell(message = {}) {
+  if (message.source === "assistant-preview" && typeof message.text === "string") {
+    return message.text.split("\n").find((line) => line.trim() !== "") ?? "message unavailable";
+  }
+  if (typeof message.raw_excerpt?.text === "string") {
+    const excerpt = message.raw_excerpt.text.split("\n").find((line) => line.trim() !== "") ?? "";
+    return `message unavailable; pane output: ${excerpt}`;
+  }
+  return message.source === "unavailable" ? "message unavailable" : "-";
+}
+
 export function rowsFromBoardDocument(document) {
   return (document.rows ?? []).map((row) => {
     const status = row.status ?? "offline";
@@ -60,7 +71,7 @@ export function rowsFromBoardDocument(document) {
       report: reportCell(row.report),
       deadline: row.done ? "done" : row.overdue ? "OVERDUE" : row.deadline?.slice(0, 10) ?? "-",
       tripwire: row.tripwire ?? "-",
-      output: row.last_message?.text ?? "-",
+      output: messageCell(row.last_message),
       done: row.done ? "yes" : "no",
       sessionId: row.row_id,
     };
@@ -125,7 +136,7 @@ export function tableLineEntries(rows, { width = Number.POSITIVE_INFINITY } = {}
     entries.push({ text: `report ${truncate(row.report, usable - 7)}`, rowIndex });
     const deadline = truncate(row.deadline, 12);
     entries.push({ text: `deadline ${deadline} | tripwire ${truncate(row.tripwire, usable - 33)}`, rowIndex });
-    entries.push({ text: `output ${truncate(row.output, usable - 7)}`, rowIndex });
+    entries.push({ text: `message ${truncate(row.output, usable - 8)}`, rowIndex });
   });
   return entries;
 }

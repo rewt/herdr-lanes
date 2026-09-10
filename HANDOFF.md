@@ -1119,6 +1119,37 @@ Living log for agents maintaining this repository. Newest entry last.
   change was performed. The facilitator-owned Round 8 record remains unchanged; the
   final commit and single post-commit gate remain conversation-only evidence.
 
+## 2026-09-10 — substantive Codex and Claude message previews
+
+- Added conservative, built-ins-only rendered-output adapters for registered Codex
+  and Claude panes. Plain, JSON, and watch modes now share bounded substantive
+  previews; prompts, tools, spinners, and footer chrome remain excluded, while
+  ambiguous output is unavailable with a separately labeled raw pane excerpt.
+- Added protocol-20 pane reads capped at 200 lines and a local 16 KiB suffix, plus
+  in-memory occupant identity, late-response rejection, revision/truncation metadata,
+  stale-on-error retention, five-second sampling, and at-most-once-per-pane-per-second
+  event coalescing. Tripwire matching stays live-only and independent.
+- Five new parser/read groups failed 0/5 before implementation because the module was
+  absent. The fake-Herdr acceptance first hit sandbox `listen EPERM`; with socket
+  access it reached the intended 0/1 `LAST OUTPUT` negative result. The post-change
+  parser focus passed 5/5, the integrated model/client/parser focus passed 28/28, and
+  the integrated one-shot/watch parity case passed 1/1 with 104 unrelated skips.
+- Rebased onto board-actions implementation `3ef8230` and its facilitator-reviewed
+  tip `8a98b80`, preserving the earlier HANDOFF entry, CLI-only UI/action boundary,
+  and inherited review record. The integrated `npm test` passed 133/133 with zero
+  skips in 114.802 seconds. A sandboxed negative run again hit `listen EPERM` only in
+  the inherited socket case; the socket-enabled repeat failed all 133 deliberate
+  controls with zero passes or skips in 110.015 seconds. Strict OpenSpec validation
+  passed 20/20.
+- README, REFERENCE, `docs/reports/board-messages.md`, the completed change task, and
+  current message-preview spec are synchronized. Verified Node.js 20.19.4, npm
+  10.8.2, Git 2.54.0, and OpenSpec 1.6.0 after clear serialized load probes.
+  `board/app.mjs` and `docs/reviews/` are unchanged by this lane.
+- No live pane, real-TTY interaction, alternate host, model API, push, promotion,
+  archive, independent review, or contract amendment was exercised. Missing
+  alternate-screen history and unrecognized rendered formats remain explicitly
+  unavailable; the final clean-commit gate remains conversation-only evidence.
+
 ## 2026-09-11 — review CLI precise paths Round 10 corrections
 
 - Removed the fixed terminator class from spaced-path continuation scanning. After

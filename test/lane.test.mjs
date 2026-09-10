@@ -2585,9 +2585,12 @@ test("plain and JSON board projections resolve the same session context", () => 
     panes: [{ pane_id: "pane-1", tab_id: "tab-1" }],
   };
   const runtime = new Map([["pane-1", {
-    lastOutput: "shared output",
+    messageText: "shared output",
+    messageSource: "assistant-preview",
+    messageKind: "codex",
+    messageAvailable: true,
     tripwire: "shared tripwire",
-    observedAt: reportTime,
+    messageObservedAt: reportTime,
   }]]);
   const gitStates = new Map([["shared-context", {
     head,
@@ -2735,7 +2738,7 @@ test("board JSON snapshots expose schema v1 from canonical --repo config without
     assert.deepEqual(snapshot.scope, { kind: "repository", repo_id: repositoryIdentity(fixture.repo) });
     assert.equal(snapshot.coverage.herdr, "connected");
     assert.equal(snapshot.coverage.registry, "available");
-    assert.equal(snapshot.coverage.messages, "pane-output");
+    assert.equal(snapshot.coverage.messages, "unavailable");
     assert.equal(snapshot.repositories.length, 1);
     assert.equal(snapshot.repositories[0].path, realpathSync(fixture.repo));
     assert.equal(snapshot.repositories[0].repo_id, repositoryIdentity(fixture.repo));
@@ -2770,10 +2773,15 @@ test("board JSON snapshots expose schema v1 from canonical --repo config without
     assert.equal(typeof row.overdue, "boolean");
     assert.deepEqual(row.last_message, {
       text: null,
-      source: "pane-output",
+      source: "unavailable",
+      kind: null,
       observed_at: null,
+      revision: null,
       truncated: false,
+      stale: false,
       available: false,
+      raw_excerpt: null,
+      limitation: null,
     });
     assert.equal(row.tripwire, null);
     assert.equal(row.stale, false);
@@ -2803,6 +2811,147 @@ test("board JSON snapshots expose schema v1 from canonical --repo config without
   }
 });
 
+test("board one-shot and watch reads share bounded substantive message previews", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  let server;
+  try {
+    mkdirSync(join(fixture.repo, ".lane"));
+    writeFileSync(join(fixture.repo, ".lane", "sessions.json"), `${JSON.stringify([{
+      name: "board-agent",
+      workspace: "workspace-1",
+      lane: "board-message",
+      role: "engineer",
+      report: "docs/reports/board-message.md",
+      deadline: null,
+      done: false,
+    }])}\n`);
+    const firstText = [
+      "• The parser keeps this substantive response.",
+      "  It also keeps the wrapped detail.",
+      "",
+      "────────────────────────",
+      "› Ask Codex to do anything",
+      "model-name high · example",
+    ].join("\n");
+    const updatedText = [
+      "• The parser keeps this updated response.",
+      "",
+      "────────────────────────",
+      "› Ask Codex to do anything",
+    ].join("\n");
+    let readCount = 0;
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      if (request.method === "session.snapshot") {
+        socket.write(`${JSON.stringify({ id: request.id, result: {
+          type: "session_snapshot",
+          snapshot: {
+            protocol: 20,
+            version: "test",
+            agents: [{
+              agent: "codex",
+              agent_session: { agent: "codex", kind: "id", source: "herdr:codex", value: "session-1" },
+              agent_status: "working",
+              name: "board-agent",
+              pane_id: "pane-1",
+              revision: 7,
+              tab_id: "tab-1",
+              terminal_id: "terminal-1",
+              workspace_id: "workspace-1",
+            }],
+            panes: [],
+            workspaces: [{ workspace_id: "workspace-1", label: "workspace-1" }],
+          },
+        } })}\n`);
+      } else if (request.method === "pane.read") {
+        readCount += 1;
+        socket.write(`${JSON.stringify({ id: request.id, result: {
+          type: "pane_read",
+          read: {
+            pane_id: "pane-1",
+            workspace_id: "workspace-1",
+            tab_id: "tab-1",
+            source: "recent_unwrapped",
+            format: "text",
+            text: readCount >= 4 ? updatedText : firstText,
+            revision: 40 + readCount,
+            truncated: false,
+          },
+        } })}\n`);
+      } else if (request.method === "events.subscribe") {
+        socket.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
+        setTimeout(() => {
+          socket.write(`${JSON.stringify({
+            event: "pane.output_changed",
+            data: { type: "pane_output_changed", pane_id: "pane-1", workspace_id: "workspace-1", revision: 99 },
+          })}\n`);
+          socket.write(`${JSON.stringify({
+            event: "pane.output_changed",
+            data: { type: "pane_output_changed", pane_id: "pane-1", workspace_id: "workspace-1", revision: 100 },
+          })}\n`);
+        }, 50);
+      }
+    });
+    const env = { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath };
+
+    const plain = await laneProcess(fixture, ["board", "--once"], { env }).completed;
+    assert.equal(plain.status, 0, plain.stderr);
+    assert.match(plain.stdout, /LAST MESSAGE/);
+    assert.match(plain.stdout, /The parser keeps this subst/);
+    assert.doesNotMatch(plain.stdout, /Ask Codex/);
+
+    const oneShot = await laneProcess(fixture, ["board", "--json"], { env }).completed;
+    assert.equal(oneShot.status, 0, oneShot.stderr);
+    const oneShotMessage = JSON.parse(oneShot.stdout).rows[0].last_message;
+    assert.deepEqual(oneShotMessage, {
+      text: "The parser keeps this substantive response.\nIt also keeps the wrapped detail.",
+      source: "assistant-preview",
+      kind: "codex",
+      observed_at: oneShotMessage.observed_at,
+      revision: 42,
+      truncated: false,
+      stale: false,
+      available: true,
+      raw_excerpt: null,
+      limitation: null,
+    });
+
+    const watch = laneProcess(fixture, ["board", "--watch", "--json"], { env });
+    await waitForCondition(
+      () => watch.stdout().trim().split("\n").filter(Boolean).length >= 2,
+      "updated substantive preview frame",
+      2_500,
+    );
+    watch.child.kill("SIGTERM");
+    const watched = await watch.completed;
+    assert.equal(watched.status, 0, watched.stderr);
+    const frames = watched.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    assert.deepEqual(
+      { ...frames[0].rows[0].last_message, observed_at: null, revision: null },
+      { ...oneShotMessage, observed_at: null, revision: null },
+    );
+    assert.equal(frames.at(-1).rows[0].last_message.text, "The parser keeps this updated response.");
+    const { rowsFromBoardDocument } = await import("../board/view.mjs");
+    assert.equal(
+      rowsFromBoardDocument(frames.at(-1))[0].output,
+      "The parser keeps this updated response.",
+    );
+    const readRequests = server.requests.filter((request) => request.method === "pane.read");
+    assert.equal(readRequests.length, 4);
+    assert.ok(readRequests.every((request) => request.params.lines === 200));
+    assert.ok(readRequests.every((request) => request.params.source === "recent_unwrapped"));
+    assert.ok(readRequests.every((request) => request.params.format === "text"));
+    assert.ok(readRequests.every((request) => request.params.strip_ansi === true));
+    assert.equal(
+      server.requests.filter((request) => request.method === "events.subscribe").length,
+      1,
+    );
+    negativeControl("bounded one-shot and watch message parity");
+  } finally {
+    if (server !== undefined) await server.close();
+    fixture.cleanup();
+  }
+});
+
 test("plain and JSON board reads run from an isolated built-ins-only tool copy", () => {
   const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
   try {
@@ -2811,7 +2960,14 @@ test("plain and JSON board reads run from an isolated built-ins-only tool copy",
     const tool = join(fixture.root, "tool");
     mkdirSync(join(tool, "board"), { recursive: true });
     copyFileSync(LANE, join(tool, "lane.mjs"));
-    for (const file of ["actions.mjs", "board.mjs", "herdr-client.mjs", "registry.mjs", "view.mjs"]) {
+    for (const file of [
+      "actions.mjs",
+      "board.mjs",
+      "herdr-client.mjs",
+      "message-preview.mjs",
+      "registry.mjs",
+      "view.mjs",
+    ]) {
       copyFileSync(resolve(HERE, "..", "board", file), join(tool, "board", file));
     }
     assert.equal(existsSync(join(tool, "board", "node_modules")), false);
@@ -2955,13 +3111,17 @@ test("board JSON watch frames event snapshots and stops pending refresh, reconne
     assert.ok(frames.every((frame) => frame.schema_version === 1));
     assert.equal(frames.at(-1).rows[0].status, "done");
     assert.deepEqual(frames.at(-1).rows[0].last_message, {
-      text: "finished",
-      source: "pane-output",
-      observed_at: frames.at(-1).rows[0].last_message.observed_at,
+      text: null,
+      source: "unavailable",
+      kind: null,
+      observed_at: null,
+      revision: null,
       truncated: false,
-      available: true,
+      stale: false,
+      available: false,
+      raw_excerpt: null,
+      limitation: null,
     });
-    assert.match(frames.at(-1).rows[0].last_message.observed_at, /^\d{4}-\d{2}-\d{2}T.*Z$/u);
     assert.deepEqual(server.requests.map((request) => request.method), [
       "session.snapshot",
       "events.subscribe",

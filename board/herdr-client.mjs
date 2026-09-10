@@ -106,6 +106,20 @@ export class HerdrClient extends EventEmitter {
     return result.snapshot;
   }
 
+  async readPane(paneId, { source = "recent_unwrapped", lines = 200 } = {}) {
+    const result = await this.request("pane.read", {
+      pane_id: paneId,
+      source,
+      lines,
+      format: "text",
+      strip_ansi: true,
+    });
+    if (result?.type !== "pane_read" || result.read === undefined) {
+      throw new Error("Unexpected Herdr pane read response");
+    }
+    return result.read;
+  }
+
   subscribe(subscriptions) {
     if (this.destroyed) return;
     this.closed = false;
