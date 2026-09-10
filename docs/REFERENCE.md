@@ -547,7 +547,7 @@ at the end or at another concrete absolute-path token, which is sanitized
 independently. If a non-absolute token with a slash or backslash appears first,
 publication refuses rather than exposing a possible spaced-path suffix.
 
-The path-specific refusal is:
+The path-specific refusals are:
 
 - Ambiguous spaced path: after repository-path conversion, a concrete absolute-path
   match followed by spaces reaches a non-absolute separator-bearing token before the

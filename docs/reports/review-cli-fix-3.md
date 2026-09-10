@@ -175,3 +175,28 @@ read. The final clean-commit gate remains conversation-only evidence.
   No Unix-socket `listen EPERM` occurred. No live reviewer/Herdr mutation, alternate
   operating system, push, promotion, archive, board-code edit, or `docs/reviews/`
   change was performed. The final commit and gate remain conversation-only evidence.
+
+## Round 6 corrections
+
+- Added a concrete matcher branch for POSIX paths attached directly to a short
+  alphabetic flag. Public prose and command strings retain the flag and replace only
+  the path; protected finding locations refuse. Added forward-separator UNC matching
+  with a token boundary and file-URL matching with an optional host component. No
+  syntax exemption was added.
+- Extended the reviewer template's refusal guidance with ambiguous spaced paths and
+  parenthesized path residue, including the safe alternative for an opening
+  parenthesis after an absolute path. Corrected REFERENCE's plural refusal lead-in.
+- Before production/documentation changes, the focused set failed all six selected
+  checks in 13.536 seconds: one fixture for each of the three flag-attached fields,
+  forward UNC, hosted file URL, and the public-text assertions. After correction all
+  six passed in 13.575 seconds; every new behavior fixture has its own
+  `negativeControl`.
+- Baseline `npm test` passed 140/140 in 252.048 seconds. Final `npm test` passed
+  145/145 with zero skips in 265.164 seconds; the deliberate-control run produced
+  zero passes and all 145 expected failures in 261.804 seconds. Strict OpenSpec
+  validation passed 19/19.
+- All verification ran alone after clear process probes. No Unix-socket
+  `listen EPERM` occurred. No live reviewer/Herdr mutation, alternate operating
+  system, push, promotion, archive, board-code edit, or `docs/reviews/` change was
+  performed. The final commit and single post-commit gate remain conversation-only
+  evidence.

@@ -93,14 +93,17 @@ valid. A finding description containing a declared private identifier is refused
 remove that identifier rather than relying on display escaping. Never include
 credentials. Prose punctuation is not a refusal: after path and alias sanitization,
 publication refuses prose only for non-ASCII or control characters, unresolved
-private identifiers, reviewer-written reserved placeholders, or residual paths and
-aliases. Re-executed command strings are machine syntax and are rendered verbatim
-inside the JSON fence after required path and alias sanitization. A finding
+private identifiers, reviewer-written reserved placeholders, ambiguous spaced paths,
+parenthesized path residue, or residual paths and aliases. Re-executed command strings
+are machine syntax and are rendered verbatim inside the JSON fence after required
+path and alias sanitization. A finding
 file-and-line value is not prose and retains the stricter markup and encoding
 restriction.
 Spell regex patterns in words, and if a concrete absolute path is followed later in
 the same field by a separator-bearing token, avoid the ambiguous spaced path refusal
 by rewriting the path in public-safe words or putting independent paths in separate fields.
+Do not place an opening parenthesis immediately after an absolute path; spell the
+path in public-safe words instead.
 
 ````text
 **PASS**

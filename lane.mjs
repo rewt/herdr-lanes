@@ -1643,11 +1643,15 @@ function containsAlias(value, aliases) {
 }
 
 function absolutePathPattern() {
-  return /file:\/\/\/[A-Za-z0-9._~!$&'+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]+/giu;
+  return /file:\/\/(?:\/|[A-Za-z0-9._~!$&'+=@%-]+\/)[A-Za-z0-9._~!$&'+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\:])\/\/[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<flag>(?<!\S)-[A-Za-z]+)(?<flagPath>\/(?!\/)[^\s"'<>`\[\],;:()]+)|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]+/giu;
 }
 
 function replaceConcreteAbsolutePaths(value, replace) {
-  return replaceOutsidePlaceholders(value, (part) => part.replace(absolutePathPattern(), replace));
+  return replaceOutsidePlaceholders(value, (part) => part.replace(
+    absolutePathPattern(),
+    (match, _flag, flagPath, _offset, _value, groups) =>
+      flagPath === undefined ? replace(match) : `${groups.flag}${replace(flagPath)}`,
+  ));
 }
 
 function containsConcreteAbsolutePath(value) {

@@ -1016,3 +1016,24 @@ Living log for agents maintaining this repository. Newest entry last.
   board-code edit, or `docs/reviews/` change was performed. The facilitator-owned
   Round 4 record remains unchanged; the final commit and single post-commit gate
   remain conversation-only evidence.
+
+## 2026-09-10 — review CLI precise paths Round 6 corrections
+
+- Sanitized POSIX paths attached directly to short alphabetic flags in prose and
+  commands while preserving the flag, and refused them in protected locations.
+  Added token-bounded forward-separator UNC matching and hosted file-URL matching.
+  The asymmetric no-syntax-exemption rule remains unchanged.
+- Added five separately negative-controlled behavior fixtures across the three
+  affected fields and two missing path forms. Extended reviewer-facing refusal
+  guidance for ambiguous spaced paths and parenthesized residue, and corrected the
+  REFERENCE refusal lead-in to plural.
+- The six-test failure-first focus failed all six expectations in 13.536 seconds and
+  passed all six after correction in 13.575 seconds. Baseline `npm test` passed
+  140/140 in 252.048 seconds. Final `npm test` passed 145/145 with zero skips in
+  265.164 seconds; all 145 deliberate controls failed with zero passes in 261.804
+  seconds. Strict OpenSpec validation passed 19/19.
+- Runs were serialized after clear process probes. No Unix-socket `listen EPERM`
+  occurred. No live reviewer/Herdr mutation, alternate host, push, promotion,
+  archive, board-code edit, or `docs/reviews/` change was performed. The
+  facilitator-owned Round 5 record remains unchanged; the final commit and single
+  post-commit gate remain conversation-only evidence.
