@@ -224,10 +224,12 @@ and file URLs matched by the concrete absolute-path pattern, including their pri
 segments. There is no syntax exemption from the concrete matcher. Regex literals and
 slash-delimited phrases in public prose may be replaced by the absolute-path
 placeholder; this over-redaction is acceptable because publishing a path is not, and
-reviewers should spell patterns in words. A regex literal that matches is replaced
-rather than refused. Shell command-substitution delimiters remain literal, but neither
-their bodies nor trailing path text are exempt from path sanitization. Non-file
-URL-like tokens remain literal when the concrete matcher does not match them. After
+reviewers should spell patterns in words. The concrete matcher itself only replaces
+and never refuses; the ambiguous spaced-path and parenthesized-residue rules still can
+refuse the whole publication, including regex-like text. Shell command-substitution
+delimiters remain literal, but neither their bodies nor trailing path text are exempt
+from path sanitization. Non-file URL-like tokens remain literal when the concrete
+matcher does not match them. After
 repository-path conversion, if a concrete absolute-path match is immediately followed
 by a space, scan subsequent whitespace-delimited tokens while they remain
 separator-free. Stop at the end or at another concrete absolute-path token, which will
@@ -263,6 +265,8 @@ The following are concrete refusal triggers, before writing any public file:
 - Ambiguous spaced path: after repository-path conversion, a concrete absolute-path
   match followed by spaces reaches a non-absolute separator-bearing token before the
   end or another independently sanitizable absolute path.
+- Parenthesized path residue: an opening parenthesis immediately follows a concrete
+  absolute-path match, so publication refuses rather than expose the unmatched suffix.
 - Ambiguous aliases: after deduplication, one remaining declared token is a proper
   case-insensitive substring of another declared token. Do not guess which identity
   was intended. Known nested automatic hostname aliases use the longest-first rule.
@@ -279,9 +283,11 @@ The following are concrete refusal triggers, before writing any public file:
   lost. No transliteration, semantic rewrite or silent truncation is allowed.
 
 Verify the transformed schema and require idempotence (identical second-pass text
-and zero additional substitutions) on the unescaped payload. Decode percent octets
-and numeric character references into a scratch copy before the residual path and
-alias checks so encoding cannot hide private content. Only after that rescan,
+and zero additional substitutions) on the unescaped payload. Decode percent octets,
+numeric character references, and a backslash immediately before a forward slash
+into a scratch copy before the residual path and alias checks so encoding or escaping
+cannot hide private content. Decode the same escaped separator before protected-value
+path inspection. Only after that rescan,
 backslash-escape every backslash, backtick, asterisk, underscore, square bracket and
 angle bracket in prose rendered outside the JSON fence, plus an opening parenthesis
 immediately after a generated placeholder. Commands stay verbatim in the fence. The

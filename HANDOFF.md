@@ -991,3 +991,28 @@ Living log for agents maintaining this repository. Newest entry last.
 - No live reviewer/Herdr mutation, alternate host, push, promotion, archive,
   board-code edit, or `docs/reviews/` change was performed. The final commit and
   single post-commit gate remain conversation-only evidence.
+
+## 2026-09-10 — review CLI precise paths Round 5 corrections
+
+- Decoded backslash-escaped forward separators during residual and protected-value
+  path inspection, closing escaped-path publication in finding prose, locations, and
+  commands. Concrete matches followed immediately by an opening parenthesis now
+  refuse as ambiguous residue; no syntax exemption was added.
+- Added separately negative-controlled cases for each escaped field, parenthesized
+  POSIX and file-URL residues, and a relative-looking location. The last case passed
+  on Round 4 and failed against an isolated `e1edc15` tool copy, proving it detects
+  the earlier exemption. The pre-change six-case focus failed five and passed one in
+  13.680 seconds; the general-parenthesis expectation failed alone in 2.860 seconds;
+  all seven affected cases passed after correction in 16.219 seconds.
+- Baseline `npm test` passed 135/135 in 246.662 seconds. Final `npm test` passed
+  140/140 with zero skips in 258.378 seconds; all 140 deliberate controls failed with
+  zero passes in 252.556 seconds. Strict OpenSpec validation passed 19/19. Runs were
+  serialized after clear process probes.
+- REFERENCE, design, delta/current specs, and the implementation report document the
+  escaped-separator inspection, parenthesized residue, and matcher-versus-ambiguity
+  distinction. Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and
+  OpenSpec 1.6.0. No Unix-socket `listen EPERM` occurred.
+- No live reviewer/Herdr mutation, alternate host, push, promotion, archive,
+  board-code edit, or `docs/reviews/` change was performed. The facilitator-owned
+  Round 4 record remains unchanged; the final commit and single post-commit gate
+  remain conversation-only evidence.

@@ -1664,6 +1664,10 @@ function containsAmbiguousAbsolutePath(value) {
   replaceOutsidePlaceholders(value, (part) => {
     for (const match of part.matchAll(absolutePathPattern())) {
       let cursor = match.index + match[0].length;
+      if (part[cursor] === "(") {
+        found = true;
+        break;
+      }
       while (part[cursor] === " ") {
         while (part[cursor] === " ") cursor += 1;
         let end = cursor;
@@ -1686,6 +1690,7 @@ function decodeReviewRescanText(input) {
   let value = input;
   while (true) {
     const decoded = value
+      .replace(/\\\//gu, "/")
       .replace(/%([0-9A-Fa-f]{2})/gu, (_match, digits) => String.fromCharCode(Number.parseInt(digits, 16)))
       .replace(/&#(?:x([0-9A-Fa-f]+)|([0-9]+));/giu, (match, hexadecimal, decimal) => {
         const codePoint = Number.parseInt(hexadecimal ?? decimal, hexadecimal === undefined ? 10 : 16);
@@ -1766,7 +1771,8 @@ function assertProtectedPublicValue(value, aliases, label, { payload = false } =
       fail(`${label} contains unsupported markup or encoded text`);
     }
   }
-  if (containsAlias(value, aliases) || containsConcreteAbsolutePath(value)) {
+  const inspectedValue = value.replace(/\\\//gu, "/");
+  if (containsAlias(inspectedValue, aliases) || containsConcreteAbsolutePath(inspectedValue)) {
     fail(`${label} contains a private alias or absolute path and cannot be rewritten safely`);
   }
   if (![...value].every((character) => character.codePointAt(0) >= 0x20 && character.codePointAt(0) <= 0x7e)) {

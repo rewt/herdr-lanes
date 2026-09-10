@@ -3902,6 +3902,69 @@ test("review redacts an absolute path inside a regex-like character class", () =
   }
 });
 
+for (const [field, topic, payload, diagnostic] of [
+  [
+    "finding prose",
+    "review-escaped-prose-path",
+    { findings: "- [Moderate] shared.txt:1 - Escaped path \\/var/tmp/private.txt was observed; Fix: remove it" },
+    /projected payload retains private path or alias content/u,
+  ],
+  [
+    "finding location",
+    "review-escaped-location-path",
+    { findings: "- [Moderate] scope)\\/var/tmp/private.txt:1 - issue; Fix: remove it" },
+    /finding location contains a private alias or absolute path and cannot be rewritten safely/u,
+  ],
+  [
+    "command string",
+    "review-escaped-command-path",
+    { reexecuted: [{
+      command: "inspect \\/var/tmp/private.txt",
+      cwd: "scratch",
+      exit_code: 0,
+      result: "The command was inspected without execution.",
+      tests_pass: false,
+      witness: null,
+    }] },
+    /projected payload retains private path or alias content/u,
+  ],
+]) {
+  test(`review refuses an escaped absolute path in ${field}`, () => {
+    const review = makeReviewFixture(topic, { verdict: "PASS", payload });
+    try {
+      const run = lane(review.fixture, ["review", topic, "--round", "1", "--brief", review.brief]);
+      assert.equal(run.status, 2, run.stderr);
+      assert.equal(run.stdout, "");
+      assert.match(run.stderr, diagnostic);
+      const head = git(review.path, ["rev-parse", "HEAD"]);
+      assert.ok(!existsSync(join(review.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`)));
+      negativeControl(`escaped absolute path in ${field}`);
+    } finally {
+      review.fixture.cleanup();
+    }
+  });
+}
+
+test("review refuses a relative-looking protected location embedding an absolute path", () => {
+  const topic = "review-location-relative-looking";
+  const review = makeReviewFixture(topic, {
+    verdict: "PASS",
+    payload: { findings: "- [Major] scope)/tmp/gimu:1 - issue; Fix: change it" },
+  });
+  try {
+    const run = lane(review.fixture, ["review", topic, "--round", "1", "--brief", review.brief]);
+    assert.equal(run.status, 2, run.stderr);
+    assert.equal(run.stdout, "");
+    assert.match(
+      run.stderr,
+      /finding location contains a private alias or absolute path and cannot be rewritten safely/u,
+    );
+    negativeControl("relative-looking protected absolute path");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
 for (const [description, topic, location] of [
   ["two-segment flag-letter path", "review-location-two-segment-flags", "/tmp/gimu"],
   ["deeper path with a flag-letter second segment", "review-location-deep-flags", "/tmp/gimu/private.txt"],
@@ -3951,6 +4014,34 @@ test("review preserves a command-substitution delimiter after file URL redaction
     const executions = JSON.parse(publicRecord.match(/## Re-executed\n```json\n(.+)\n```/u)[1]);
     assert.equal(executions[0].command, "printf '%s\\n' $(cat [ABS_PATH])");
     negativeControl("file URL command-substitution delimiter");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
+test("review refuses a parenthesized file URL residue", () => {
+  const topic = "review-file-url-parenthesis";
+  const review = makeReviewFixture(topic, {
+    verdict: "PASS",
+    payload: {
+      reexecuted: [{
+        command: "inspect file:///var/tmp/(private)/input.txt",
+        cwd: "scratch",
+        exit_code: 0,
+        result: "The command was inspected without execution.",
+        tests_pass: false,
+        witness: null,
+      }],
+    },
+  });
+  try {
+    const run = lane(review.fixture, ["review", topic, "--round", "1", "--brief", review.brief]);
+    assert.equal(run.status, 2, run.stderr);
+    assert.equal(run.stdout, "");
+    assert.match(run.stderr, /projected payload contains an ambiguous absolute path/u);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    assert.ok(!existsSync(join(review.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`)));
+    negativeControl("parenthesized file URL residue");
   } finally {
     review.fixture.cleanup();
   }
@@ -4159,7 +4250,7 @@ test("review escapes prose punctuation after sanitizing the unescaped payload", 
   }
 });
 
-test("review escapes an opening parenthesis after a generated placeholder", () => {
+test("review refuses an opening parenthesis after a concrete path match", () => {
   const review = makeReviewFixture("review-placeholder-parenthesis", {
     verdict: "PASS",
     payload: { unverified: "- Inspect /opt/review-tool(note) in a later check." },
@@ -4168,13 +4259,14 @@ test("review escapes an opening parenthesis after a generated placeholder", () =
     const run = lane(review.fixture, [
       "review", "review-placeholder-parenthesis", "--round", "1", "--brief", review.brief,
     ]);
-    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.status, 2, run.stderr);
+    assert.equal(run.stdout, "");
+    assert.match(run.stderr, /projected payload contains an ambiguous absolute path/u);
     const head = git(review.path, ["rev-parse", "HEAD"]);
-    const publicRecord = readFileSync(join(
+    assert.ok(!existsSync(join(
       review.path, "docs", "reviews", "review-placeholder-parenthesis", `${head.slice(0, 7)}-r1.md`,
-    ), "utf8");
-    assert.match(publicRecord, /- Inspect \[ABS_PATH\]\\\(note\) in a later check\./u);
-    negativeControl("placeholder parenthesis escaping");
+    )));
+    negativeControl("parenthesized concrete path refusal");
   } finally {
     review.fixture.cleanup();
   }
@@ -4686,9 +4778,12 @@ test("review protocol documents asymmetric path redaction and spaced-path refusa
   for (const document of [reference, design]) {
     assert.match(document, /regex literals and\s+slash-delimited phrases[^.]*may be replaced[^.]*absolute-path\s+placeholder/iu);
     assert.match(document, /- Ambiguous spaced path:/u);
+    assert.match(document, /concrete matcher[^.]*never refuses[^.]*ambiguous spaced-path[^.]*still can/iu);
+    assert.match(document, /opening parenthesis[^.]*refus/iu);
   }
   for (const spec of [currentSpec, deltaSpec]) {
     assert.match(spec, /regex literals and\s+slash-delimited phrases[^.]*may be replaced[^.]*absolute-path\s+placeholder/iu);
+    assert.match(spec, /opening parenthesis[^.]*refus/iu);
   }
   assert.match(template, /ambiguous spaced path[^.]*public-safe words[^.]*separate fields/iu);
   negativeControl("asymmetric path-redaction documentation");

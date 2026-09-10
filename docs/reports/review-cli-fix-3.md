@@ -123,9 +123,10 @@ read. The final clean-commit gate remains conversation-only evidence.
   matcher; the already-removed command-substitution helper remains absent. This
   removes 60 net lines from `lane.mjs` (10 additions and 70 deletions).
 - Adopted asymmetric sanitization: matching regex literals and slash-delimited phrases
-  may become `[ABS_PATH]`, but they do not refuse an otherwise valid record. Reviewers
-  are directed to spell patterns in words. Shell command bodies remain scanned, while
-  their remaining syntax stays verbatim inside the public JSON fence.
+  may become `[ABS_PATH]`; the concrete matcher does not itself refuse them, although
+  the ambiguity rules can still refuse the whole record. Reviewers are directed to
+  spell patterns in words. Shell command bodies remain scanned, while their remaining
+  syntax stays verbatim inside the public JSON fence.
 - Removed parentheses from the file-URL path class so redaction inside `$()` preserves
   the closing delimiter. Kept the settle window, timeout floor, compact blank-boundary
   matrix, post-repository-conversion ambiguity ordering, and multi-token continuation
@@ -149,3 +150,28 @@ read. The final clean-commit gate remains conversation-only evidence.
 - No live reviewer/Herdr mutation, alternate operating system, push, promotion,
   archive, board-code edit, or change under `docs/reviews/` was performed. The final
   commit and single post-commit gate are recorded in the operator conversation.
+
+## Round 5 corrections
+
+- Backslash-escaped forward separators are decoded in the residual rescan and before
+  protected-value path inspection, so escaped external paths in finding prose,
+  finding locations, and commands refuse instead of publishing.
+- A concrete absolute-path match immediately followed by an opening parenthesis now
+  refuses as ambiguous parenthesized residue. The concrete matcher still only
+  replaces; spaced-path and parenthesized-residue rules can refuse the whole record.
+- Added separately controlled fixtures for all three escaped fields, parenthesized
+  POSIX and file-URL residues, and a relative-looking protected location. The latter
+  passed on Round 4 but failed in 2.860 seconds against an isolated `e1edc15` tool
+  copy, proving it distinguishes the exemption removal.
+- Before implementation, the six-case focus failed five expectations and passed the
+  Round 4 location guard in 13.680 seconds; the converted general-parenthesis case
+  also failed alone in 2.860 seconds. After correction, all seven affected cases
+  passed in 16.219 seconds.
+- Baseline `npm test` passed 135/135 in 246.662 seconds. Final `npm test` passed
+  140/140 with zero skips in 258.378 seconds; the deliberate-control run produced
+  zero passes and all 140 expected failures in 252.556 seconds. Strict OpenSpec
+  validation passed 19/19.
+- Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+  No Unix-socket `listen EPERM` occurred. No live reviewer/Herdr mutation, alternate
+  operating system, push, promotion, archive, board-code edit, or `docs/reviews/`
+  change was performed. The final commit and gate remain conversation-only evidence.

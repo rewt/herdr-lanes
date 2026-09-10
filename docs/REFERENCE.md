@@ -535,7 +535,9 @@ paths, UNC paths, and file URLs matched by the concrete path pattern become
 `[ABS_PATH]`. There is no syntax exemption from that matcher. Regex literals and
 slash-delimited phrases in public prose may be replaced by the absolute-path
 placeholder; reviewers should spell patterns in words. This over-redaction is
-acceptable, and a matching regex literal is replaced rather than causing a refusal.
+acceptable. The concrete matcher itself only replaces and never refuses; the
+ambiguous spaced-path and parenthesized-residue rules still can refuse the whole
+publication, including regex-like text.
 Shell command-substitution delimiters remain literal, but their bodies and any trailing
 path text are scanned normally. Non-file URL-like tokens remain literal when the
 concrete matcher does not match them. After repository paths are converted, an
@@ -550,6 +552,8 @@ The path-specific refusal is:
 - Ambiguous spaced path: after repository-path conversion, a concrete absolute-path
   match followed by spaces reaches a non-absolute separator-bearing token before the
   end or another independently sanitizable absolute path.
+- Parenthesized path residue: an opening parenthesis immediately follows a concrete
+  absolute-path match, so publication refuses rather than expose the unmatched suffix.
 
 Case-insensitive whole path-segment or Unicode
 word-boundary matches for the current OS username/home basename, hostname/full first
@@ -569,8 +573,10 @@ file:line or captured metadata, controls/newlines, non-ASCII residue,
 residual paths/aliases, and any non-idempotent second pass. A finding description that
 contains a declared private identifier is unresolved and refuses publication. After
 sanitization, the idempotence rescan operates on the unescaped payload. It decodes
-percent octets and numeric character references in a scratch copy before checking
-again for paths and aliases. Only then does the renderer backslash-escape every
+percent octets, numeric character references, and a backslash immediately before a
+forward slash in a scratch copy before checking again for paths and aliases. Protected
+finding locations decode the same escaped separator before path inspection. Only then
+does the renderer backslash-escape every
 backslash, backtick, asterisk, underscore, square bracket, and angle bracket in
 Findings, Non-claims, and Unverified prose; it also escapes an opening parenthesis
 immediately after a generated placeholder. Markdown and HTML therefore display those
