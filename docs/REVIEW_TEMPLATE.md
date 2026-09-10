@@ -14,10 +14,15 @@ checkouts, your only permitted write is the designated private record in the can
 checkout.
 
 Write reviewer-authored payload prose in plain ASCII (U+0020 through U+007E), on one
-line per field or bullet, with no Markdown links, inline code, HTML, emphasis, or
-encoded text. The schema's headings, JSON fences, verdict emphasis, and completion
-marker are structural and are the only exceptions. Findings use the ASCII separator
-shown in the schema.
+line per field or bullet. Ordinary prose may quote error messages, usage strings, and
+identifiers with backticks, asterisks, underscores, square brackets, or angle brackets;
+write those characters literally. After sanitizing and rescanning the unescaped
+payload, the tool backslash-escapes every backtick, asterisk, underscore, square
+bracket, and angle bracket in public prose so Markdown and HTML render the characters
+literally. Re-executed command and witness-command strings remain verbatim inside the
+public JSON fence. The schema's headings, JSON fences, verdict emphasis, and
+completion marker are structural. Findings use the ASCII separator shown in the
+schema.
 
 ## Target and sources
 
@@ -83,9 +88,13 @@ Unverified entries each occupy consecutive lines with no blank line between them
 `None` when Findings, Non-claims, or Unverified is empty. Every finding needs a
 repository-relative file, positive line, and concrete fix. Private identifiers is a
 JSON array of nonempty names/tokens appearing in projected fields; an empty array is
-valid. Never include credentials. Re-executed command strings are machine syntax and
-are rendered verbatim inside the JSON fence after required path and alias sanitization;
-prose fields are restricted to the plain-text rules above.
+valid. A finding description containing a declared private identifier is refused;
+remove that identifier rather than relying on display escaping. Never include
+credentials. Prose punctuation is not a refusal: after path and alias sanitization,
+publication refuses prose only for non-ASCII or control characters, unresolved
+private identifiers, reviewer-written reserved placeholders, or residual paths and
+aliases. Re-executed command strings are machine syntax and are rendered verbatim
+inside the JSON fence after required path and alias sanitization.
 
 ````text
 **PASS**

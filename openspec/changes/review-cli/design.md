@@ -194,8 +194,8 @@ private values. Keep it within 120 lines and 64 KiB; never silently truncate evi
 Use this deterministic policy for every projected string, including commands and
 results, after JSON/string decoding and NFC normalization. Command strings retain
 their remaining machine syntax verbatim inside the JSON fence after path and alias
-sanitization; the prose markup and encoded-text restrictions apply only to prose
-fields. Alias inputs are exactly:
+sanitization. Prose may quote error messages, usage strings, and identifiers. Alias
+inputs are exactly:
 
 | Source | Category |
 | --- | --- |
@@ -250,22 +250,20 @@ The following are concrete refusal triggers, before writing any public file:
   that admits multiple file boundaries). Do not silently redact only a prefix.
 - Unsupported payload: projected field strings must be plain single-line text,
   restricted to ASCII U+0020 through U+007E after sanitization. Reject controls,
-  newlines and non-ASCII residue everywhere. In prose fields, also reject backticks,
-  angle brackets, square brackets, Markdown emphasis sequences double-asterisk/
-  double-underscore, percent-encoded octets, HTML entities and literal backslash-x/
-  two-hex or backslash-u/four-hex escape sequences remaining after one JSON decode.
-  Re-executed command and witness-command strings are exempt from only those prose
-  markup and encoded-text checks and remain safely inside the structural JSON fence.
-  Structural schema tags, JSON fences and the CLI's own placeholders are not payload
-  markup.
+  newlines and non-ASCII residue everywhere. Prose punctuation and encoded-looking
+  quoted text are not refusal categories. A finding description containing a declared
+  private identifier is unresolved and refuses publication.
 - Residual private content: an absolute path or alias still matches on rescan,
   redaction changes on a second pass, or a required finding/fix/evidence field is
   lost. No transliteration, semantic rewrite or silent truncation is allowed.
 
 Verify the transformed schema and require idempotence (identical second-pass text
-and zero additional substitutions). The v1 plain-text restriction intentionally
-refuses some otherwise benign Unicode/markup; retain those details privately and
-let the operator arrange a later explicitly numbered review with publishable wording.
+and zero additional substitutions) on the unescaped payload. Only after that rescan,
+backslash-escape every backtick, asterisk, underscore, square bracket and angle
+bracket in prose rendered outside the JSON fence. Commands stay verbatim in the
+fence. The v1 plain-text restriction still refuses non-ASCII and control characters;
+retain those details privately and let the operator arrange a later explicitly
+numbered review with publishable wording.
 On any unverifiable case, exit 2 with no public record and a concise diagnostic;
 retain the private file for operator inspection. Never echo private content.
 This verifies a documented mechanical sanitization policy; it cannot certify the
@@ -347,7 +345,7 @@ slices include their own tests, docs, report, commit and post-commit gate.
 | Subphase / topic | Complete requirement blocks and acceptance | Depends on |
 | --- | --- | --- |
 | R-i / review-private | Own Explicit source round and captured target; Mandatory private reviewer output and finite checks; Machine-checkable review evidence; Tool-enforced unchanged lane; Single dispatch bounded observation and explicit outcomes; Offline tests and discoverable protocol. Deliver template/map, explicit source/round, gate disclosure, one existing-path dispatch, private validator and bounded wait/exit. Test source/flag/route/gate/path refusals with exact exit 2, all three private verdicts with exits 0/1, witness/schema/SHA errors, before/after tree checks, system-temp fixtures, timeout/signal/pipe cleanup and no public file created. | Current main; roots-config promoted for lane.mjs sequencing. |
-| R-ii / review-public | Own Orchestrator-only sanitized public record and After-check publication boundary. Deliver alias policy, projection, sanitization verification and publication only after the clean-tree check. Test every alias source/boundary/case/placeholder, ambiguity/markup/encoding/refusal, redaction counts/idempotence, meaningful locations, private retention, exclusive public creation, concurrent mutation and occupied-round recovery. Assert exact exit 2 on every refusal and retain R-i regressions. | review-private (R-i). |
+| R-ii / review-public | Own Orchestrator-only sanitized public record and After-check publication boundary. Deliver alias policy, projection, sanitization verification and publication only after the clean-tree check. Test every alias source/boundary/case/placeholder, prose escaping after raw idempotence, non-ASCII/control refusal, redaction counts/idempotence, meaningful locations, private retention, exclusive public creation, concurrent mutation and occupied-round recovery. Assert exact exit 2 on every refusal and retain R-i regressions. | review-private (R-i). |
 
 For R-i, the outcome table terminates at the validated private record and unchanged
 tree: PASS exits 0; NEEDS-WORK/FAIL exit 1; all refusals exit 2. Print the private path

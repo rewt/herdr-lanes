@@ -712,3 +712,27 @@ Living log for agents maintaining this repository. Newest entry last.
   UI, and whitespace checks were clean. No live Herdr behavior, push, promotion,
   archive, contract amendment, or `docs/reviews/` edit was performed; the final
   clean-commit gate remains conversation-only evidence.
+
+## 2026-09-09 — review prose escaping follow-up
+
+- Replaced public prose markup refusal with post-sanitization backslash escaping for
+  backticks, asterisks, underscores, square brackets, and angle brackets. Raw payloads
+  are sanitized and rescanned before display escaping; generated placeholders remain
+  exact, commands remain verbatim in JSON, and finding descriptions containing a
+  declared private identifier still refuse.
+- Changed the private-only section guard from whole-record substring matching to exact
+  heading-line matching, so commands may quote `## Analysis` and
+  `## Private identifiers`. Updated the template Role and Required output sections,
+  REFERENCE, review change artifacts, current spec, and the implementation report. No
+  contract amendment was applied.
+- Baseline `npm test` passed 109/109. Before implementation, all three focused
+  regressions failed with the production behaviors: prose refusal, incorrect declared-
+  identifier publication, and a false private-section leak. Each retained case has a
+  deliberate negative control; the corrected six-test focus passed.
+- Final `npm test` passed 112/112 in 106.166 seconds, and all 112 deliberate negative
+  controls failed with zero passes in 101.011 seconds. Strict OpenSpec validation
+  passed 17/17. Runs were serialized after clear process probes with Node.js v20.19.4,
+  npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+- No live reviewer/Herdr mutation, alternate host, push, promotion, archive, or change
+  under `docs/reviews/` was performed. The final post-commit lane check remains
+  conversation-only evidence.

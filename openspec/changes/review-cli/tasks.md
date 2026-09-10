@@ -66,8 +66,9 @@ seams for timeout tests, never a production environment switch. Fail first on:
   hostname/first label/declared tokens, case-insensitive segment/word boundaries,
   fixed placeholders and counts. Cover unrelated-word preservation, nested automatic
   aliases, declared-token ambiguity, protected file:line matches, the ASCII payload
-  restriction/unsupported markup, redacted labels/idempotence, private Analysis
-  omission and residual/encoded refusal. These tests belong to R-ii when split.
+  restriction, prose escaping after unescaped idempotence checks, redacted labels,
+  private Analysis omission and residual alias refusal. These tests belong to R-ii
+  when split.
 - One dispatch, no follow-up actions, local resource cleanup, late evidence retained,
   no overwritten/staged/committed record, and existing check/promote clean-tree refusal
   after the CLI creates the expected public output.

@@ -1618,7 +1618,7 @@ function absolutePathPattern() {
   return /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]*/giu;
 }
 
-function assertPublicPayloadRestrictions(value, label, { allowGenerated = false, machineSyntax = false } = {}) {
+function assertPublicPayloadRestrictions(value, label, { allowGenerated = false } = {}) {
   if (!allowGenerated && REVIEW_PLACEHOLDER_PATTERN.test(value)) {
     REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
     fail(`${label} contains a reserved sanitizer placeholder`);
@@ -1630,17 +1630,9 @@ function assertPublicPayloadRestrictions(value, label, { allowGenerated = false,
   if ([...withoutPlaceholders].some((character) => character.codePointAt(0) < 0x20 || character.codePointAt(0) > 0x7e)) {
     fail(`${label} contains unsupported non-ASCII text`);
   }
-  if (!machineSyntax) {
-    const markup = /[`<>\[\]]|\*\*|__/u.test(withoutPlaceholders);
-    const encoded = /%[0-9A-Fa-f]{2}|&(?:#?[A-Za-z0-9]+);|\\x[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}/u
-      .test(withoutPlaceholders);
-    if (markup || encoded) {
-      fail(`${label} contains unsupported markup or encoded text`);
-    }
-  }
 }
 
-function sanitizePublicString(input, context, { allowGenerated = false, machineSyntax = false } = {}) {
+function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
   let value = input.normalize("NFC");
   if (!allowGenerated && REVIEW_PLACEHOLDER_PATTERN.test(value)) fail("projected payload contains a reserved sanitizer placeholder");
   REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
@@ -1673,7 +1665,7 @@ function sanitizePublicString(input, context, { allowGenerated = false, machineS
     }));
   }
 
-  assertPublicPayloadRestrictions(value, "projected payload", { allowGenerated: true, machineSyntax });
+  assertPublicPayloadRestrictions(value, "projected payload", { allowGenerated: true });
   const withoutPlaceholders = value.replace(REVIEW_PLACEHOLDER_PATTERN, "");
   REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
   if (absolutePathPattern().test(withoutPlaceholders) || containsAlias(withoutPlaceholders, context.aliases)) {
@@ -1682,8 +1674,18 @@ function sanitizePublicString(input, context, { allowGenerated = false, machineS
   return value;
 }
 
+function escapeReviewProse(value) {
+  return replaceOutsidePlaceholders(value, (part) => part.replace(/[`*_\[\]<>]/gu, "\\$&"));
+}
+
 function assertProtectedPublicValue(value, aliases, label, { payload = false } = {}) {
-  if (payload) assertPublicPayloadRestrictions(value.normalize("NFC"), label);
+  if (payload) {
+    const normalized = value.normalize("NFC");
+    assertPublicPayloadRestrictions(normalized, label);
+    if (/[`<>\[\]]|\*\*|__|%[0-9A-Fa-f]{2}|&(?:#?[A-Za-z0-9]+);|\\x[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}/u.test(normalized)) {
+      fail(`${label} contains unsupported markup or encoded text`);
+    }
+  }
   if (containsAlias(value, aliases) || absolutePathPattern().test(value)) {
     fail(`${label} contains a private alias or absolute path and cannot be rewritten safely`);
   }
@@ -1705,7 +1707,7 @@ function sanitizeReviewProjection(parsed, expected) {
   };
   const modifiedExecutionFields = [];
   const sanitize = (value) => sanitizePublicString(value, context);
-  const sanitizeMachineSyntax = (value) => sanitizePublicString(value, context, { machineSyntax: true });
+  const declaredAliases = aliases.filter((alias) => !alias.automatic);
   const findingPayloads = [];
   const findingLines = parsed.sections.get("Findings") === "None"
     ? ["None"]
@@ -1713,23 +1715,24 @@ function sanitizeReviewProjection(parsed, expected) {
       const match = line.match(/^- \[(Major|Moderate|Minor)\] (.+):([1-9][0-9]*) - (.+); Fix: (.+)$/u);
       const location = `${match[2]}:${match[3]}`;
       assertProtectedPublicValue(location, aliases, "finding location", { payload: true });
+      if (containsAlias(match[4].normalize("NFC"), declaredAliases)) {
+        fail("finding description contains a declared private identifier");
+      }
       const description = sanitize(match[4]);
       const fix = sanitize(match[5]);
       findingPayloads.push(description, fix);
-      return `- [${match[1]}] ${location} - ${description}; Fix: ${fix}`;
+      return `- [${match[1]}] ${location} - ${escapeReviewProse(description)}; Fix: ${escapeReviewProse(fix)}`;
     });
   const executions = parsed.executions.map((execution, index) => {
     const projected = { ...execution };
     for (const field of ["command", "result"]) {
-      projected[field] = field === "command" ? sanitizeMachineSyntax(execution[field]) : sanitize(execution[field]);
+      projected[field] = sanitize(execution[field]);
       if (projected[field] !== execution[field]) modifiedExecutionFields.push(`${index}.${field}`);
     }
     if (execution.witness !== null) {
       projected.witness = { ...execution.witness };
       for (const field of ["command", "result", "observed_failure"]) {
-        projected.witness[field] = field === "command"
-          ? sanitizeMachineSyntax(execution.witness[field])
-          : sanitize(execution.witness[field]);
+        projected.witness[field] = sanitize(execution.witness[field]);
         if (projected.witness[field] !== execution.witness[field]) modifiedExecutionFields.push(`${index}.witness.${field}`);
       }
     }
@@ -1742,18 +1745,18 @@ function sanitizeReviewProjection(parsed, expected) {
   const unverified = bullets("Unverified");
 
   const payloads = [
-    ...findingPayloads.map((value) => ({ value, machineSyntax: false })),
+    ...findingPayloads,
     ...executions.flatMap((execution) => [
-      { value: execution.command, machineSyntax: true },
-      { value: execution.result, machineSyntax: false },
+      execution.command,
+      execution.result,
       ...(execution.witness === null ? [] : [
-        { value: execution.witness.command, machineSyntax: true },
-        { value: execution.witness.result, machineSyntax: false },
-        { value: execution.witness.observed_failure, machineSyntax: false },
+        execution.witness.command,
+        execution.witness.result,
+        execution.witness.observed_failure,
       ]),
     ]),
-    ...nonClaims.filter((line) => line !== "None").map((line) => ({ value: line.slice(2), machineSyntax: false })),
-    ...unverified.filter((line) => line !== "None").map((line) => ({ value: line.slice(2), machineSyntax: false })),
+    ...nonClaims.filter((line) => line !== "None").map((line) => line.slice(2)),
+    ...unverified.filter((line) => line !== "None").map((line) => line.slice(2)),
   ];
   const verification = {
     path: expected.path,
@@ -1762,10 +1765,8 @@ function sanitizeReviewProjection(parsed, expected) {
   };
   for (let index = 0; index < payloads.length; index += 1) {
     const payload = payloads[index];
-    const second = sanitizePublicString(payload.value, verification, {
-      allowGenerated: true, machineSyntax: payload.machineSyntax,
-    });
-    if (second !== payload.value) {
+    const second = sanitizePublicString(payload, verification, { allowGenerated: true });
+    if (second !== payload) {
       const categories = Object.entries(verification.counts).filter(([, count]) => count > 0).map(([name]) => name).join(",");
       fail(`review sanitization is not idempotent at projected field ${index} (${categories || "text"})`);
     }
@@ -1791,10 +1792,10 @@ function sanitizeReviewProjection(parsed, expected) {
     "```",
     "",
     "## Non-claims",
-    ...nonClaims,
+    ...nonClaims.map((line) => line === "None" ? line : `- ${escapeReviewProse(line.slice(2))}`),
     "",
     "## Unverified",
-    ...unverified,
+    ...unverified.map((line) => line === "None" ? line : `- ${escapeReviewProse(line.slice(2))}`),
     "",
     "## Sanitization",
     `- absolute-path: ${context.counts["absolute-path"]}`,
@@ -1810,7 +1811,9 @@ function sanitizeReviewProjection(parsed, expected) {
   if (Buffer.byteLength(record) > 64 * 1024 || record.split("\n").length > 120) {
     fail("sanitized public review exceeds 64 KiB or 120 lines");
   }
-  if (record.includes("## Analysis") || record.includes("## Private identifiers")) fail("private-only sections reached public projection");
+  if (record.split("\n").some((line) => line === "## Analysis" || line === "## Private identifiers")) {
+    fail("private-only sections reached public projection");
+  }
   return record;
 }
 

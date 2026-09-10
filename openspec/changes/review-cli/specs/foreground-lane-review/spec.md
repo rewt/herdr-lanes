@@ -62,14 +62,14 @@ the private canonical .lane/reviews/<topic>/<head7>-rN.md and verifying sanitiza
 - **WHEN** a valid record contains removable absolute paths or declared/local user and host names
 - **THEN** the CLI publishes a bounded schema-preserving projection with explicit placeholders/redaction labels, retains exact private evidence and leaves the public record untracked.
 #### Scenario: Sanitization cannot be verified
-- **WHEN** private strings remain, encoding/markup is ambiguous, or redaction loses a finding's location/meaning
+- **WHEN** private strings remain, controls or non-ASCII text are unsupported, or redaction loses a finding's location/meaning
 - **THEN** the command exits 2, writes no public record, retains the private record and does not leak it through diagnostics.
 #### Scenario: Deterministic aliases and placeholders
 - **WHEN** injected OS username, home basename, full/short hostname and declared tokens occur in varied case and inside unrelated words
 - **THEN** only whole path-segment/word-boundary matches are replaced with the design's fixed placeholders and counts; substring collisions, protected locations and unsupported payloads refuse exactly as defined there.
-#### Scenario: Verbatim command syntax and restricted prose
+#### Scenario: Verbatim command syntax and escaped prose
 - **WHEN** Re-executed command or witness-command strings contain shell syntax, markup characters or encoded-looking text
-- **THEN** path, alias, ASCII and reserved-placeholder checks still apply, remaining command characters are rendered verbatim inside the public JSON fence, and the same markup or encoded text in prose fields is refused.
+- **THEN** path, alias, ASCII and reserved-placeholder checks still apply, remaining command characters are rendered verbatim inside the public JSON fence, and quoted punctuation in prose is backslash-escaped only after sanitization and idempotence checks on the unescaped payload.
 
 ### Requirement: After-check publication boundary
 The complete review command SHALL require successful sanitized public generation

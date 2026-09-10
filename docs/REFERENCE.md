@@ -473,7 +473,9 @@ and `witness`. A witness is null or an object with exactly `kind`
 an observed witness. Free prose cannot claim tests passed; inherited gates are not
 fresh Re-executed evidence. Re-executed command strings, including witness commands,
 are machine syntax and are rendered verbatim inside the JSON fence after required path
-and alias sanitization; prose fields are restricted to the plain-text rules below.
+and alias sanitization. Prose may quote error messages, usage strings, and identifiers
+with Markdown or HTML punctuation; public rendering escapes that punctuation as
+described below.
 
 After completion, the command validates that schema and rechecks the exact HEAD,
 branch, and a completely clean lane before accepting the verdict. It polls only the
@@ -507,13 +509,19 @@ array index/name without original values. Generated placeholders are reserved;
 reviewer-supplied reserved placeholders are refused in every projected field,
 including protected finding locations. The checker also refuses aliases in protected
 file:line or captured metadata, ambiguous paths, controls/newlines, non-ASCII residue,
-residual paths/aliases, and any non-idempotent second pass. Prose fields additionally
-refuse backticks, angle/square brackets, emphasis sequences, and percent/HTML/
-backslash-encoded text. Command strings are exempt only from that prose markup and
-encoded-text check because the JSON fence renders them verbatim. Schema tags, JSON
-fences and CLI placeholders are structural. The mechanical policy cannot prove that
-arbitrary prose contains no undeclared human name or secret, so the operator still
-inspects before committing.
+residual paths/aliases, and any non-idempotent second pass. A finding description that
+contains a declared private identifier is unresolved and refuses publication. After
+sanitization, the idempotence rescan operates on the unescaped payload; only then does
+the renderer backslash-escape every backtick, asterisk, underscore, square bracket,
+and angle bracket in Findings, Non-claims, and Unverified prose. Markdown and HTML
+therefore display those characters literally. Commands stay verbatim because the JSON
+fence already makes them literal. Prose punctuation and encoded-looking quoted text
+are not refusal categories. Publication refuses prose only for non-ASCII or control
+characters, unresolved private identifiers, reviewer-written reserved placeholders,
+and residual paths or aliases after sanitization. Schema tags, JSON fences and CLI
+placeholders are structural. The mechanical policy cannot prove that arbitrary prose
+contains no undeclared human name or secret, so the operator still inspects before
+committing.
 
 The CLI creates the public file only after sanitization and the pre-publication clean
 check, without replacement, staging, or committing. It then requires the same HEAD and

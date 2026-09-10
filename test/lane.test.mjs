@@ -3191,13 +3191,14 @@ test("review sanitizes deterministic aliases and path forms in a bounded public 
   }
 });
 
-test("review sanitization preserves unrelated words and fails closed on ambiguous or unsupported payloads", () => {
+test("review sanitization preserves unrelated words and fails closed on ambiguous or unsafe payloads", () => {
   const fixtures = [];
   try {
     const preserved = makeReviewFixture("review-boundary", { verdict: "PASS" });
     fixtures.push(preserved.fixture);
     preserved.fixture.env.FAKE_REVIEW_PAYLOAD = JSON.stringify({
-      findings: "- [Minor] shared.txt:1 - ANN met annex; Fix: keep annex unchanged",
+      findings: "- [Minor] shared.txt:1 - Annex remains unchanged; Fix: keep annex unchanged",
+      nonclaims: "- ANN met annex.",
       identifiers: ["Ann"],
       analysis: "Private only.",
     });
@@ -3207,7 +3208,8 @@ test("review sanitization preserves unrelated words and fails closed on ambiguou
     const preservedPublic = readFileSync(join(
       preserved.path, "docs", "reviews", "review-boundary", `${preservedHead.slice(0, 7)}-r1.md`,
     ), "utf8");
-    assert.match(preservedPublic, /\[PRIVATE\] met annex; Fix: keep annex unchanged/);
+    assert.match(preservedPublic, /Annex remains unchanged; Fix: keep annex unchanged/);
+    assert.match(preservedPublic, /- \[PRIVATE\] met annex\./);
 
     const cases = [
       ["alias-ambiguity", { identifiers: ["Ann", "Anna"] }],
@@ -3219,8 +3221,6 @@ test("review sanitization preserves unrelated words and fails closed on ambiguou
       ["location-placeholder", { findings: "- [Major] [USER].txt:1 - issue; Fix: change it" }],
       ["location-encoded", { findings: "- [Major] shared%2Fsecret.txt:1 - issue; Fix: change it", identifiers: ["secret"] }],
       ["non-ascii", { findings: "- [Minor] shared.txt:1 - caf\u00e9 issue; Fix: use ASCII" }],
-      ["markup", { findings: "- [Minor] shared.txt:1 - `inline` issue; Fix: remove markup" }],
-      ["encoded", { unverified: "- Percent path %2Fsecret remains." }],
       ["placeholder", { nonclaims: "- Existing [USER] marker." }],
       ["ambiguous-path", { unverified: "- Inspect /tmp/path with spaces/file." }],
     ];
@@ -3240,7 +3240,7 @@ test("review sanitization preserves unrelated words and fails closed on ambiguou
   }
 });
 
-test("review projects command syntax verbatim while keeping prose markup restricted", () => {
+test("review projects command syntax verbatim while escaping the same characters in prose", () => {
   const fixtures = [];
   const machineSyntax = "env PATH=<node and system bin only> printf '`value` [item] ** %2F &amp; \\x41 \\u0041' > $VAR";
   try {
@@ -3283,19 +3283,23 @@ test("review projects command syntax verbatim while keeping prose markup restric
     assert.equal(publicExecutions[0].command, machineSyntax);
     assert.equal(publicExecutions[0].witness.command, `${machineSyntax} --negative-control`);
 
-    const refused = makeReviewFixture("review-prose-syntax", {
+    const prose = makeReviewFixture("review-prose-syntax", {
       verdict: "PASS",
       payload: {
         findings: `- [Minor] shared.txt:1 - ${machineSyntax}; Fix: use plain prose`,
       },
     });
-    fixtures.push(refused.fixture);
-    const refusedRun = lane(refused.fixture, [
-      "review", "review-prose-syntax", "--round", "1", "--brief", refused.brief,
+    fixtures.push(prose.fixture);
+    const proseRun = lane(prose.fixture, [
+      "review", "review-prose-syntax", "--round", "1", "--brief", prose.brief,
     ]);
-    assert.equal(refusedRun.status, 2, refusedRun.stderr);
-    assert.equal(refusedRun.stdout, "");
-    assert.match(refusedRun.stderr, /projected payload contains unsupported markup or encoded text/);
+    assert.equal(proseRun.status, 0, proseRun.stderr);
+    const proseHead = git(prose.path, ["rev-parse", "HEAD"]);
+    const prosePublic = readFileSync(join(
+      prose.path, "docs", "reviews", "review-prose-syntax", `${proseHead.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    assert.match(prosePublic, /PATH=\\<node and system bin only\\>/u);
+    assert.ok(prosePublic.includes("'\\`value\\` \\[item\\] \\*\\* %2F &amp;"));
 
     const reserved = makeReviewFixture("review-command-placeholder", {
       verdict: "PASS",
@@ -3338,9 +3342,105 @@ test("review projects command syntax verbatim while keeping prose markup restric
     assert.equal(nonAsciiRun.status, 2, nonAsciiRun.stderr);
     assert.equal(nonAsciiRun.stdout, "");
     assert.match(nonAsciiRun.stderr, /projected payload contains unsupported non-ASCII text/);
-    negativeControl("verbatim command projection and restricted prose");
+    negativeControl("verbatim command projection and escaped prose");
   } finally {
     for (const fixture of fixtures) fixture.cleanup();
+  }
+});
+
+test("review escapes prose punctuation after sanitizing the unescaped payload", () => {
+  const findings = [
+    "- [Minor] first.txt:1 - `git status` reported **fatal** for [draft] <path> and snake_case; Fix: quote `--` and keep __tokens__ literal",
+    "- [Moderate] second.txt:2 - asterisk * underscore _ brackets [] and angles <> remain visible; Fix: preserve every quoted character",
+  ].join("\n");
+  const nonclaims = "- Quoted `usage [--flag] <path>` and **bold** __label__ text is not a claim.";
+  const unverified = "- Git said: `fatal: pathspec '[draft]_<name>.md' did not match any files`.";
+  const review = makeReviewFixture("review-escaped-prose", {
+    verdict: "NEEDS-WORK",
+    payload: { findings, nonclaims, unverified },
+  });
+  try {
+    const run = lane(review.fixture, [
+      "review", "review-escaped-prose", "--round", "1", "--brief", review.brief,
+    ]);
+    assert.equal(run.status, 1, run.stderr);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicRecord = readFileSync(join(
+      review.path, "docs", "reviews", "review-escaped-prose", `${head.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    for (const escaped of [
+      "\\`git status\\`", "\\*\\*fatal\\*\\*", "\\[draft\\]", "\\<path\\>", "snake\\_case",
+      "\\`--\\`", "\\_\\_tokens\\_\\_", "asterisk \\*", "underscore \\_", "brackets \\[\\]",
+      "angles \\<\\>", "\\`usage \\[--flag\\] \\<path\\>\\`", "\\*\\*bold\\*\\*",
+      "\\_\\_label\\_\\_", "pathspec '\\[draft\\]\\_\\<name\\>.md'",
+    ]) assert.ok(publicRecord.includes(escaped), `missing escaped prose: ${escaped}\n${publicRecord}`);
+    assert.equal((publicRecord.match(/^- \[(?:Major|Moderate|Minor)\]/gmu) || []).length, 2);
+    const renderedLiteral = publicRecord.replace(/\\([`*_\[\]<>])/gu, "$1");
+    assert.ok(renderedLiteral.includes(findings.split("\n")[0]));
+    assert.ok(renderedLiteral.includes(findings.split("\n")[1]));
+    assert.ok(renderedLiteral.includes(nonclaims));
+    assert.ok(renderedLiteral.includes(unverified));
+    negativeControl("escaped review prose projection");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
+test("review refuses a finding description containing a declared private identifier", () => {
+  const review = makeReviewFixture("review-private-description", {
+    verdict: "PASS",
+    payload: {
+      findings: "- [Minor] shared.txt:1 - Reviewer_Secret appears in quoted prose; Fix: remove the private identifier",
+      identifiers: ["Reviewer_Secret"],
+    },
+  });
+  try {
+    const run = lane(review.fixture, [
+      "review", "review-private-description", "--round", "1", "--brief", review.brief,
+    ]);
+    assert.equal(run.status, 2, run.stderr);
+    assert.equal(run.stdout, "");
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    assert.ok(!existsSync(join(
+      review.path, "docs", "reviews", "review-private-description", `${head.slice(0, 7)}-r1.md`,
+    )));
+    negativeControl("declared private identifier in finding prose");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
+test("review allows private-only heading text inside a verbatim command", () => {
+  const command = "printf '## Analysis and ## Private identifiers are quoted command text'";
+  const review = makeReviewFixture("review-command-headings", {
+    verdict: "PASS",
+    payload: {
+      reexecuted: [{
+        command,
+        cwd: "scratch",
+        exit_code: 0,
+        result: "Command text was inspected without execution.",
+        tests_pass: false,
+        witness: null,
+      }],
+    },
+  });
+  try {
+    const run = lane(review.fixture, [
+      "review", "review-command-headings", "--round", "1", "--brief", review.brief,
+    ]);
+    assert.equal(run.status, 0, run.stderr);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicRecord = readFileSync(join(
+      review.path, "docs", "reviews", "review-command-headings", `${head.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    const executions = JSON.parse(publicRecord.match(/## Re-executed\n```json\n(.+)\n```/u)[1]);
+    assert.equal(executions[0].command, command);
+    assert.equal((publicRecord.match(/^## Analysis$/gmu) || []).length, 0);
+    assert.equal((publicRecord.match(/^## Private identifiers$/gmu) || []).length, 0);
+    negativeControl("private heading text inside command");
+  } finally {
+    review.fixture.cleanup();
   }
 });
 
@@ -3726,7 +3826,13 @@ test("review protocol documents normalized boundaries and consecutive findings",
   for (const document of [reference, template]) {
     assert.match(document, /LF line endings only/iu);
     assert.match(document, /command strings[^.]*verbatim/iu);
-    assert.match(document, /prose fields[^.]*restricted/iu);
+    assert.match(document, /prose may[^.]*quote/iu);
+    assert.match(document, /backslash-escapes? every/iu);
+    for (const characterName of ["backtick", "asterisk", "underscore", "square bracket", "angle bracket"]) {
+      assert.match(document, new RegExp(characterName, "iu"));
+    }
+    assert.match(document, /unescaped\s+payload/iu);
+    assert.match(document, /refuses prose only[^.]*non-ASCII[^.]*control[^.]*unresolved\s+private identifiers[^.]*reserved placeholders[^.]*residual/iu);
   }
   assert.doesNotMatch(design, /first physical line/iu);
   for (const spec of [currentSpec, deltaSpec]) {
