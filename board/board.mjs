@@ -58,6 +58,13 @@ function paneIdFor(session, snapshot) {
   return agentFor(session, workspace, snapshot)?.pane_id;
 }
 
+function tabIdFor(agent, snapshot) {
+  if (agent === undefined) return null;
+  return agent.tab_id
+    ?? snapshot?.panes?.find((pane) => pane.pane_id === agent.pane_id)?.tab_id
+    ?? null;
+}
+
 export function buildSubscriptions(registry, snapshot) {
   const subscriptions = [];
   for (const session of registry) {
@@ -103,7 +110,11 @@ export function applyHerdrEvent(snapshot, runtime, registry, event) {
   const tripwire = (session?.tripwires ?? []).find(
     (pattern) => `${data.matched_line ?? readText}`.includes(pattern),
   ) ?? previous.tripwire;
-  runtime.set(data.pane_id, { lastOutput, tripwire });
+  runtime.set(data.pane_id, {
+    lastOutput,
+    tripwire,
+    observedAt: new Date().toISOString(),
+  });
 }
 
 export function joinBoardRows({
@@ -174,11 +185,23 @@ function gateState(checkout, head) {
   try {
     const report = JSON.parse(readFileSync(resolve(checkout, ".lane", "gate.json"), "utf8"));
     if (typeof report.head !== "string") return {};
-    if (report.head !== head) return { gate: "STALE" };
+    if (report.head !== head) {
+      return {
+        gate: "STALE",
+        gateState: "stale",
+        gateHead: report.head,
+        gateExitCode: Number.isInteger(report.exit_code) ? report.exit_code : null,
+        gateSignal: typeof report.signal === "string" ? report.signal : null,
+      };
+    }
     if (!Number.isInteger(report.exit_code)) return {};
     return {
       gate: `exit=${report.exit_code} @${head.slice(0, 7)}`,
       gateColor: report.exit_code === 0 ? "green" : "red",
+      gateState: report.exit_code === 0 ? "pass" : "fail",
+      gateHead: report.head,
+      gateExitCode: report.exit_code,
+      gateSignal: typeof report.signal === "string" ? report.signal : null,
     };
   } catch {
     return {};
@@ -193,10 +216,20 @@ export function collectGitStates(repoRoot, main, registry, snapshot) {
     const checkout = trees.find((tree) => tree.branch === branch)?.path;
     const counts = gitOutput(repoRoot, ["rev-list", "--left-right", "--count", `${branch}...${main}`]);
     if (counts === undefined) continue;
-    const [ahead] = counts.split(/\s+/u).map(Number);
-    const dirty = checkout === undefined ? false : (gitOutput(checkout, ["status", "--porcelain=v1"]) ?? "") !== "";
-    const head = checkout === undefined ? undefined : gitOutput(checkout, ["rev-parse", "HEAD"]);
-    states.set(session.lane, { ahead, dirty, checkout, head, ...gateState(checkout, head) });
+    const [ahead, behind] = counts.split(/\s+/u).map(Number);
+    const dirty = checkout === undefined
+      ? null
+      : (gitOutput(checkout, ["status", "--porcelain=v1"]) ?? "") !== "";
+    const head = gitOutput(checkout ?? repoRoot, ["rev-parse", checkout === undefined ? branch : "HEAD"]);
+    states.set(session.lane, {
+      ahead,
+      behind,
+      dirty,
+      checkout,
+      head,
+      available: head !== undefined,
+      ...gateState(checkout, head),
+    });
   }
   return states;
 }
@@ -213,8 +246,16 @@ export function collectReportStates(repoRoot, registry) {
     for (const path of candidates) {
       try {
         const text = readFileSync(path, "utf8");
-        const mtime = statSync(path).mtime.toISOString().slice(5, 16).replace("T", " ");
-        states.set(session.report, { verdict: parseVerdict(text), mtime });
+        const mtimeIso = statSync(path).mtime.toISOString();
+        const mtime = mtimeIso.slice(5, 16).replace("T", " ");
+        const reviewedHead = text.match(/^Reviewed commit:\s*([0-9a-f]{40})\s*$/imu)?.[1] ?? null;
+        states.set(session.report, {
+          verdict: parseVerdict(text),
+          mtime,
+          mtimeIso,
+          path,
+          reviewedHead,
+        });
         break;
       } catch {
         // Try the canonical checkout after the lane; a missing report is normal.
@@ -226,9 +267,11 @@ export function collectReportStates(repoRoot, registry) {
 
 export function systemStats() {
   const command = spawnSync("ps", ["-Ao", "command="], { encoding: "utf8" }).stdout ?? "";
+  const freeMemoryBytes = freemem();
   return {
     load: loadavg()[0],
-    freeMemory: `${(freemem() / (1024 ** 3)).toFixed(1)} GiB`,
+    freeMemory: `${(freeMemoryBytes / (1024 ** 3)).toFixed(1)} GiB`,
+    freeMemoryBytes,
     workers: countWorkers(command),
   };
 }
@@ -342,10 +385,12 @@ export async function collectBoardState({ repoRoot, config = {}, client, runtime
   const loaded = loadRegistry(repoRoot, config);
   let snapshot = { protocol: undefined, version: undefined, agents: [], panes: [], workspaces: [] };
   let connection = "offline";
+  let snapshotError;
   try {
     snapshot = await client.snapshot();
     connection = `Herdr ${snapshot.version ?? "?"} / protocol ${snapshot.protocol ?? "?"}`;
-  } catch {
+  } catch (error) {
+    snapshotError = error.message;
     // Git and report state remain useful when Herdr is unavailable.
   }
   const gitStates = collectGitStates(repoRoot, config.main ?? "main", loaded.sessions, snapshot);
@@ -365,7 +410,133 @@ export async function collectBoardState({ repoRoot, config = {}, client, runtime
     reportStates,
     stats: systemStats(),
     connection,
+    snapshotError,
     runtime,
+  };
+}
+
+function structuredGitState(git = {}) {
+  return {
+    head: git.head ?? null,
+    ahead: Number.isInteger(git.ahead) ? git.ahead : null,
+    behind: Number.isInteger(git.behind) ? git.behind : null,
+    dirty: typeof git.dirty === "boolean" ? git.dirty : null,
+    available: git.available === true,
+  };
+}
+
+function structuredGateState(git = {}) {
+  return {
+    state: git.gateState ?? "missing",
+    head: git.gateHead ?? null,
+    exit_code: Number.isInteger(git.gateExitCode) ? git.gateExitCode : null,
+    signal: git.gateSignal ?? null,
+  };
+}
+
+function structuredReportState(report = {}) {
+  return {
+    path: report.path ?? null,
+    mtime: report.mtimeIso ?? null,
+    verdict: report.verdict === undefined || report.verdict === "-" ? null : report.verdict,
+    reviewed_head: report.reviewedHead ?? null,
+  };
+}
+
+function structuredLastMessage(runtime = {}) {
+  const available = typeof runtime.lastOutput === "string" && runtime.lastOutput !== "";
+  const limit = 500;
+  const truncated = available && [...runtime.lastOutput].length > limit;
+  return {
+    text: available
+      ? (truncated ? `${[...runtime.lastOutput].slice(0, limit - 1).join("")}…` : runtime.lastOutput)
+      : null,
+    source: "pane-output",
+    observed_at: available ? (runtime.observedAt ?? null) : null,
+    truncated,
+    available,
+  };
+}
+
+export function boardSnapshotDocument({
+  state,
+  repoId,
+  rootId,
+  repoRoot,
+  rootLabel,
+  repositoryLabel,
+  laneBase,
+  capturedAt = new Date(),
+}) {
+  const rows = state.sessions.map((session) => {
+    const workspace = workspaceFor(session, state.snapshot);
+    const agent = agentFor(session, workspace, state.snapshot);
+    const live = state.runtime.get(agent?.pane_id) ?? {};
+    const git = state.gitStates.get(session.lane) ?? {};
+    const report = state.reportStates.get(session.report) ?? {};
+    const branch = session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`;
+    const deadlineTime = session.deadline === null ? null : new Date(session.deadline).valueOf();
+    return {
+      row_id: session.session_id,
+      repo_id: session.repo_id ?? repoId,
+      root_id: session.root_id ?? rootId,
+      server_id: session.server ?? null,
+      name: session.name ?? null,
+      pane_id: agent?.pane_id ?? session.pane ?? null,
+      tab_id: tabIdFor(agent, state.snapshot),
+      workspace_id: workspace?.workspace_id ?? session.workspace ?? null,
+      registered: true,
+      topic: session.topic ?? branch.slice("lane/".length),
+      branch,
+      role: session.role ?? null,
+      goal: session.goal ?? null,
+      brief: {
+        path: session.brief ?? null,
+        excerpt: session.goal ?? null,
+      },
+      status: agent?.agent_status ?? "offline",
+      done: session.done,
+      git: structuredGitState(git),
+      gate: structuredGateState(git),
+      report: structuredReportState(report),
+      deadline: session.deadline,
+      overdue: Number.isFinite(deadlineTime) ? !session.done && deadlineTime < capturedAt.valueOf() : false,
+      last_message: structuredLastMessage(live),
+      tripwire: live.tripwire ?? null,
+      stale: state.snapshotError !== undefined,
+    };
+  });
+  const registryCoverage = !state.exists
+    ? "missing"
+    : state.errors.length > 0 ? "partial" : "available";
+  return {
+    schema_version: 1,
+    captured_at: capturedAt.toISOString(),
+    scope: { kind: "repository", repo_id: repoId },
+    coverage: {
+      repository: "complete",
+      registry: registryCoverage,
+      herdr: state.snapshotError === undefined ? "connected" : "unavailable",
+      messages: "pane-output",
+    },
+    repositories: [{
+      repo_id: repoId,
+      root_id: rootId,
+      path: repoRoot,
+      root_label: rootLabel,
+      repository_label: repositoryLabel,
+      lane_base: laneBase,
+    }],
+    rows,
+    host: {
+      load_1m: state.stats.load,
+      free_memory_bytes: state.stats.freeMemoryBytes,
+      workers: state.stats.workers,
+    },
+    errors: [
+      ...state.errors.map((message) => ({ source: "registry", message })),
+      ...(state.snapshotError === undefined ? [] : [{ source: "herdr", message: state.snapshotError }]),
+    ],
   };
 }
 

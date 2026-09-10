@@ -653,3 +653,30 @@ Living log for agents maintaining this repository. Newest entry last.
 - A2 remains the sole unchanged amendment. No live Herdr mutation, alternate host,
   push, promotion, archive, or `docs/reviews/` edit was performed. The final clean-
   commit gate remains conversation-only evidence.
+
+## 2026-09-09 — board CLI read interfaces
+
+- Added dependency-free `lane board --json` snapshots and foreground
+  `--watch --json`, plus canonical `--repo` targeting for every board mode. The CLI
+  owns parsing, configuration resolution, service orchestration, JSON framing, and
+  permanent signal/EPIPE cleanup; the existing Ink application is byte-unchanged.
+- Added schema-v1 scope, coverage, repositories, rows, host and localized errors with
+  stable session IDs, explicit nullable Git/gate/report/message fields, pane-output
+  labeling, and separate observation/gate staleness. Reads issue no focus or lifecycle
+  action and write no session metadata.
+- Five focused groups failed before implementation and passed afterward in 1.704
+  seconds. Baseline `npm test` passed 109/109 in 107.459 seconds. The complete updated
+  suite passed 114/114 with zero skips in 110.725 seconds, and the final pre-commit
+  run passed 114/114 in 108.233 seconds; all 114 deliberate controls failed with zero
+  passes in 100.707 seconds. Retained split/batched, timeout,
+  error-body and permanent-client-close regressions remain green.
+- Strict OpenSpec validation passed 18/18. CLI usage, README, REFERENCE, the current
+  capability, completed task and `docs/reports/board-cli.md` are synchronized;
+  `git diff --check`, public-safety scanning, and the unchanged `board/app.mjs` blob
+  check passed. Verified Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+- Runs were serialized after clear process probes. Offline fake sockets were used;
+  no live board snapshot/event or Herdr mutation, real TTY, alternate host, machine
+  discovery, semantic-message source, action/UI rewire, push, promotion, archive,
+  independent review, or `docs/reviews/` change was performed. No contract amendment
+  or additional approval is needed; the final clean-commit gate remains
+  conversation-only evidence.

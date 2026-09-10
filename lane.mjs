@@ -29,21 +29,80 @@ import {
   registryPathFor,
   writeSessionRecord,
 } from "./board/registry.mjs";
-import { herdrSocketPath } from "./board/herdr-client.mjs";
+import {
+  applyHerdrEvent,
+  boardSnapshotDocument,
+  buildSubscriptions,
+  collectBoardState,
+  joinBoardRows,
+  renderPlainBoard,
+} from "./board/board.mjs";
+import { HerdrClient, herdrSocketPath } from "./board/herdr-client.mjs";
 
 const IS_REVIEW_COMMAND = process.argv[2] === "review";
+const CALLER_CWD = process.cwd();
+const BOARD_USAGE = "usage: lane board [--once | --json | --watch --json] [--repo <path>]";
+let stopBoardObservation;
+
+function parseBoardArguments(args) {
+  const seen = new Set();
+  let repo;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (!["--once", "--json", "--watch", "--repo"].includes(argument)) {
+      throw new Error(`${BOARD_USAGE} (unknown option or operand: ${argument})`);
+    }
+    if (seen.has(argument)) throw new Error(`${BOARD_USAGE} (duplicate option: ${argument})`);
+    seen.add(argument);
+    if (argument === "--repo") {
+      const value = args[index + 1];
+      if (value === undefined || value === "" || value.startsWith("--")) {
+        throw new Error(`${BOARD_USAGE} (--repo requires a path)`);
+      }
+      repo = value;
+      index += 1;
+    }
+  }
+  const once = seen.has("--once");
+  const json = seen.has("--json");
+  const watch = seen.has("--watch");
+  if ((once && json) || (once && watch) || (watch && !json)) {
+    throw new Error(`${BOARD_USAGE} (contradictory output modes)`);
+  }
+  return {
+    mode: once ? "plain" : watch ? "watch-json" : json ? "json" : "interactive",
+    repo: repo === undefined ? undefined : resolve(CALLER_CWD, repo),
+  };
+}
+
+const EARLY_BOARD_OPTIONS = (() => {
+  if (process.argv[2] !== "board") return undefined;
+  try {
+    return parseBoardArguments(process.argv.slice(3));
+  } catch (error) {
+    process.stderr.write(`lane: ${error.message}\n`);
+    process.exit(1);
+  }
+})();
 
 // Unix readers such as `head` routinely close a pipeline before the producer
 // is finished. Treat that as successful early consumption, not a crash.
 process.stdout.on("error", (error) => {
-  if (error.code === "EPIPE") process.exit(IS_REVIEW_COMMAND ? 2 : 0);
+  if (error.code === "EPIPE") {
+    if (stopBoardObservation !== undefined) {
+      stopBoardObservation();
+      return;
+    }
+    process.exit(IS_REVIEW_COMMAND ? 2 : 0);
+  }
   throw error;
 });
 
 // The repository is whichever checkout the command runs in (any worktree of it).
 const REPO = (() => {
   try {
-    return realpathSync(execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim());
+    const start = EARLY_BOARD_OPTIONS?.repo ?? CALLER_CWD;
+    return realpathSync(execFileSync("git", ["-C", start, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim());
   } catch {
     process.stderr.write(`${IS_REVIEW_COMMAND ? "lane review" : "lane"}: not inside a git repository\n`);
     process.exit(IS_REVIEW_COMMAND ? 2 : 1);
@@ -254,7 +313,6 @@ function nearestParentConfig(repository) {
   return undefined;
 }
 
-const CALLER_CWD = process.cwd();
 const EXPLICIT_CONFIG = process.env.LANE_CONFIG !== undefined;
 const REPOSITORY_CONFIG_FILE = join(REPO_ROOT, ".lane.json");
 const PARENT_CONFIG_FILE = EXPLICIT_CONFIG ? undefined : nearestParentConfig(REPO_ROOT);
@@ -2045,15 +2103,145 @@ function close(topic) {
   }
 }
 
-function board(args) {
-  const unknown = args.filter((argument) => argument !== "--once");
-  if (unknown.length > 0) fail(`usage: lane board [--once] (unknown option: ${unknown[0]})`);
-  if (!args.includes("--once")) repositoryRoot({ requiredBy: "interactive board" });
+function boardDocument(state) {
+  return boardSnapshotDocument({
+    state,
+    repoId: REPO_IDENTITY,
+    rootId: ROOT_IDENTITY,
+    repoRoot: REPO_ROOT,
+    rootLabel: basename(ROOT_IDENTITY),
+    repositoryLabel: REPO_NAME,
+    laneBase: WORKTREE_ROOT,
+  });
+}
+
+function writeBoardJson(state) {
+  process.stdout.write(`${JSON.stringify(boardDocument(state))}\n`);
+}
+
+async function watchBoard() {
+  const client = new HerdrClient({ requestTimeoutMs: 500 });
+  const runtime = new Map();
+  let state;
+  let refreshTimer;
+  let refreshPending = false;
+  let subscriptionSignature = "";
+  let stopped = false;
+  let exitStatus = 0;
+  let finish;
+  const completed = new Promise((resolvePromise) => { finish = resolvePromise; });
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(refreshTimer);
+    refreshTimer = undefined;
+    client.close();
+    finish();
+  };
+  stopBoardObservation = stop;
+
+  const installSubscriptions = (next) => {
+    const subscriptions = buildSubscriptions(next.sessions, next.snapshot);
+    const signature = JSON.stringify(subscriptions);
+    if (signature === subscriptionSignature) return;
+    subscriptionSignature = signature;
+    client.subscribe(subscriptions);
+  };
+  const refresh = async () => {
+    if (stopped || refreshPending) return;
+    refreshPending = true;
+    try {
+      const next = await collectBoardState({ repoRoot: REPO_ROOT, config: CONFIG, client, runtime });
+      if (stopped) return;
+      state = next;
+      writeBoardJson(state);
+      installSubscriptions(state);
+    } catch (error) {
+      if (!stopped) {
+        exitStatus = 1;
+        process.stderr.write(`lane: board read failed: ${error.message}\n`);
+        stop();
+      }
+    } finally {
+      refreshPending = false;
+    }
+  };
+  const onEvent = (event) => {
+    if (stopped || state === undefined) return;
+    const snapshot = {
+      ...state.snapshot,
+      agents: state.snapshot.agents.map((agent) => ({ ...agent })),
+    };
+    applyHerdrEvent(snapshot, runtime, state.sessions, event);
+    state = {
+      ...state,
+      snapshot,
+      runtime,
+      rows: joinBoardRows({
+        registry: state.sessions,
+        snapshot,
+        gitStates: state.gitStates,
+        reportStates: state.reportStates,
+        runtime,
+      }),
+    };
+    writeBoardJson(state);
+  };
+  const onConnectionError = (error) => {
+    if (!stopped) process.stderr.write(`lane board: Herdr observation: ${error.message}\n`);
+  };
+  const onSignal = () => stop();
+  client.on("event", onEvent);
+  client.on("connectionError", onConnectionError);
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+
+  try {
+    await refresh();
+    if (!stopped) refreshTimer = setInterval(() => void refresh(), 5_000);
+    await completed;
+  } finally {
+    stop();
+    process.removeListener("SIGINT", onSignal);
+    process.removeListener("SIGTERM", onSignal);
+    client.removeListener("event", onEvent);
+    client.removeListener("connectionError", onConnectionError);
+    stopBoardObservation = undefined;
+  }
+  if (exitStatus !== 0) process.exitCode = exitStatus;
+}
+
+async function board(options) {
+  if (options.mode === "watch-json") {
+    await watchBoard();
+    return;
+  }
+  if (options.mode === "plain" || options.mode === "json") {
+    const client = new HerdrClient({ requestTimeoutMs: 500 });
+    try {
+      const state = await collectBoardState({ repoRoot: REPO_ROOT, config: CONFIG, client });
+      if (options.mode === "json") writeBoardJson(state);
+      else {
+        process.stdout.write(renderPlainBoard(state.rows, state.stats, {
+          connection: state.connection,
+          missingRegistry: state.exists ? undefined : state.path,
+          registryErrors: state.errors,
+        }));
+      }
+    } catch (error) {
+      fail(`board read failed: ${error.message}`);
+    } finally {
+      client.close();
+    }
+    return;
+  }
+
+  repositoryRoot({ requiredBy: "interactive board" });
   const boardRoot = join(TOOL_ROOT, "board");
-  if (!args.includes("--once") && !process.stdin.isTTY) {
+  if (!process.stdin.isTTY) {
     fail("interactive board requires a TTY; use `lane board --once`");
   }
-  if (!args.includes("--once") && !existsSync(join(boardRoot, "node_modules", "ink"))) {
+  if (!existsSync(join(boardRoot, "node_modules", "ink"))) {
     fail(`install board dependencies first: npm --prefix ${boardRoot} ci`);
   }
   const boardArgs = [
@@ -2064,17 +2252,11 @@ function board(args) {
   const boardEnvironment = EXPLICIT_CONFIG
     ? { ...process.env, LANE_CONFIG: CONFIG_LAYERS[0].file }
     : process.env;
-  const run = args.includes("--once")
-    ? spawnSync(process.execPath, [join(boardRoot, "cli.mjs"), ...boardArgs, "--once"], {
-      cwd: REPO_ROOT,
-      env: boardEnvironment,
-      stdio: "inherit",
-    })
-    : spawnSync("npm", ["--prefix", boardRoot, "run", "--silent", "start", "--", ...boardArgs], {
-      cwd: REPO_ROOT,
-      env: boardEnvironment,
-      stdio: "inherit",
-    });
+  const run = spawnSync("npm", ["--prefix", boardRoot, "run", "--silent", "start", "--", ...boardArgs], {
+    cwd: REPO_ROOT,
+    env: boardEnvironment,
+    stdio: "inherit",
+  });
   if (run.error?.code === "ENOENT") fail("npm is required to start the interactive board");
   if (run.status !== 0) {
     process.exit(run.status ?? 1);
@@ -2091,7 +2273,7 @@ switch (command) {
     check([topic, ...rest].filter((argument) => argument !== undefined));
     break;
   case "board":
-    board([topic, ...rest].filter((argument) => argument !== undefined));
+    await board(EARLY_BOARD_OPTIONS);
     break;
   case "open":
     if (topic === undefined) fail("usage: lane.mjs open <topic> [base-ref]");
@@ -2205,7 +2387,9 @@ switch (command) {
         `  status           list open lanes vs ${MAIN}\n` +
         "  check [--cmd <validate command>]\n" +
         "                   validate this clean worktree and record its HEAD gate\n" +
-        "  board [--once]   watch registered lane sessions; --once prints plain text\n" +
+        "  board [--once | --json | --watch --json] [--repo <path>]\n" +
+        "                   open the interactive board, print one plain/JSON snapshot,\n" +
+        "                   or stream foreground newline-delimited JSON snapshots\n" +
         `  promote <topic>  validate then fast-forward ${MAIN} (clean + rebased + green only)\n` +
         "  close <topic>    remove worktree; delete merged branch or archive-tag unmerged;\n" +
         "                   mark matching display sessions done after git succeeds\n",

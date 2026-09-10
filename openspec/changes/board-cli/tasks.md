@@ -31,7 +31,7 @@ Use the route's configured agent/model; do not change routing defaults.
 
 ## 1. Lane-sized task
 
-- [ ] 1.1 Deliver this change's outcome and all applicable scenarios; verify the checks below, write `docs/reports/board-cli.md` and a dated HANDOFF entry, commit, then obtain a passing GATE against the final commit.
+- [x] 1.1 Deliver this change's outcome and all applicable scenarios; verify the checks below, write `docs/reports/board-cli.md` and a dated HANDOFF entry, commit, then obtain a passing GATE against the final commit.
 
 ## Acceptance checks
 

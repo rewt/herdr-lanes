@@ -121,7 +121,7 @@ rebases automatically when clean and refuses with a file list when conflicts exi
 | `lane check [--cmd <validate command>]` | Record validation against this worktree's HEAD |
 | `lane promote <topic>` | Rebase, validate, and fast-forward local main |
 | `lane close <topic>` | Remove and delete or archive a lane |
-| `lane board [--once]` | Watch registered sessions, or print one plain snapshot |
+| `lane board [--once \| --json \| --watch --json] [--repo <path>]` | Open the UI, print a snapshot, or stream JSON snapshots |
 | `lane seams [pattern]` | List work that can be resumed |
 | `lane prepare <topic>` | Run missing setup steps |
 | `lane rebase-check <topic>` | Check whether promotion will conflict |
@@ -150,11 +150,17 @@ path is configured, it must also be gitignored.
 ```sh
 lane board
 lane board --once
+lane board --json
+lane board --watch --json --repo /path/to/your-repository
 ```
 
-Run the interactive view in a Herdr pane; use `--once` for plain, scriptable
-output. The board reads legacy JSON-array entries plus immutable per-session files in
-`<registry>.d/`. Board completion and successful `lane close` write independent
+Run the interactive view in a Herdr pane; use `--once` for a plain snapshot,
+`--json` for one schema-v1 document, or `--watch --json` for foreground
+newline-delimited snapshots. `--repo` selects a repository by path and uses its
+canonical configuration; without it, board reads use the current repository. Plain
+and JSON reads use only Node.js built-ins and do not require the optional board
+package installation. The board reads legacy JSON-array entries plus immutable
+per-session files in `<registry>.d/`. Board completion and successful `lane close` write independent
 atomic done markers; this metadata is display-only and never controls validation,
 promotion, scheduling, retries, or deletion. A report is incomplete without the
 `GATE` line printed by `lane check`.

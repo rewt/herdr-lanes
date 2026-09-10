@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import {
   appendFileSync,
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -14,6 +16,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:net";
 import { homedir, hostname, tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -104,11 +107,100 @@ function writeConfig(fixture, config) {
 }
 
 function lane(fixture, args, options = {}) {
-  return spawnSync(process.execPath, [LANE, ...args], {
+  return spawnSync(process.execPath, [options.executable ?? LANE, ...args], {
     cwd: options.cwd ?? fixture.repo,
     env: hermeticGitEnvironment(options.env ?? fixture.env),
     encoding: "utf8",
   });
+}
+
+function laneProcess(fixture, args, options = {}) {
+  const child = spawn(process.execPath, [options.executable ?? LANE, ...args], {
+    cwd: options.cwd ?? fixture.repo,
+    env: hermeticGitEnvironment(options.env ?? fixture.env),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  return {
+    child,
+    stdout: () => stdout,
+    stderr: () => stderr,
+    completed: once(child, "close").then(([status, signal]) => ({ status, signal, stdout, stderr })),
+  };
+}
+
+async function waitForCondition(predicate, message, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${message}`);
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+  }
+}
+
+async function fakeBoardServer(fixture, handleRequest) {
+  const socketPath = join(fixture.root, "board.sock");
+  const requests = [];
+  const sockets = new Set();
+  let connectionCount = 0;
+  const server = createServer((socket) => {
+    connectionCount += 1;
+    const connection = connectionCount;
+    sockets.add(socket);
+    socket.setEncoding("utf8");
+    let buffer = "";
+    socket.on("data", (chunk) => {
+      buffer += chunk;
+      for (;;) {
+        const newline = buffer.indexOf("\n");
+        if (newline < 0) break;
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (line === "") continue;
+        const request = JSON.parse(line);
+        requests.push(request);
+        handleRequest({ socket, request, connection, requests });
+      }
+    });
+    socket.on("close", () => sockets.delete(socket));
+  });
+  await new Promise((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen(socketPath, resolvePromise);
+  });
+  return {
+    socketPath,
+    requests,
+    sockets,
+    connections: () => connectionCount,
+    async close() {
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolvePromise) => server.close(resolvePromise));
+    },
+  };
+}
+
+function boardSnapshotResult({ status = "working" } = {}) {
+  return {
+    type: "session_snapshot",
+    snapshot: {
+      protocol: 20,
+      version: "test",
+      agents: [{
+        name: "board-agent",
+        workspace_id: "workspace-1",
+        pane_id: "pane-1",
+        cwd: "/ignored/live/path",
+        agent_status: status,
+      }],
+      panes: [],
+      workspaces: [{ workspace_id: "workspace-1", label: "workspace-1" }],
+    },
+  };
 }
 
 function discoveredEnv(fixture, overrides = {}) {
@@ -2330,6 +2422,359 @@ test("board uses inherited canonical registry configuration from a linked worktr
     assert.match(run.stdout, /inherited-agent\s+engineer\s+linked-board\s+offline/);
     negativeControl("board canonical inherited config");
   } finally {
+    fixture.cleanup();
+  }
+});
+
+test("board JSON snapshots expose schema v1 from canonical --repo config without UI dependencies or writes", async () => {
+  const fixture = makeFixture(undefined, { repoParts: ["projects", "repo"] });
+  let server;
+  try {
+    writeFileSync(join(fixture.repo, ".gitignore"), ".lane/\n");
+    writeFileSync(join(fixture.repo, ".lane.json"), `${JSON.stringify({
+      main: "main",
+      registry: ".lane/board-sessions.json",
+      worktree_root: "../worktrees",
+    })}\n`);
+    git(fixture.repo, ["add", ".gitignore", ".lane.json"]);
+    git(fixture.repo, ["commit", "-m", "configure board fixture"], { stdio: "ignore" });
+    const lanePath = join(fixture.root, "board-json-lane");
+    git(fixture.repo, ["worktree", "add", "-b", "lane/board-json", lanePath], { stdio: "ignore" });
+    mkdirSync(join(lanePath, "docs", "reviews"), { recursive: true });
+    const reportPath = join(lanePath, "docs", "reviews", "board-json.md");
+    const reviewedHead = "a".repeat(40);
+    writeFileSync(reportPath, `**PASS**\nReviewed commit: ${reviewedHead}\n`);
+    git(lanePath, ["add", "docs/reviews/board-json.md"]);
+    git(lanePath, ["commit", "-m", "add board report"], { stdio: "ignore" });
+    const finalHead = git(lanePath, ["rev-parse", "HEAD"]);
+    mkdirSync(join(lanePath, ".lane"));
+    writeFileSync(join(lanePath, ".lane", "gate.json"), `${JSON.stringify({
+      head: finalHead,
+      exit_code: 0,
+      signal: null,
+    })}\n`);
+    const registryDirectory = join(fixture.repo, ".lane", "board-sessions.json.d");
+    mkdirSync(registryDirectory, { recursive: true });
+    const registryPath = join(registryDirectory, "12345678-1234-4123-8123-123456789abc.json");
+    writeFileSync(registryPath, `${JSON.stringify({
+      session_id: "12345678-1234-4123-8123-123456789abc",
+      repo_id: repositoryIdentity(fixture.repo),
+      root_id: join(fixture.root, "projects"),
+      repo: fixture.repo,
+      topic: "board-json",
+      name: "board-agent",
+      workspace: "workspace-1",
+      pane: "pane-1",
+      server: "local",
+      lane: "lane/board-json",
+      role: "engineer",
+      brief: "/source/board-json.md",
+      goal: "Expose scriptable board observations",
+      report: "docs/reviews/board-json.md",
+      deadline: "2026-09-10T00:00:00.000Z",
+      done: false,
+      created_at: "2026-09-09T00:00:00.000Z",
+      tripwires: ["TRIPWIRE"],
+    })}\n`);
+    const beforeRegistry = readFileSync(registryPath, "utf8");
+    const beforeStatus = git(fixture.repo, ["status", "--porcelain=v1"]);
+
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      if (request.method === "session.snapshot") {
+        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult() })}\n`);
+      }
+    });
+    const env = discoveredEnv(fixture, { HERDR_SOCKET_PATH: server.socketPath });
+    const run = laneProcess(fixture, ["board", "--json", "--repo", join("projects", "repo")], {
+      cwd: fixture.root,
+      env,
+    });
+    const result = await run.completed;
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    assert.equal(result.stdout.trim().split("\n").length, 1);
+    const snapshot = JSON.parse(result.stdout);
+    assert.equal(snapshot.schema_version, 1);
+    assert.match(snapshot.captured_at, /^\d{4}-\d{2}-\d{2}T.*Z$/u);
+    assert.deepEqual(snapshot.scope, { kind: "repository", repo_id: repositoryIdentity(fixture.repo) });
+    assert.equal(snapshot.coverage.herdr, "connected");
+    assert.equal(snapshot.coverage.registry, "available");
+    assert.equal(snapshot.coverage.messages, "pane-output");
+    assert.equal(snapshot.repositories.length, 1);
+    assert.equal(snapshot.repositories[0].path, realpathSync(fixture.repo));
+    assert.equal(snapshot.repositories[0].repo_id, repositoryIdentity(fixture.repo));
+    assert.equal(snapshot.repositories[0].root_id, realpathSync(join(fixture.root, "projects")));
+    assert.equal(snapshot.repositories[0].root_label, "projects");
+    assert.equal(snapshot.repositories[0].repository_label, "repo");
+    assert.equal(snapshot.repositories[0].lane_base, join(fixture.root, "projects", "worktrees", "repo"));
+    assert.equal(snapshot.rows.length, 1);
+    const [row] = snapshot.rows;
+    assert.equal(row.row_id, "12345678-1234-4123-8123-123456789abc");
+    assert.equal(row.repo_id, repositoryIdentity(fixture.repo));
+    assert.equal(row.root_id, realpathSync(join(fixture.root, "projects")));
+    assert.equal(row.server_id, "local");
+    assert.equal(row.name, "board-agent");
+    assert.equal(row.pane_id, "pane-1");
+    assert.equal(row.workspace_id, "workspace-1");
+    assert.equal(row.registered, true);
+    assert.equal(row.topic, "board-json");
+    assert.equal(row.branch, "lane/board-json");
+    assert.equal(row.role, "engineer");
+    assert.equal(row.goal, "Expose scriptable board observations");
+    assert.deepEqual(row.brief, { path: "/source/board-json.md", excerpt: "Expose scriptable board observations" });
+    assert.equal(row.status, "working");
+    assert.equal(row.done, false);
+    assert.deepEqual(row.git, { head: finalHead, ahead: 1, behind: 0, dirty: false, available: true });
+    assert.deepEqual(row.gate, { state: "pass", head: finalHead, exit_code: 0, signal: null });
+    assert.equal(row.report.path, reportPath);
+    assert.match(row.report.mtime, /^\d{4}-\d{2}-\d{2}T/u);
+    assert.equal(row.report.verdict, "PASS");
+    assert.equal(row.report.reviewed_head, reviewedHead);
+    assert.equal(row.deadline, "2026-09-10T00:00:00.000Z");
+    assert.equal(typeof row.overdue, "boolean");
+    assert.deepEqual(row.last_message, {
+      text: null,
+      source: "pane-output",
+      observed_at: null,
+      truncated: false,
+      available: false,
+    });
+    assert.equal(row.tripwire, null);
+    assert.equal(row.stale, false);
+    assert.equal(typeof snapshot.host.load_1m, "number");
+    assert.equal(typeof snapshot.host.free_memory_bytes, "number");
+    assert.deepEqual(snapshot.errors, []);
+    assert.deepEqual(server.requests.map((request) => request.method), ["session.snapshot"]);
+    assert.equal(readFileSync(registryPath, "utf8"), beforeRegistry);
+    assert.equal(git(fixture.repo, ["status", "--porcelain=v1"]), beforeStatus);
+
+    const second = laneProcess(fixture, ["board", "--json", "--repo", join("projects", "repo")], {
+      cwd: fixture.root,
+      env,
+    });
+    const secondResult = await second.completed;
+    assert.equal(secondResult.status, 0, secondResult.stderr);
+    assert.equal(JSON.parse(secondResult.stdout).rows[0].row_id, row.row_id);
+    negativeControl("board JSON schema, canonical repo, and observation-only behavior");
+  } finally {
+    if (server !== undefined) await server.close();
+    fixture.cleanup();
+  }
+});
+
+test("plain and JSON board reads run from an isolated built-ins-only tool copy", () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  try {
+    mkdirSync(join(fixture.repo, ".lane"));
+    writeFileSync(join(fixture.repo, ".lane", "sessions.json"), "[]\n");
+    const tool = join(fixture.root, "tool");
+    mkdirSync(join(tool, "board"), { recursive: true });
+    copyFileSync(LANE, join(tool, "lane.mjs"));
+    for (const file of ["board.mjs", "herdr-client.mjs", "registry.mjs"]) {
+      copyFileSync(resolve(HERE, "..", "board", file), join(tool, "board", file));
+    }
+    assert.equal(existsSync(join(tool, "board", "node_modules")), false);
+    const options = {
+      executable: join(tool, "lane.mjs"),
+      env: { ...fixture.env, HERDR_SOCKET_PATH: join(fixture.root, "missing.sock") },
+    };
+    const plain = lane(fixture, ["board", "--once"], options);
+    assert.equal(plain.status, 0, plain.stderr);
+    assert.match(plain.stdout, /^lane board \(offline\)/u);
+    const json = lane(fixture, ["board", "--json"], options);
+    assert.equal(json.status, 0, json.stderr);
+    assert.equal(JSON.parse(json.stdout).schema_version, 1);
+    negativeControl("dependency-free board reads");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("board read modes reject contradictory, duplicate, unknown, extra, and missing options before observation", () => {
+  const fixture = makeFixture();
+  try {
+    const invalid = [
+      ["--once", "--json"],
+      ["--once", "--once"],
+      ["--watch"],
+      ["--watch", "--json", "--once"],
+      ["--json", "--json"],
+      ["--watch", "--json", "--watch"],
+      ["--json", "--unknown"],
+      ["--json", "extra"],
+      ["--json", "--repo"],
+      ["--json", "--repo", "--watch"],
+      ["--json", "--repo", fixture.repo, "--repo", fixture.repo],
+    ];
+    for (const args of invalid) {
+      const run = lane(fixture, ["board", ...args]);
+      assert.equal(run.status, 1, `${args.join(" ")}\n${run.stderr}`);
+      assert.equal(run.stdout, "");
+      assert.match(run.stderr, /^lane: usage: lane board/u);
+    }
+    negativeControl("board read option validation");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("board JSON localizes observation errors without corrupting documents and fails closed on registry service errors", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  let server;
+  try {
+    mkdirSync(join(fixture.repo, ".lane"));
+    writeFileSync(join(fixture.repo, ".lane", "sessions.json"), "[]\n");
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      socket.write(`${JSON.stringify({
+        id: request.id,
+        error: { code: "unavailable", message: "snapshot refused" },
+      })}\n`);
+    });
+    const liveError = laneProcess(fixture, ["board", "--json"], {
+      env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
+    });
+    const liveResult = await liveError.completed;
+    assert.equal(liveResult.status, 0, liveResult.stderr);
+    assert.equal(liveResult.stdout.trim().split("\n").length, 1);
+    const snapshot = JSON.parse(liveResult.stdout);
+    assert.equal(snapshot.coverage.herdr, "unavailable");
+    assert.deepEqual(snapshot.errors, [{ source: "herdr", message: "Herdr unavailable: snapshot refused" }]);
+
+    writeFileSync(join(fixture.repo, ".lane", "sessions.json"), "{}\n");
+    const registryError = lane(fixture, ["board", "--json"], {
+      env: { ...fixture.env, HERDR_SOCKET_PATH: join(fixture.root, "missing.sock") },
+    });
+    assert.equal(registryError.status, 1);
+    assert.equal(registryError.stdout, "");
+    assert.match(registryError.stderr, /^lane: board read failed: lane board registry must be a JSON array:/u);
+    negativeControl("board read service errors");
+  } finally {
+    if (server !== undefined) await server.close();
+    fixture.cleanup();
+  }
+});
+
+test("board JSON watch frames event snapshots and stops pending refresh, reconnect, and closed consumers", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  let server;
+  try {
+    mkdirSync(join(fixture.repo, ".lane"));
+    const registryPath = join(fixture.repo, ".lane", "sessions.json");
+    writeFileSync(registryPath, `${JSON.stringify([{
+      name: "board-agent",
+      workspace: "workspace-1",
+      lane: "board-watch",
+      role: "engineer",
+      report: "docs/reports/board-watch.md",
+      deadline: null,
+      done: false,
+    }])}\n`);
+    const registryBefore = readFileSync(registryPath, "utf8");
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      if (request.method === "session.snapshot") {
+        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult() })}\n`);
+      } else if (request.method === "events.subscribe") {
+        const frames = `${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n` +
+          `${JSON.stringify({ event: "pane.agent_status_changed", data: { pane_id: "pane-1", agent_status: "done" } })}\n` +
+          `${JSON.stringify({ event: "pane.output_matched", data: { pane_id: "pane-1", matched_line: "finished" } })}\n`;
+        socket.write(frames.slice(0, 11));
+        setTimeout(() => socket.write(frames.slice(11)), 10);
+      }
+    });
+    const watch = laneProcess(fixture, ["board", "--watch", "--json"], {
+      env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
+    });
+    await waitForCondition(
+      () => watch.stdout().trim().split("\n").filter(Boolean).length >= 3,
+      "three JSON watch frames",
+    );
+    watch.child.kill("SIGTERM");
+    const watched = await watch.completed;
+    assert.equal(watched.status, 0, watched.stderr);
+    assert.equal(watched.stderr, "");
+    const frames = watched.stdout.trim().split("\n").map((line) => JSON.parse(line));
+    assert.ok(frames.length >= 3);
+    assert.ok(frames.every((frame) => frame.schema_version === 1));
+    assert.equal(frames.at(-1).rows[0].status, "done");
+    assert.deepEqual(frames.at(-1).rows[0].last_message, {
+      text: "finished",
+      source: "pane-output",
+      observed_at: frames.at(-1).rows[0].last_message.observed_at,
+      truncated: false,
+      available: true,
+    });
+    assert.match(frames.at(-1).rows[0].last_message.observed_at, /^\d{4}-\d{2}-\d{2}T.*Z$/u);
+    assert.deepEqual(server.requests.map((request) => request.method), [
+      "session.snapshot",
+      "events.subscribe",
+    ]);
+    assert.equal(readFileSync(registryPath, "utf8"), registryBefore);
+    await server.close();
+    server = undefined;
+
+    let pendingSocketClosed = false;
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      if (request.method === "session.snapshot") socket.on("close", () => { pendingSocketClosed = true; });
+    });
+    const pending = laneProcess(fixture, ["board", "--watch", "--json"], {
+      env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
+    });
+    await waitForCondition(() => server.requests.length === 1, "pending refresh request");
+    pending.child.kill("SIGINT");
+    const pendingResult = await pending.completed;
+    assert.equal(pendingResult.status, 0, pendingResult.stderr);
+    await waitForCondition(() => pendingSocketClosed, "pending snapshot socket closure");
+    assert.equal(server.connections(), 1);
+    await server.close();
+    server = undefined;
+
+    let subscriptionClosed = false;
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      if (request.method === "session.snapshot") {
+        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult() })}\n`);
+      } else if (request.method === "events.subscribe") {
+        socket.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
+        setTimeout(() => {
+          subscriptionClosed = true;
+          socket.destroy();
+        }, 10);
+      }
+    });
+    const reconnect = laneProcess(fixture, ["board", "--watch", "--json"], {
+      env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
+    });
+    await waitForCondition(() => subscriptionClosed, "subscription disconnect");
+    reconnect.child.kill("SIGTERM");
+    const reconnectResult = await reconnect.completed;
+    assert.equal(reconnectResult.status, 0, reconnectResult.stderr);
+    const connectionsAtExit = server.connections();
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 350));
+    assert.equal(server.connections(), connectionsAtExit);
+    await server.close();
+    server = undefined;
+
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      if (request.method === "session.snapshot") {
+        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult() })}\n`);
+      } else if (request.method === "events.subscribe") {
+        socket.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
+        setTimeout(() => socket.write(`${JSON.stringify({
+          event: "pane.agent_status_changed",
+          data: { pane_id: "pane-1", agent_status: "done" },
+        })}\n`), 30);
+      }
+    });
+    const closedConsumer = laneProcess(fixture, ["board", "--watch", "--json"], {
+      env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
+    });
+    await waitForCondition(() => closedConsumer.stdout().includes("\n"), "initial consumer frame");
+    closedConsumer.child.stdout.destroy();
+    const consumerResult = await closedConsumer.completed;
+    assert.equal(consumerResult.status, 0, consumerResult.stderr);
+    assert.equal(readFileSync(registryPath, "utf8"), registryBefore);
+    negativeControl("board watch JSON framing and permanent teardown");
+  } finally {
+    if (server !== undefined) await server.close();
     fixture.cleanup();
   }
 });

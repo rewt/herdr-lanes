@@ -195,14 +195,74 @@ names the commit it measured; the board's `GATE` column must read
 
 ## Board
 
-Install the isolated Ink package once with `npm --prefix board ci`. `lane
-board` starts that package as a child process, so `lane.mjs` remains dependency-free.
-`lane board --once` uses only Node.js built-ins and prints the same columns without
-ANSI styling.
+Install the isolated Ink package once with `npm --prefix board ci` only for the
+interactive view. `lane board` starts that package as a child process, while the
+following read interfaces use only Node.js built-ins:
 
-From a linked worktree, `lane board` retargets the canonical checkout and passes the
-resolved main branch and inherited registry explicitly, while descendant lane commands
-retain normal layered configuration resolution.
+```sh
+lane board --once [--repo <path>]
+lane board --json [--repo <path>]
+lane board --watch --json [--repo <path>]
+```
+
+`--once` prints the existing columns without ANSI styling. `--json` prints exactly
+one compact schema-v1 JSON document. `--watch --json` stays in the foreground and
+prints one complete schema-v1 document per line for the initial sample and observed
+changes. Diagnostics use stderr and never interrupt JSON framing. The watch creates
+no daemon, job, or persistent observation cache. Duplicate options, unknown flags,
+extra operands, missing `--repo` values, `--once` combined with a JSON mode, and
+`--watch` without `--json` are rejected before observation.
+
+Without `--repo`, all modes use the current repository. `--repo` resolves from the
+invoking directory, identifies the selected repository by its canonical Git common
+directory, retargets its canonical checkout, and loads that repository's normal
+layered configuration. Repository paths are passed as arguments rather than shell
+text.
+
+From a linked worktree, every board mode retargets the canonical checkout. The
+interactive child receives the resolved main branch and inherited registry
+explicitly, while descendant lane commands retain normal layered configuration
+resolution. Plain and JSON service orchestration belongs to `lane.mjs`; the
+interactive application retains its existing imported board services.
+
+### JSON schema v1
+
+Every document contains `schema_version` 1, UTC `captured_at`, repository `scope`,
+`coverage`, `repositories`, `rows`, `host`, and `errors`. Scope is explicitly
+repository-only in this phase; machine discovery is not implied. Coverage reports
+repository, registry, Herdr, and message-source availability. Errors are localized
+objects with `source` and `message`. A missing or failed Herdr snapshot is represented
+as unavailable coverage and an error while Git, report, deadline, and host sampling
+remain useful. A registry service failure that prevents a coherent snapshot exits
+nonzero with no partial JSON document.
+
+Repository records contain canonical `repo_id`, development `root_id`, canonical
+`path`, `root_label`, `repository_label`, and resolved `lane_base`. Each row contains:
+
+- stable opaque `row_id`; `repo_id`, `root_id`, and `server_id`;
+- nullable name plus pane, tab, and workspace IDs; `registered`, `topic`, `branch`,
+  `role`, `goal`, and `brief` (`path`, bounded goal `excerpt`);
+- `status`, `done`, `deadline`, `overdue`, `tripwire`, and observation `stale`;
+- `git` (`head`, `ahead`, `behind`, `dirty`, `available`);
+- `gate` (`state`, `head`, `exit_code`, `signal`), where state is `pass`, `fail`,
+  `stale`, or `missing`;
+- `report` (`path`, UTC `mtime`, `verdict`, `reviewed_head`); and
+- `last_message` (`text`, source `pane-output`, UTC `observed_at`, `truncated`,
+  `available`).
+
+Unknown scalar values are `null` and carry `available: false` where defined; they are
+never reported as clean or passing. Consumers must accept absent optional v1 fields
+and ignore unknown fields. Row IDs come from immutable session identity and remain
+stable across sorting and refresh. Gate-head mismatch and observation staleness are
+independent. Report freshness is unknown when `reviewed_head` is absent. This phase's
+message is the historical pane-output sample, not a claim about the assistant's most
+recent semantic message.
+
+One watch invocation owns one observation client. SIGINT, SIGTERM, downstream pipe
+closure, and fatal read-service errors permanently close subscriptions, pending
+requests, reconnect timers, refresh timers, and the foreground process. Late replies
+cannot resubscribe or replay lifecycle actions. Reads never focus an agent or write
+session records/completion markers. Reconnection restores display subscriptions only.
 
 The configured registry may be a legacy JSON array. Every legacy entry has string fields `name`
 (the Herdr agent name), `workspace` (workspace ID or label), `lane` (topic or
@@ -246,6 +306,8 @@ The `GATE` column reads `<lane worktree>/.lane/gate.json` and compares its full
 | `-` | No usable gate file exists |
 
 `lane board --once` prints these values as plain text without color or ANSI escapes.
+A failed prepare step writes no new gate, so the prior gate remains missing, stale,
+or tied to its earlier head.
 
 Interactive keys are arrow keys or `j`/`k` to select, `a` to display `herdr agent
 attach <name>`, `d` to atomically set the selected registry entry's `done` field,
