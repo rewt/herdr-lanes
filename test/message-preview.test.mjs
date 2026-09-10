@@ -134,6 +134,12 @@ test("status candidates and trailing terminal chrome never become assistant mess
     ].join("\n"), "Useful answer."],
     ["claude", [
       "⏺ Useful answer.",
+      "  Do you want to allow this action?",
+      "  1. Yes, proceed",
+      "  2. No",
+    ].join("\n"), "Useful answer."],
+    ["claude", [
+      "⏺ Useful answer.",
       "╭────────────────────────────╮",
       "│ ❯ Type another request     │",
       "╰────────────────────────────╯",
@@ -196,6 +202,7 @@ test("cumulative status corpus rejects only trailing rendered duration forms", a
       "Working (2m 04s)",
       "Worked [48s]",
       "Thinking… 30s",
+      "Thinking... 12s",
     ]) {
       assert.equal(extractAssistantPreview({
         kind,
@@ -290,14 +297,19 @@ test("a trailing partially rendered command does not resurrect an older answer",
   negativeControl("pending command suppresses superseded fallback");
 });
 
-test("the bounded live Claude tool-summary shape ends an answer block", async () => {
+test("count-clause in-flight tool summaries end answer blocks in both adapters", async () => {
   const { extractAssistantPreview } = await previewApi();
-  const toolSummary = "Searched for 5 patterns, read 2 files, listed 2 directories, ran 55 shell commands";
-  for (const [kind, marker] of [["codex", "•"], ["claude", "⏺"]]) {
-    assert.equal(extractAssistantPreview({
-      kind,
-      text: `${marker} The answer is complete.\n\n  ${toolSummary}`,
-    }).text, "The answer is complete.", kind);
+  for (const toolSummary of [
+    "Searched for 5 patterns, read 2 files, listed 2 directories, ran 55 shell commands",
+    "Searched for 2 patterns, read 3 files",
+    "Ran 4 shell commands, listed 2 directories, read 3 files",
+  ]) {
+    for (const [kind, marker] of [["codex", "•"], ["claude", "⏺"]]) {
+      assert.equal(extractAssistantPreview({
+        kind,
+        text: `${marker} The answer is complete.\n\n  ${toolSummary}`,
+      }).text, "The answer is complete.", `${kind}: ${toolSummary}`);
+    }
   }
   negativeControl("bounded live in-flight tool summary");
 });

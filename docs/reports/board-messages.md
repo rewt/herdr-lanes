@@ -231,3 +231,36 @@ interactive render, alternate host, model API, push, promotion, archive, or prod
 contract change was exercised. `board/app.mjs` and every file under `docs/reviews/`
 remain unchanged. The single post-commit lane gate remains to be run and reported as
 conversation-only evidence.
+
+## Round 5 corrections — 2026-09-10
+
+Three existing negative-controlled corpus groups were extended before product edits.
+Their seven added adapter cases cover two-clause and reordered in-flight summaries in
+both adapters, an indented Claude approval prompt, and the three-period status form in
+both adapters. Against the reviewed parser, the focused file passed 25/28 and failed
+exactly those three groups. After the narrow corrections it passed 28/28 in 0.046
+seconds; all earlier answer fixtures remain in the same cumulative corpus.
+
+`board/message-preview.mjs` now accepts any ordered subset of comma-separated summary
+clauses from the fixed Searched for, Read, Listed, and Ran verb list, with an integer
+and one- or two-word noun phrase per clause. The Claude boundary now reuses the
+existing approval-prompt pattern, and trailing status recognizes `...` wherever it
+already recognized the single `…` character. `docs/REFERENCE.md` names count-clause
+summaries; the tests, this report, and HANDOFF carry the corresponding evidence. No
+broader prose, sentence-length, or tool-name heuristic was added.
+
+The clean baseline passed 160/160 with zero skips in 117.024 seconds. Final `npm test`
+passed 160/160 with zero skips in 116.792 seconds. The serialized
+`LANE_TEST_NEGATIVE_CONTROL=1 npm test` run produced zero passes, 160 failures, and
+zero skips in 107.582 seconds: 159 cases reached their deliberate controls, while the
+board-focus case first hit the known sandbox `listen EPERM: operation not permitted
+…/board.sock` restriction. No product or test workaround was made. Strict OpenSpec
+validation passed 20/20, and every build or test followed a clear load probe and ran
+alone. Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+
+A prose continuation made entirely of the recognized count-clause grammar remains
+indistinguishable from this rendered chrome and will be excluded conservatively. No
+live pane, interactive render, alternate host, model API, push, promotion, archive,
+or contract change was exercised. No further approval is needed. `board/app.mjs` and
+every file under `docs/reviews/` remain unchanged; the post-commit lane gate remains
+conversation-only evidence.

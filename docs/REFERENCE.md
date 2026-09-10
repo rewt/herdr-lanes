@@ -287,7 +287,7 @@ For registered Codex and Claude agents, the board reads `recent_unwrapped` text 
 an explicit 200-line request and retains at most the final 16 KiB. Small
 kind-specific adapters strip ANSI/control sequences and recognize only documented
 assistant and prompt markers; call-shaped or contextual result-marker tool evidence;
-timed or interrupt-advertising status; a covered in-flight tool-summary shape; and
+timed or interrupt-advertising status; count-clause in-flight tool summaries; and
 approval, pure composer-frame, and footer boundaries. An indented result marker is
 both tool evidence and a block boundary unless it belongs to a same-indent run of
 hand-drawn tree lines. A tool-label opening remains unavailable only when its first

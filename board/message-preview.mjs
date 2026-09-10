@@ -15,11 +15,12 @@ const TOKEN_OR_COST_BAR = /^\s*(?:[\d,.]+[km]?\s+)?tokens?\b.*(?:\$|cost|used)/i
 const INTERRUPT_AFFORDANCE = /\besc(?:ape)? to interrupt\b/iu;
 const PROGRESS_PREFIX = /^\s*(?:[✻✽✶✳·]\s+)?(?:Working|Worked|Thinking|Running)\b/iu;
 const ELAPSED_TIME = /(?:\b\d+(?:[.,]\d+)?\s*(?:ms|s|m|h|secs?|seconds?|mins?|minutes?|hours?)\b|\b\d{1,2}:\d{2}(?::\d{2})?\b)/iu;
-const TRAILING_STATUS = /(?:\([^\n)]*\)|\[[^\n\]]*\]|…[^\n]*)\s*$/u;
+const TRAILING_STATUS = /(?:\([^\n)]*\)|\[[^\n\]]*\]|(?:…|\.{3})[^\n]*)\s*$/u;
 const APPROVAL_PROMPT = /^\s*(?:Would you like to run|Do you want to (?:run|allow|approve)|Allow Codex to)\b/iu;
 const RESULT_MARKER = /^(\s{2,})(└|⎿|├)(?:\s+|$)/u;
 const TREE_MARKER = /^(\s{2,})[└├](?:\s+|$)/u;
-const TOOL_SUMMARY = /^\s{2,}Searched for \d+ patterns?, read \d+ files?, listed \d+ director(?:y|ies), ran \d+ shell commands?\s*$/iu;
+const TOOL_SUMMARY_CLAUSE = String.raw`(?:Searched for|Read|Listed|Ran)\s+\d+\s+[\p{L}-]+(?:\s+[\p{L}-]+)?`;
+const TOOL_SUMMARY = new RegExp(`^\\s{2,}${TOOL_SUMMARY_CLAUSE}(?:,\\s+${TOOL_SUMMARY_CLAUSE})*\\s*$`, "iu");
 const COMMAND_INVOCATION = /^(?:(?:npm|npx|node|pnpm|yarn|bun|deno|git|rg|grep|sed|awk|find|ls|pwd|cd|cat|head|tail|printf|echo|cp|mv|rm|mkdir|touch|chmod|curl|wget|cargo|rustc|go|python3?|pytest|make|cmake|sh|bash|zsh)(?:\s|$)|[A-Z_][A-Z0-9_]*=|(?:\.{0,2}|~)\/\S+(?:\s.*)?$|(?:[\w.-]+\/)+[\w.-]+$|[\w.-]+\.[A-Za-z0-9]+$)/u;
 
 function statusChrome(line) {
@@ -89,7 +90,8 @@ function claudeBoundary(line, lines = [line], index = 0) {
     || statusChrome(line)
     || SHORTCUT_BAR.test(line)
     || CONTEXT_BAR.test(line)
-    || TOKEN_OR_COST_BAR.test(line);
+    || TOKEN_OR_COST_BAR.test(line)
+    || APPROVAL_PROMPT.test(line);
 }
 
 function claudeToolLabel(text) {

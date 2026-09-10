@@ -1218,6 +1218,27 @@ Living log for agents maintaining this repository. Newest entry last.
   `board/app.mjs` change, or `docs/reviews/` change occurred. The final clean-commit
   gate remains conversation-only evidence.
 
+## 2026-09-10 — message previews Round 5 corrections
+
+- Generalized only the existing in-flight summary grammar to fixed-verb count clauses
+  in any subset/order, applied the existing approval boundary to Claude, and accepted
+  three periods as the already-supported status ellipsis. REFERENCE now names the
+  count-clause shape; no new sentence or prose heuristic was introduced.
+- Seven fixtures extended three negative-controlled groups. Before product changes,
+  the focused file passed 25/28 and failed the three affected groups; afterward it
+  passed 28/28 in 0.046 seconds with the cumulative answer corpus intact. The clean
+  baseline passed 160/160 in 117.024 seconds.
+- Final `npm test` passed 160/160 with zero skips in 116.792 seconds. The negative run
+  had zero passes, 160 failures, and zero skips in 107.582 seconds: 159 deliberate
+  controls and one known sandbox `listen EPERM: operation not permitted …/board.sock`
+  failure in the board-focus case. Strict OpenSpec passed 20/20; every build or test
+  followed a clear load probe and ran alone. Verified Node.js 20.19.4, npm 10.8.2,
+  Git 2.54.0, and OpenSpec 1.6.0.
+- Count-clause prose remains conservatively ambiguous. No live-pane or interactive
+  check, alternate host, model API, push, promotion, archive, contract amendment,
+  `board/app.mjs` change, or `docs/reviews/` change occurred. No further approval is
+  needed; the final clean-commit gate remains conversation-only evidence.
+
 ## 2026-09-11 — review CLI precise paths Round 10 corrections
 
 - Removed the fixed terminator class from spaced-path continuation scanning. After
