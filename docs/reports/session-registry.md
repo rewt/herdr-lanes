@@ -93,3 +93,44 @@ No live Herdr mutation, alternate host, push, promotion, archive, or review-reco
 change was performed. The Round 1 public projection failure was outside this change;
 the private record supplied by the facilitator was read in full and used as the
 correction authority.
+
+## Round 3 review corrections
+
+The authoritative Round 2 review of `fcd2810f01232e71a2e5b5cbcc3e816b5a4a577b`
+confirmed all seven Round 1 findings resolved and reported one Moderate and three
+Minor findings. Correction commit `e5d3dcfdb1c90a0542ff1f25978b8f9ca8714180`
+addresses all four:
+
+- successful Git close now treats external, unignored, and tracked registry
+  preflight refusals as actionable warnings with exit zero, while the existing
+  done-marker obstruction regression retains nonzero write-failure behavior;
+- inline goals select the first nonempty line outside fenced content, remove ATX
+  syntax only when that line is a heading, retain prose before later headings, and
+  fall back to the topic for fence-only input;
+- one exported Herdr socket-path helper supplies both the board client default and
+  dispatch record writer; README, REFERENCE, the design, delta, and current spec are
+  synchronized to the corrected boundaries.
+
+The branch was first rebased onto main at
+`4e55e4c4277b5a8dbb2a3413316930d6bc4af7a5`; HANDOFF retained the session and
+review-cli entries in commit-time order. The facilitator-owned Round 2 public record
+was carried through unchanged as blob `ab07a6302c768133f8851e6b34508a5b2bb9438c`.
+No file under `docs/reviews/` was edited.
+
+After the rebase, baseline `npm test` passed 107/107 in 99.440 seconds. The focused
+pre-product run failed all three new tests with 84 filtered skips in 3.288 seconds:
+the inline goal selected a later heading, the shared helper was absent, and external
+registry close exited nonzero. After implementation, those three plus the existing
+fatal marker-write boundary passed with 83 filtered skips in 7.381 seconds.
+
+Final `npm test` passed 109/109 with no skips in 102.306 seconds. All 109 deliberate
+negative controls failed with zero passes in 98.812 seconds. With Herdr excluded from
+`PATH`, 108 passed and the one live-Herdr guard skipped with its explicit reason in
+105.630 seconds. Strict OpenSpec validation passed 17/17. Worktree and full-lane
+`git diff --check`, delta/current-spec equality, and the added-line public-safety scan
+were clean. Every build/test/validation run followed a clear process probe and ran
+alone.
+
+No live Herdr mutation, alternate host, filesystem fault injection, Linux/Windows
+run, push, promotion, or archive was performed. A2 remains the only amendment and is
+unchanged. The final clean-commit gate remains conversation-only evidence.

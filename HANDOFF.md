@@ -636,3 +636,20 @@ Living log for agents maintaining this repository. Newest entry last.
 - Updated README, REFERENCE, and the implementation report addendum. No live Herdr
   mutation, alternate host, push, promotion, archive, or `docs/reviews/` change was
   performed; the final clean-commit gate remains conversation-only evidence.
+
+## 2026-09-09 — session registry Round 3 review corrections
+
+- Rebased onto main at `4e55e4c`, kept both HANDOFF histories in commit-time order,
+  and preserved the facilitator-owned Round 2 record as unchanged blob `ab07a630`.
+- Fixed all four Round 2 findings at `e5d3dcf`: close policy refusals now warn after
+  successful Git close while marker writes remain fatal; inline goals use the first
+  unfenced content line with conditional ATX stripping; one exported socket helper
+  supplies both the record writer and board client. Public docs and specs match.
+- Three focused tests failed before product edits; afterward those tests plus the
+  retained fatal-write boundary passed. Final `npm test` passed 109/109 in 102.306
+  seconds; all 109 deliberate controls failed in 98.812 seconds; without Herdr, 108
+  passed and one skipped explicitly in 105.630 seconds; strict OpenSpec passed 17/17;
+  full-lane diff and public-safety checks were clean.
+- A2 remains the sole unchanged amendment. No live Herdr mutation, alternate host,
+  push, promotion, archive, or `docs/reviews/` edit was performed. The final clean-
+  commit gate remains conversation-only evidence.
