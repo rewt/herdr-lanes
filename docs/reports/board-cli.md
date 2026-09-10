@@ -99,3 +99,31 @@ tests with zero passes. After implementation the focused run passed 3/3. Final-t
 Verified with Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No live
 Herdr behavior, alternate host, UI interaction, push, promotion, archive, contract
 amendment, or `docs/reviews/` edit was performed. The original limits remain.
+
+## Round 3 review corrections — 2026-09-09
+
+The authoritative Round 2 review of `2020756` returned PASS with two Minor
+findings. Both are resolved without changing the board schema, modes, or UI:
+
+- The repository probe captures Git stderr. Ordinary non-repositories retain the
+  exact one-line lane diagnostic, while a distinct cause such as a malformed
+  gitfile is emitted after that diagnostic instead of being discarded.
+- The shared-context regression no longer reads implementation source. It builds
+  one synthetic session state and behaviorally compares normalized workspace,
+  agent status/pane, runtime output/tripwire, Git/gate, report, and branch values
+  from `joinBoardRows` and `boardSnapshotDocument`.
+
+Baseline `npm test` passed 115/115 in 121.281 seconds. The first focused test run
+identified an incomplete synthetic fixture; after adding its required host stats and
+before product changes, the behavioral projection test passed while the malformed-
+gitfile diagnostic failed as intended. The focused deliberate control failed both
+selected tests with zero passes, and the post-change focused run passed 2/2. Complete
+`npm test` passed 115/115 in 107.426 seconds; the full deliberate-control run failed
+all 115 tests with zero passes in 102.851 seconds. Strict OpenSpec validation passed
+18/18. Every test or validation run followed a clear executable-aware load probe.
+
+Verified with Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. The
+complete diff, public-safety scan, unchanged `board/app.mjs` check, and
+`git diff --check` passed. No live Herdr behavior, alternate host, push, promotion,
+archive, contract amendment, or `docs/reviews/` edit was performed. Existing limits
+and approval boundaries remain unchanged.

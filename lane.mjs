@@ -104,10 +104,16 @@ const REPO = (() => {
     const start = EARLY_BOARD_OPTIONS?.repo ?? CALLER_CWD;
     return realpathSync(execFileSync("git", ["-C", start, "rev-parse", "--show-toplevel"], {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
     }).trim());
-  } catch {
+  } catch (error) {
     process.stderr.write(`${IS_REVIEW_COMMAND ? "lane review" : "lane"}: not inside a git repository\n`);
+    const gitStderr = typeof error.stderr === "string" ? error.stderr.trim() : "";
+    const ordinaryNotRepository = /^fatal: not a git repository \(or any of the parent directories\): \.git$/u
+      .test(gitStderr);
+    if (gitStderr !== "" && !ordinaryNotRepository) {
+      process.stderr.write(`${gitStderr}\n`);
+    }
     process.exit(IS_REVIEW_COMMAND ? 2 : 1);
   }
 })();

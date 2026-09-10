@@ -21,7 +21,12 @@ import { homedir, hostname, tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { collectReportStates, parseVerdict } from "../board/board.mjs";
+import {
+  boardSnapshotDocument,
+  collectReportStates,
+  joinBoardRows,
+  parseVerdict,
+} from "../board/board.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LANE = resolve(HERE, "..", "lane.mjs");
@@ -2426,18 +2431,106 @@ test("board uses inherited canonical registry configuration from a linked worktr
   }
 });
 
-test("plain and JSON board projections share session and branch resolution", () => {
-  const source = readFileSync(resolve(HERE, "..", "board", "board.mjs"), "utf8");
-  assert.match(source, /function branchForSession\(session\)/u);
-  assert.match(source, /function resolveSessionContext\(session, state\)/u);
-  const plainProjection = source.slice(
-    source.indexOf("export function joinBoardRows"),
-    source.indexOf("export function tableLineEntries"),
-  );
-  const jsonProjection = source.slice(source.indexOf("export function boardSnapshotDocument"));
-  assert.match(plainProjection, /resolveSessionContext\(session, \{/u);
-  assert.match(jsonProjection, /resolveSessionContext\(session, \{/u);
-  assert.equal([...source.matchAll(/session\.lane\.startsWith\("lane\/"\)/gu)].length, 1);
+test("plain and JSON board projections resolve the same session context", () => {
+  const reportTime = "2026-09-09T12:00:00.000Z";
+  const head = "a".repeat(40);
+  const session = {
+    session_id: "12345678-1234-4123-8123-123456789abc",
+    lane: "shared-context",
+    name: "shared-agent",
+    workspace: "shared-workspace",
+    report: "reports/shared.md",
+    role: "engineer",
+    deadline: null,
+    done: false,
+  };
+  const snapshot = {
+    workspaces: [{
+      workspace_id: "workspace-1",
+      label: "shared-workspace",
+      worktree: { checkout_path: "/repository/lane" },
+    }],
+    agents: [{
+      name: "shared-agent",
+      workspace_id: "workspace-1",
+      pane_id: "pane-1",
+      agent_status: "working",
+    }],
+    panes: [{ pane_id: "pane-1", tab_id: "tab-1" }],
+  };
+  const runtime = new Map([["pane-1", {
+    lastOutput: "shared output",
+    tripwire: "shared tripwire",
+    observedAt: reportTime,
+  }]]);
+  const gitStates = new Map([["shared-context", {
+    head,
+    ahead: 2,
+    behind: 1,
+    dirty: true,
+    available: true,
+    gate: `exit=1 @${head.slice(0, 7)}`,
+    gateColor: "red",
+    gateState: "fail",
+    gateHead: head,
+    gateExitCode: 1,
+    gateSignal: null,
+  }]]);
+  const reportStates = new Map([["reports/shared.md", {
+    path: "/repository/reports/shared.md",
+    mtime: reportTime,
+    mtimeIso: reportTime,
+    verdict: "PASS",
+    reviewedHead: head,
+  }]]);
+  const state = {
+    sessions: [session],
+    snapshot,
+    runtime,
+    gitStates,
+    reportStates,
+    exists: true,
+    errors: [],
+    stats: { load: 0, freeMemoryBytes: 0, workers: {} },
+  };
+  const [plain] = joinBoardRows({
+    registry: state.sessions,
+    snapshot,
+    runtime,
+    gitStates,
+    reportStates,
+  });
+  const [json] = boardSnapshotDocument({
+    state,
+    repoId: "repo-1",
+    rootId: "root-1",
+    repoRoot: "/repository",
+    rootLabel: "root",
+    repositoryLabel: "repository",
+    laneBase: "/lanes/repository",
+    capturedAt: new Date(reportTime),
+  }).rows;
+  assert.deepEqual({
+    workspace: plain.workspace,
+    pane: plain.pane,
+    status: plain.status,
+    output: plain.output,
+    tripwire: plain.tripwire,
+    git: plain.git,
+    gate: plain.gate,
+    report: plain.report,
+    branch: plain.lane.startsWith("lane/") ? plain.lane : `lane/${plain.lane}`,
+  }, {
+    workspace: json.workspace_id,
+    pane: json.pane_id,
+    status: json.status,
+    output: json.last_message.text,
+    tripwire: json.tripwire,
+    git: `+${json.git.ahead}${json.git.dirty ? " DIRTY" : ""}`,
+    gate: `exit=${json.gate.exit_code} @${json.gate.head.slice(0, 7)}`,
+    report: `${json.report.verdict}@${json.report.mtime}`,
+    branch: json.branch,
+  });
   negativeControl("shared board session context");
 });
 
@@ -2633,6 +2726,17 @@ test("board read modes reject contradictory, duplicate, unknown, extra, and miss
     assert.equal(invalidRepo.status, 1);
     assert.equal(invalidRepo.stdout, "");
     assert.equal(invalidRepo.stderr, "lane: not inside a git repository\n");
+
+    const malformedGitfile = join(fixture.root, "malformed-gitfile");
+    mkdirSync(malformedGitfile);
+    writeFileSync(join(malformedGitfile, ".git"), "not a gitfile\n");
+    const malformed = lane(fixture, ["board", "--json", "--repo", malformedGitfile]);
+    assert.equal(malformed.status, 1);
+    assert.equal(malformed.stdout, "");
+    assert.match(
+      malformed.stderr,
+      /^lane: not inside a git repository\nfatal: invalid gitfile format:/u,
+    );
     negativeControl("board read option validation");
   } finally {
     fixture.cleanup();

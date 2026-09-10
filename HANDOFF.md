@@ -695,3 +695,20 @@ Living log for agents maintaining this repository. Newest entry last.
   clear serialized load probes. The full diff and unchanged-UI checks were clean.
   No live Herdr behavior, push, promotion, archive, contract amendment, or
   `docs/reviews/` edit was performed; the clean-commit gate remains conversation-only.
+
+## 2026-09-09 — board CLI Round 3 review corrections
+
+- Resolved both Minor findings from the authoritative PASS review of `2020756`:
+  repository probing now preserves distinct Git failure causes after the lane
+  diagnostic, and the shared-context regression now compares plain and JSON output
+  behavior instead of inspecting source text. Ordinary non-repositories remain the
+  same concise one-line error; the board schema and UI are unchanged.
+- After correcting an incomplete synthetic fixture, the pre-product focused run
+  passed the projection equivalence check and failed the malformed-gitfile check;
+  both focused controls failed deliberately and both passed after implementation.
+  Final `npm test` passed 115/115, all 115 deliberate controls failed with zero
+  passes, and strict OpenSpec passed 18/18.
+- Runs were serialized after clear load probes. Full-diff, public-safety, unchanged-
+  UI, and whitespace checks were clean. No live Herdr behavior, push, promotion,
+  archive, contract amendment, or `docs/reviews/` edit was performed; the final
+  clean-commit gate remains conversation-only evidence.
