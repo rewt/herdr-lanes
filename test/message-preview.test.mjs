@@ -91,7 +91,7 @@ test("status candidates and trailing terminal chrome never become assistant mess
     ["claude", "⏺ Useful answer.\n  1,024 tokens · $0.01", "Useful answer."],
     ["codex", [
       "• Useful answer.",
-      "Would you like to run the following command?",
+      "  Would you like to run the following command?",
       "  1. Yes, proceed",
       "  2. No, and tell Codex what to do differently",
     ].join("\n"), "Useful answer."],
@@ -114,6 +114,41 @@ test("status candidates and trailing terminal chrome never become assistant mess
     assert.equal(extractAssistantPreview({ kind, text }).available, false);
   }
   negativeControl("status and trailing chrome rejection");
+});
+
+test("interrupt affordances are status chrome while ordinary progress-verb prose remains substantive", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  for (const [kind, text] of [
+    ["codex", [
+      "• The earlier answer remains current.",
+      "",
+      "• Compacting context (1m 42s • esc to interrupt)",
+    ].join("\n")],
+    ["claude", [
+      "⏺ The earlier answer remains current.",
+      "",
+      "⏺ Consolidating context… 48s · esc to interrupt",
+    ].join("\n")],
+  ]) {
+    assert.equal(
+      extractAssistantPreview({ kind, text }).text,
+      "The earlier answer remains current.",
+      `${kind}: interrupt affordance`,
+    );
+  }
+  for (const [kind, marker] of [["codex", "•"], ["claude", "⏺"]]) {
+    const text = [
+      `${marker} The earlier answer is obsolete.`,
+      "",
+      `${marker} Working with aliases (not progress chrome).`,
+    ].join("\n");
+    assert.equal(
+      extractAssistantPreview({ kind, text }).text,
+      "Working with aliases (not progress chrome).",
+      `${kind}: ordinary progress-verb prose`,
+    );
+  }
+  negativeControl("general interrupt chrome and progress-verb prose");
 });
 
 test("ordinary answer verbs need corroborating evidence before they count as tool calls", async () => {
@@ -143,6 +178,45 @@ test("ordinary answer verbs need corroborating evidence before they count as too
   negativeControl("corroborated tool classification");
 });
 
+test("Claude result markers independently identify tool blocks and bound answer text", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  assert.equal(extractAssistantPreview({
+    kind: "claude",
+    text: [
+      "⏺ Earlier substantive response.",
+      "",
+      "⏺ Inspect repository state",
+      "  ⎿ git status --short",
+    ].join("\n"),
+  }).text, "Earlier substantive response.");
+  assert.equal(extractAssistantPreview({
+    kind: "claude",
+    text: [
+      "⏺ A bounded answer remains useful.",
+      "",
+      "  ⎿ late tool output",
+    ].join("\n"),
+  }).text, "A bounded answer remains useful.");
+  negativeControl("Claude result-marker tool evidence and boundary");
+});
+
+test("pending tool labels stay unavailable unless their text is sentence-shaped", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  for (const text of [
+    "• Ran",
+    "• Ran\n  git status --short",
+  ]) {
+    const preview = extractAssistantPreview({ kind: "codex", text });
+    assert.equal(preview.available, false, JSON.stringify(text));
+    assert.equal(preview.source, "unavailable", JSON.stringify(text));
+  }
+  assert.equal(extractAssistantPreview({
+    kind: "codex",
+    text: "• Earlier response.\n\n• Ran into a compatibility issue.",
+  }).text, "Ran into a compatibility issue.");
+  negativeControl("pending tool labels require sentence-shaped text");
+});
+
 test("indented quotes and bullets remain inside the assistant response", async () => {
   const { extractAssistantPreview } = await previewApi();
   assert.equal(extractAssistantPreview({
@@ -166,6 +240,46 @@ test("indented quotes and bullets remain inside the assistant response", async (
     ].join("\n"),
   }).text, "The answer quotes the important line:\n> preserve this quoted text\nand this explanation.");
   negativeControl("indented response markers");
+});
+
+test("directory trees and tables remain content while pure composer frames stay boundaries", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  assert.equal(extractAssistantPreview({
+    kind: "codex",
+    text: [
+      "• The files are:",
+      "  ├── src",
+      "  │   └── index.mjs",
+      "  └── test",
+    ].join("\n"),
+  }).text, [
+    "The files are:",
+    "├── src",
+    "│   └── index.mjs",
+    "└── test",
+  ].join("\n"));
+  assert.equal(extractAssistantPreview({
+    kind: "claude",
+    text: [
+      "⏺ Results:",
+      "  │ Name │ State │",
+      "  │ parser │ pass │",
+    ].join("\n"),
+  }).text, "Results:\n│ Name │ State │\n│ parser │ pass │");
+  assert.equal(extractAssistantPreview({
+    kind: "claude",
+    text: [
+      "⏺ Useful answer.",
+      "╭────────────────────────────╮",
+      "│ ❯ Type another request     │",
+      "╰────────────────────────────╯",
+    ].join("\n"),
+  }).text, "Useful answer.");
+  assert.equal(extractAssistantPreview({
+    kind: "codex",
+    text: "• First paragraph.\n  \n  Second paragraph.",
+  }).text, "First paragraph.\n\nSecond paragraph.");
+  negativeControl("frame content and composer boundaries");
 });
 
 test("tool-only, footer-only, and unknown formats stay unavailable with labeled raw output", async () => {

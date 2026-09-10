@@ -130,3 +130,46 @@ reviewed live Claude panes is not claimed. Missing alternate-screen history,
 unrecognized formats, real-TTY behavior, alternate hosts, model APIs, and promotion
 remain unverified. No contract amendment or further implementation approval is
 needed; `board/app.mjs` and the facilitator-owned review record remain unchanged.
+
+## Round 3 corrections — 2026-09-10
+
+All six Round 2 findings are resolved in the visible-text parser. Any line advertising
+the interrupt affordance is status chrome for both adapters, regardless of its
+progress verb; the named progress verbs without that affordance now require an actual
+elapsed-time form, so ordinary parenthesized answer prose remains substantive.
+Indented approval prompts are also boundaries.
+
+An indented Herdr result marker immediately after a Claude candidate is tool evidence
+without requiring a known tool-name prefix, and result markers independently end
+answer blocks. A Codex tool-label opening without call/result corroboration remains
+unavailable unless the completed block is sentence-shaped, preserving ordinary prose
+such as `Ran into a compatibility issue.` while withholding a partially rendered
+`Ran` command. Composer frames are now recognized only when their lines contain frame
+characters and padding; directory trees and tables with content remain part of the
+answer.
+
+The extended chrome case and four new negative-controlled test groups cover the
+indented approval prompt; two unlisted interrupt-status verbs; ordinary parenthesized
+`Working` answers in both adapters; a Claude human-description tool block; a detached
+result-marker boundary; two pending Codex tool shapes and sentence-shaped prose; a
+directory tree; a table; and a pure composer frame. Before the parser change, the
+focused run passed 9/14 and failed the five affected groups. A follow-up padding-only
+frame assertion then failed its group at 13/14 against the first correction, proving
+that whitespace needed separate treatment. The final focused run passed 14/14 in
+0.050 seconds.
+
+The untouched baseline passed 142/142 in 120.972 seconds. Final `npm test` passed
+146/146 with zero skips in 124.049 seconds. The serialized
+`LANE_TEST_NEGATIVE_CONTROL=1 npm test` run produced zero passes and all 146
+deliberate failures with zero skips in 106.511 seconds. Strict OpenSpec validation
+passed 20/20. Each build or test began after a clear executable-aware load probe and
+ran alone; no Unix-socket sandbox failure occurred in these Round 3 runs. Verification
+used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+
+The adapters remain conservative, bounded classifiers of rendered pane text rather
+than semantic transcripts. No live pane or real TTY was exercised in this correction
+round, so the two review-observed live forms were covered with public-safe synthetic
+fixtures only. Unrecognized formats, missing alternate-screen history, alternate
+hosts, model APIs, push, promotion, and archive remain unverified. No contract
+amendment or further implementation approval is needed; `board/app.mjs` and every
+file under `docs/reviews/` remain unchanged.

@@ -286,15 +286,20 @@ are localized with source `message` and do not discard Git/report state.
 For registered Codex and Claude agents, the board reads `recent_unwrapped` text with
 an explicit 200-line request and retains at most the final 16 KiB. Small
 kind-specific adapters strip ANSI/control sequences and recognize only documented
-assistant, prompt, corroborated tool, status, approval, composer-frame, and footer
-boundaries. Indented quotes and bullets remain message content. The detail value
+assistant and prompt markers; call-shaped or result-marker tool evidence; timed or
+interrupt-advertising status; and approval, pure composer-frame, and footer
+boundaries. An indented result marker is both tool evidence and a block boundary. A
+tool-label opening without corroboration remains unavailable unless its continuation
+is sentence-shaped. Indented approval prompts are chrome, while indented quotes,
+bullets, directory trees, and tables remain message content. The detail value
 preserves the last confidently bounded multiline assistant block; the table
 summarizes its first substantive line. Tool-only, footer-only, unsupported, or
-otherwise ambiguous text yields `source: "unavailable"`, never a guessed message. A bounded
-`raw_excerpt` may still be present with `source: "pane-output"` so consumers cannot
-confuse terminal text with an assistant response. Truncation is reported whether it
-came from Herdr or the local byte bound; when truncated text contains no confident
-answer, `limitation` says so without promising recoverable alternate-screen history.
+otherwise ambiguous text yields `source: "unavailable"`, never a guessed message. A
+bounded `raw_excerpt` may still be present with `source: "pane-output"` so consumers
+cannot confuse terminal text with an assistant response. Truncation is reported
+whether it came from Herdr or the local byte bound; when truncated text contains no
+confident answer, `limitation` says so without promising recoverable alternate-screen
+history.
 
 Preview state is memory-only and keyed to the pane occupant's Herdr agent-session
 identity, with a conservative agent/name/pane fallback. A late response is discarded

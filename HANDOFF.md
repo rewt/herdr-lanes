@@ -1167,6 +1167,27 @@ Living log for agents maintaining this repository. Newest entry last.
   archive, contract amendment, `board/app.mjs` change, or `docs/reviews/` change was
   performed. The final clean-commit gate remains conversation-only evidence.
 
+## 2026-09-10 — message previews Round 3 corrections
+
+- Resolved all six Round 2 findings: interrupt affordances identify status regardless
+  of progress verb, named-verb status requires elapsed time or interruption, Claude
+  result markers independently identify and bound tools, incomplete Codex tool labels
+  stay unavailable, indented approval prompts stop answers, and content-bearing trees
+  and tables no longer match pure composer frames.
+- The extended chrome case and four new groups all retain deliberate controls. Before
+  implementation the focused run passed 9/14 and failed the five affected groups;
+  a follow-up padding-only frame assertion then failed its group at 13/14 against the
+  first correction. The final focus passed 14/14 in 0.050 seconds. The untouched
+  baseline passed 142/142 in 120.972 seconds.
+- Final `npm test` passed 146/146 with zero skips in 124.049 seconds; all 146
+  deliberate controls failed with zero passes or skips in 106.511 seconds; strict
+  OpenSpec validation passed 20/20. Runs were serialized after clear executable-aware
+  probes, and no Unix-socket sandbox failure occurred in this round. Verification used
+  Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+- No live-pane repeat, real-TTY or alternate-host check, model API, push, promotion,
+  archive, contract amendment, `board/app.mjs` change, or `docs/reviews/` change was
+  performed. The final clean-commit gate remains conversation-only evidence.
+
 ## 2026-09-11 — review CLI precise paths Round 10 corrections
 
 - Removed the fixed terminator class from spaced-path continuation scanning. After

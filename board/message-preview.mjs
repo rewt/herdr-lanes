@@ -6,12 +6,27 @@ const SUPPORTED_AGENT_KINDS = new Set(["codex", "claude"]);
 
 const ANSI_SEQUENCE = /\u001b(?:\][^\u0007]*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])/gu;
 const CONTROL_CHARACTER = /[\u0000-\u0008\u000b\u000c\u000e-\u001a\u001c-\u001f\u007f]/gu;
-const DIVIDER = /^\s*(?:[─━═╌╍┄┅┈┉-]{6,}|[╭╮╰╯┌┐└┘│┃].*)\s*$/u;
+const HORIZONTAL_DIVIDER = /^\s*[─━═╌╍┄┅┈┉-]{6,}\s*$/u;
+const FRAME_LINE = /^\s*[╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉ ]+\s*$/u;
+const FRAME_CHARACTER = /[╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉]/u;
 const SHORTCUT_BAR = /^\s*(?:\?|esc\b|ctrl-[a-z]\b).*(?:shortcut|interrupt|toggle|submit|edit)/iu;
 const CONTEXT_BAR = /^\s*(?:[\d,.]+%?\s+)?context left(?:\s|$)/iu;
 const TOKEN_OR_COST_BAR = /^\s*(?:[\d,.]+[km]?\s+)?tokens?\b.*(?:\$|cost|used)/iu;
-const STATUS_CHROME = /^\s*(?:[✻✽✶✳·]\s+)?(?:Working|Worked|Thinking|Running)\b.*(?:esc to interrupt|\([^)]*\))/iu;
-const APPROVAL_PROMPT = /^(?:Would you like to run|Do you want to (?:run|allow|approve)|Allow Codex to)\b/iu;
+const INTERRUPT_AFFORDANCE = /\besc(?:ape)? to interrupt\b/iu;
+const PROGRESS_PREFIX = /^\s*(?:[✻✽✶✳·]\s+)?(?:Working|Worked|Thinking|Running)\b/iu;
+const ELAPSED_TIME = /(?:\b\d+(?:[.,]\d+)?\s*(?:ms|s|m|h|secs?|seconds?|mins?|minutes?|hours?)\b|\b\d{1,2}:\d{2}(?::\d{2})?\b)/iu;
+const APPROVAL_PROMPT = /^\s*(?:Would you like to run|Do you want to (?:run|allow|approve)|Allow Codex to)\b/iu;
+const RESULT_MARKER = /^\s{2,}(?:└|⎿|├)(?:\s+|$)/u;
+
+function statusChrome(line) {
+  return INTERRUPT_AFFORDANCE.test(line)
+    || (PROGRESS_PREFIX.test(line) && ELAPSED_TIME.test(line));
+}
+
+function divider(line) {
+  return HORIZONTAL_DIVIDER.test(line)
+    || (FRAME_LINE.test(line) && FRAME_CHARACTER.test(line));
+}
 
 function cleanPaneText(text) {
   return `${text ?? ""}`
@@ -34,8 +49,9 @@ function continuation(line) {
 function codexBoundary(line) {
   return /^•\s+/u.test(line)
     || /^›(?:\s|$)/u.test(line)
-    || DIVIDER.test(line)
-    || STATUS_CHROME.test(line)
+    || divider(line)
+    || RESULT_MARKER.test(line)
+    || statusChrome(line)
     || SHORTCUT_BAR.test(line)
     || CONTEXT_BAR.test(line)
     || TOKEN_OR_COST_BAR.test(line)
@@ -50,10 +66,11 @@ function codexToolLabel(text) {
 function claudeBoundary(line) {
   return /^(?:⏺|●)\s+/u.test(line)
     || /^(?:❯|›|>)\s*/u.test(line)
-    || DIVIDER.test(line)
+    || divider(line)
     || /^\s*(?:\?|⏵⏵)\s+/u.test(line)
     || /^\s*[✻✽✶✳·]\s+/u.test(line)
-    || STATUS_CHROME.test(line)
+    || RESULT_MARKER.test(line)
+    || statusChrome(line)
     || SHORTCUT_BAR.test(line)
     || CONTEXT_BAR.test(line)
     || TOKEN_OR_COST_BAR.test(line);
@@ -64,13 +81,18 @@ function claudeToolLabel(text) {
 }
 
 function hasToolEvidence(lines, index, text, toolLabel) {
-  if (!toolLabel(text)) return false;
-  if (/^[^\s(\n]+\([^\n)]*\)\s*$/u.test(text)) return true;
-  return /^\s{2,}(?:└|⎿|├)\s*/u.test(lines[index + 1] ?? "");
+  if (RESULT_MARKER.test(lines[index + 1] ?? "")) return true;
+  return toolLabel(text) && /^[^\s(\n]+\([^\n)]*\)\s*$/u.test(text);
 }
 
 function plausibleContinuation(line) {
   return line.trim() === "" || /^\s{2,}\S/u.test(line);
+}
+
+function sentenceShaped(text) {
+  const flattened = text.replace(/\s+/gu, " ").trim();
+  const words = flattened.match(/\p{L}+/gu) ?? [];
+  return words.length >= 3 && /[.!?…]["'”’)}\]]*$/u.test(flattened);
 }
 
 function extractBlocks(lines, { start, toolLabel, boundary }) {
@@ -86,6 +108,7 @@ function extractBlocks(lines, { start, toolLabel, boundary }) {
     }
     index -= 1;
     const text = trimBlock(block);
+    if (toolLabel(match[1]) && !sentenceShaped(text)) continue;
     if (/\p{L}|\p{N}/u.test(text)) blocks.push(text);
   }
   return blocks;
