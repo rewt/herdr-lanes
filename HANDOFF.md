@@ -736,3 +736,26 @@ Living log for agents maintaining this repository. Newest entry last.
 - No live reviewer/Herdr mutation, alternate host, push, promotion, archive, or change
   under `docs/reviews/` was performed. The final post-commit lane check remains
   conversation-only evidence.
+
+## 2026-09-10 — review projection Round 2 corrections
+
+- Made underscores alias boundaries, decoded percent octets and numeric character
+  references in a scratch residual rescan, escaped literal backslashes and a generated
+  placeholder's adjacent opening parenthesis, and documented the stricter finding
+  file-and-line markup/encoding policy. Commands remain verbatim.
+- Added negative-controlled coverage for declared and automatic aliases wrapped in
+  underscores, two encoded-alias forms, literal backslashes, placeholder link syntax,
+  and every finding in a public-safe production-derived PASS fixture.
+- The supplied raw PASS record projected successfully through the branch, archived
+  main, and the byte-identical installed main entrypoint. No field matched the only
+  main check that emits the reported diagnostic, so the historical refusal has no
+  reproducible culprit in the record bytes now present; this limitation is explicit in
+  the implementation report.
+- Baseline `npm test` passed 112/112. Four focused tests failed before product edits;
+  the corrected five-test focus passed and all five deliberate controls failed. The
+  first full run found one lone `%2F` decoder compatibility edge at 113/114; final
+  `npm test` passed 114/114 in 126.783 seconds, all 114 deliberate controls failed in
+  120.088 seconds, strict OpenSpec passed 17/17, and `git diff --check` passed.
+- No live reviewer/Herdr mutation, alternate host, push, promotion, archive, or
+  `docs/reviews/` edit was performed. The final clean-commit gate remains
+  conversation-only evidence.

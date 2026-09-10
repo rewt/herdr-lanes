@@ -215,7 +215,7 @@ paths. Replace other absolute POSIX, drive-letter, UNC and file-URL paths as who
 paths, including their private segments. Then redact aliases, matching case-
 insensitively at whole path segments (delimited by slash/backslash or string ends)
 or Unicode word boundaries (adjacent characters must not be letters, combining
-marks, numbers or underscore). Never substring-replace a username inside an
+marks or numbers; underscore is therefore a boundary). Never substring-replace a username inside an
 unrelated word. Match accepted aliases longest-first, using the category precedence
 above for ties, so a hostname and its first label do not compete. Preserve the case
 of unaffected text.
@@ -258,12 +258,15 @@ The following are concrete refusal triggers, before writing any public file:
   lost. No transliteration, semantic rewrite or silent truncation is allowed.
 
 Verify the transformed schema and require idempotence (identical second-pass text
-and zero additional substitutions) on the unescaped payload. Only after that rescan,
-backslash-escape every backtick, asterisk, underscore, square bracket and angle
-bracket in prose rendered outside the JSON fence. Commands stay verbatim in the
-fence. The v1 plain-text restriction still refuses non-ASCII and control characters;
-retain those details privately and let the operator arrange a later explicitly
-numbered review with publishable wording.
+and zero additional substitutions) on the unescaped payload. Decode percent octets
+and numeric character references into a scratch copy before the residual path and
+alias checks so encoding cannot hide private content. Only after that rescan,
+backslash-escape every backslash, backtick, asterisk, underscore, square bracket and
+angle bracket in prose rendered outside the JSON fence, plus an opening parenthesis
+immediately after a generated placeholder. Commands stay verbatim in the fence. The
+v1 plain-text restriction still refuses non-ASCII and control characters; retain
+those details privately and let the operator arrange a later explicitly numbered
+review with publishable wording.
 On any unverifiable case, exit 2 with no public record and a concise diagnostic;
 retain the private file for operator inspection. Never echo private content.
 This verifies a documented mechanical sanitization policy; it cannot certify the

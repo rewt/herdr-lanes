@@ -29,7 +29,7 @@ import {
 } from "../board/board.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const LANE = resolve(HERE, "..", "lane.mjs");
+const LANE = resolve(process.env.LANE_TEST_CLI ?? join(HERE, "..", "lane.mjs"));
 const HERDR_CLIENT = resolve(HERE, "..", "board", "herdr-client.mjs");
 const GIT = execFileSync("/bin/sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
 const HEAD = execFileSync("/bin/sh", ["-c", "command -v head"], { encoding: "utf8" }).trim();
@@ -419,6 +419,15 @@ if (args[0] === "workspace" && args[1] === "list") {
       (payload.analysis || "Fixture review evidence.") + marker,
       "",
     ].join("\\n");
+    if (process.env.FAKE_REVIEW_RECORD_PATH) {
+      record = readFileSync(process.env.FAKE_REVIEW_RECORD_PATH, "utf8")
+        .replace(/^Reviewed commit: .*$/mu, "Reviewed commit: " + reviewed)
+        .replace(/^Topic: .*$/mu, "Topic: " + field("Topic"))
+        .replace(/^Round: .*$/mu, "Round: " + field("Round"))
+        .replace(/^Review ID: .*$/mu, "Review ID: " + field("Review ID"))
+        .replace(/^Base branch: .*$/mu, "Base branch: " + field("Base branch"))
+        .replace(/^Base commit: .*$/mu, "Base commit: " + field("Base commit"));
+    }
     if (payload.spacing) {
       const blankLines = (boundary, fallback) => Array(
         payload.spacing.boundary === boundary ? payload.spacing.blankLines : fallback,
@@ -513,6 +522,7 @@ if (args[0] === "workspace" && args[1] === "list") {
     FAKE_REVIEW_VERDICT: options.reviewVerdict,
     FAKE_REVIEW_MODE: options.reviewMode,
     FAKE_REVIEW_PAYLOAD: options.reviewPayload === undefined ? undefined : JSON.stringify(options.reviewPayload),
+    FAKE_REVIEW_RECORD_PATH: options.reviewRecord,
     FAKE_HERDR_START_FAIL: options.startFail ? "1" : undefined,
     FAKE_HERDR_AGENT_CWD: options.agentCwd,
     FAKE_HERDR_PROMPT_FAIL: options.promptFail ? "1" : undefined,
@@ -2974,8 +2984,28 @@ function makeReviewFixture(topic, options = {}) {
     reviewVerdict: options.verdict,
     reviewMode: options.mode,
     reviewPayload: options.payload,
+    reviewRecord: options.record,
   });
   return { fixture, path, brief, fake };
+}
+
+function reviewPayloadFixture(path) {
+  const record = readFileSync(path, "utf8");
+  const section = (name, next) => {
+    const match = record.match(new RegExp(`## ${name}\\n([\\s\\S]*?)\\n## ${next}`, "u"));
+    assert.ok(match, `missing ${name} fixture section`);
+    return match[1].trim();
+  };
+  const executionBlock = section("Re-executed", "Non-claims").split("\n");
+  const identifiersBlock = section("Private identifiers", "Analysis").split("\n");
+  return {
+    findings: section("Findings", "Re-executed"),
+    reexecuted: JSON.parse(executionBlock.slice(1, -1).join("\n")),
+    nonclaims: section("Non-claims", "Unverified"),
+    unverified: section("Unverified", "Private identifiers"),
+    identifiers: JSON.parse(identifiersBlock.slice(1, -1).join("\n")),
+    analysis: "Sanitized production-derived fixture evidence.",
+  };
 }
 
 test("review requires explicit source, round, route, and bounded unique flags with exit 2", () => {
@@ -3196,9 +3226,10 @@ test("review sanitization preserves unrelated words and fails closed on ambiguou
   try {
     const preserved = makeReviewFixture("review-boundary", { verdict: "PASS" });
     fixtures.push(preserved.fixture);
+    const username = userInfo().username;
     preserved.fixture.env.FAKE_REVIEW_PAYLOAD = JSON.stringify({
       findings: "- [Minor] shared.txt:1 - Annex remains unchanged; Fix: keep annex unchanged",
-      nonclaims: "- ANN met annex.",
+      nonclaims: `- ANN met annex.\n- _Ann_ and _${username}_ are private aliases.`,
       identifiers: ["Ann"],
       analysis: "Private only.",
     });
@@ -3210,6 +3241,7 @@ test("review sanitization preserves unrelated words and fails closed on ambiguou
     ), "utf8");
     assert.match(preservedPublic, /Annex remains unchanged; Fix: keep annex unchanged/);
     assert.match(preservedPublic, /- \[PRIVATE\] met annex\./);
+    assert.match(preservedPublic, /- \\_\[PRIVATE\]\\_ and \\_\[USER\]\\_ are private aliases\./);
 
     const cases = [
       ["alias-ambiguity", { identifiers: ["Ann", "Anna"] }],
@@ -3220,6 +3252,8 @@ test("review sanitization preserves unrelated words and fails closed on ambiguou
       ["location-emphasis", { findings: "- [Major] **shared**.txt:1 - issue; Fix: change it" }],
       ["location-placeholder", { findings: "- [Major] [USER].txt:1 - issue; Fix: change it" }],
       ["location-encoded", { findings: "- [Major] shared%2Fsecret.txt:1 - issue; Fix: change it", identifiers: ["secret"] }],
+      ["percent-encoded-alias", { nonclaims: "- A%6En was not independently authenticated.", identifiers: ["Ann"] }],
+      ["numeric-reference-alias", { nonclaims: "- A&#110;n was not independently authenticated.", identifiers: ["Ann"] }],
       ["non-ascii", { findings: "- [Minor] shared.txt:1 - caf\u00e9 issue; Fix: use ASCII" }],
       ["placeholder", { nonclaims: "- Existing [USER] marker." }],
       ["ambiguous-path", { unverified: "- Inspect /tmp/path with spaces/file." }],
@@ -3353,7 +3387,7 @@ test("review escapes prose punctuation after sanitizing the unescaped payload", 
     "- [Minor] first.txt:1 - `git status` reported **fatal** for [draft] <path> and snake_case; Fix: quote `--` and keep __tokens__ literal",
     "- [Moderate] second.txt:2 - asterisk * underscore _ brackets [] and angles <> remain visible; Fix: preserve every quoted character",
   ].join("\n");
-  const nonclaims = "- Quoted `usage [--flag] <path>` and **bold** __label__ text is not a claim.";
+  const nonclaims = "- Quoted `usage [--flag] <path>` and **bold** __label__ text with a literal \\ separator is not a claim.";
   const unverified = "- Git said: `fatal: pathspec '[draft]_<name>.md' did not match any files`.";
   const review = makeReviewFixture("review-escaped-prose", {
     verdict: "NEEDS-WORK",
@@ -3372,15 +3406,60 @@ test("review escapes prose punctuation after sanitizing the unescaped payload", 
       "\\`git status\\`", "\\*\\*fatal\\*\\*", "\\[draft\\]", "\\<path\\>", "snake\\_case",
       "\\`--\\`", "\\_\\_tokens\\_\\_", "asterisk \\*", "underscore \\_", "brackets \\[\\]",
       "angles \\<\\>", "\\`usage \\[--flag\\] \\<path\\>\\`", "\\*\\*bold\\*\\*",
-      "\\_\\_label\\_\\_", "pathspec '\\[draft\\]\\_\\<name\\>.md'",
+      "\\_\\_label\\_\\_", "literal \\\\ separator", "pathspec '\\[draft\\]\\_\\<name\\>.md'",
     ]) assert.ok(publicRecord.includes(escaped), `missing escaped prose: ${escaped}\n${publicRecord}`);
     assert.equal((publicRecord.match(/^- \[(?:Major|Moderate|Minor)\]/gmu) || []).length, 2);
-    const renderedLiteral = publicRecord.replace(/\\([`*_\[\]<>])/gu, "$1");
+    const renderedLiteral = publicRecord.replace(/\\([\\`*_\[\]<>])/gu, "$1");
     assert.ok(renderedLiteral.includes(findings.split("\n")[0]));
     assert.ok(renderedLiteral.includes(findings.split("\n")[1]));
     assert.ok(renderedLiteral.includes(nonclaims));
     assert.ok(renderedLiteral.includes(unverified));
     negativeControl("escaped review prose projection");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
+test("review escapes an opening parenthesis after a generated placeholder", () => {
+  const review = makeReviewFixture("review-placeholder-parenthesis", {
+    verdict: "PASS",
+    payload: { unverified: "- Inspect /opt/review-tool(note) in a later check." },
+  });
+  try {
+    const run = lane(review.fixture, [
+      "review", "review-placeholder-parenthesis", "--round", "1", "--brief", review.brief,
+    ]);
+    assert.equal(run.status, 0, run.stderr);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicRecord = readFileSync(join(
+      review.path, "docs", "reviews", "review-placeholder-parenthesis", `${head.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    assert.match(publicRecord, /- Inspect \[ABS_PATH\]\\\(note\) in a later check\./u);
+    negativeControl("placeholder parenthesis escaping");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
+test("review projects every finding from the sanitized production PASS fixture", () => {
+  const fixturePath = process.env.LANE_BOARD_REVIEW_FIXTURE ?? join(
+    HERE, "fixtures", "board-cli-pass-review.md",
+  );
+  const payload = reviewPayloadFixture(fixturePath);
+  const review = makeReviewFixture("review-production-pass", { verdict: "PASS", record: fixturePath });
+  try {
+    const run = lane(review.fixture, [
+      "review", "review-production-pass", "--round", "1", "--brief", review.brief,
+    ]);
+    assert.equal(run.status, 0, run.stderr);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicRecord = readFileSync(join(
+      review.path, "docs", "reviews", "review-production-pass", `${head.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    const sourceFindings = payload.findings.split("\n");
+    assert.equal((publicRecord.match(/^- \[(?:Major|Moderate|Minor)\]/gmu) || []).length, sourceFindings.length);
+    for (const finding of sourceFindings) assert.ok(publicRecord.includes(finding), `missing finding: ${finding}`);
+    negativeControl("production PASS projection");
   } finally {
     review.fixture.cleanup();
   }
@@ -3828,12 +3907,15 @@ test("review protocol documents normalized boundaries and consecutive findings",
     assert.match(document, /command strings[^.]*verbatim/iu);
     assert.match(document, /prose may[^.]*quote/iu);
     assert.match(document, /backslash-escapes? every/iu);
-    for (const characterName of ["backtick", "asterisk", "underscore", "square bracket", "angle bracket"]) {
+    for (const characterName of ["backslash", "backtick", "asterisk", "underscore", "square bracket", "angle bracket"]) {
       assert.match(document, new RegExp(characterName, "iu"));
     }
     assert.match(document, /unescaped\s+payload/iu);
     assert.match(document, /refuses prose only[^.]*non-ASCII[^.]*control[^.]*unresolved\s+private identifiers[^.]*reserved placeholders[^.]*residual/iu);
+    assert.match(document, /finding (?:file-and-line|file and line)[^.]*stricter[^.]*markup[^.]*encoding/iu);
   }
+  assert.match(design, /underscore is therefore a boundary/iu);
+  assert.match(design, /percent octets[^.]*numeric character references[^.]*scratch copy/iu);
   assert.doesNotMatch(design, /first physical line/iu);
   for (const spec of [currentSpec, deltaSpec]) {
     assert.match(spec, /boundary blank lines/iu);

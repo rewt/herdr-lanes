@@ -1607,7 +1607,7 @@ function replaceOutsidePlaceholders(value, replace) {
 }
 
 function aliasRegex(alias) {
-  return new RegExp(`(?<![\\p{L}\\p{M}\\p{N}_])${escapeRegex(alias)}(?![\\p{L}\\p{M}\\p{N}_])`, "giu");
+  return new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])${escapeRegex(alias)}(?![\\p{L}\\p{M}\\p{N}])`, "giu");
 }
 
 function containsAlias(value, aliases) {
@@ -1615,7 +1615,23 @@ function containsAlias(value, aliases) {
 }
 
 function absolutePathPattern() {
-  return /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]*/giu;
+  return /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]+/giu;
+}
+
+function decodeReviewRescanText(input) {
+  let value = input;
+  while (true) {
+    const decoded = value
+      .replace(/%([0-9A-Fa-f]{2})/gu, (_match, digits) => String.fromCharCode(Number.parseInt(digits, 16)))
+      .replace(/&#(?:x([0-9A-Fa-f]+)|([0-9]+));/giu, (match, hexadecimal, decimal) => {
+        const codePoint = Number.parseInt(hexadecimal ?? decimal, hexadecimal === undefined ? 10 : 16);
+        return codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff)
+          ? String.fromCodePoint(codePoint)
+          : match;
+      });
+    if (decoded === value) return value;
+    value = decoded;
+  }
 }
 
 function assertPublicPayloadRestrictions(value, label, { allowGenerated = false } = {}) {
@@ -1668,14 +1684,16 @@ function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
   assertPublicPayloadRestrictions(value, "projected payload", { allowGenerated: true });
   const withoutPlaceholders = value.replace(REVIEW_PLACEHOLDER_PATTERN, "");
   REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
-  if (absolutePathPattern().test(withoutPlaceholders) || containsAlias(withoutPlaceholders, context.aliases)) {
+  const rescanText = decodeReviewRescanText(withoutPlaceholders);
+  if (absolutePathPattern().test(rescanText) || containsAlias(rescanText, context.aliases)) {
     fail("projected payload retains private path or alias content");
   }
   return value;
 }
 
 function escapeReviewProse(value) {
-  return replaceOutsidePlaceholders(value, (part) => part.replace(/[`*_\[\]<>]/gu, "\\$&"));
+  const escaped = replaceOutsidePlaceholders(value, (part) => part.replace(/[\\`*_\[\]<>]/gu, "\\$&"));
+  return escaped.replace(/(\[(?:ABS_PATH|USER|HOST|PRIVATE)\])\(/gu, "$1\\(");
 }
 
 function assertProtectedPublicValue(value, aliases, label, { payload = false } = {}) {

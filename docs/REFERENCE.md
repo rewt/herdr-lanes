@@ -475,7 +475,8 @@ fresh Re-executed evidence. Re-executed command strings, including witness comma
 are machine syntax and are rendered verbatim inside the JSON fence after required path
 and alias sanitization. Prose may quote error messages, usage strings, and identifiers
 with Markdown or HTML punctuation; public rendering escapes that punctuation as
-described below.
+described below. A finding file-and-line value is structural rather than prose and
+keeps the stricter markup and encoding restriction.
 
 After completion, the command validates that schema and rechecks the exact HEAD,
 branch, and a completely clean lane before accepting the verdict. It polls only the
@@ -499,7 +500,8 @@ file-URL paths become `[ABS_PATH]`. Case-insensitive whole path-segment or Unico
 word-boundary matches for the current OS username/home basename, hostname/full first
 label, and declared private identifiers become `[USER]`, `[HOST]`, and `[PRIVATE]`.
 Matches run longest-first; equal aliases use user, then host, then private precedence.
-Automatic duplicates are removed. A proper substring relationship between distinct
+An underscore is an alias boundary, like other punctuation. Automatic duplicates are
+removed. A proper substring relationship between distinct
 declared tokens refuses as ambiguous; nested automatic host aliases are safe under
 the longest-first rule.
 
@@ -511,17 +513,19 @@ including protected finding locations. The checker also refuses aliases in prote
 file:line or captured metadata, ambiguous paths, controls/newlines, non-ASCII residue,
 residual paths/aliases, and any non-idempotent second pass. A finding description that
 contains a declared private identifier is unresolved and refuses publication. After
-sanitization, the idempotence rescan operates on the unescaped payload; only then does
-the renderer backslash-escape every backtick, asterisk, underscore, square bracket,
-and angle bracket in Findings, Non-claims, and Unverified prose. Markdown and HTML
-therefore display those characters literally. Commands stay verbatim because the JSON
-fence already makes them literal. Prose punctuation and encoded-looking quoted text
-are not refusal categories. Publication refuses prose only for non-ASCII or control
-characters, unresolved private identifiers, reviewer-written reserved placeholders,
-and residual paths or aliases after sanitization. Schema tags, JSON fences and CLI
-placeholders are structural. The mechanical policy cannot prove that arbitrary prose
-contains no undeclared human name or secret, so the operator still inspects before
-committing.
+sanitization, the idempotence rescan operates on the unescaped payload. It decodes
+percent octets and numeric character references in a scratch copy before checking
+again for paths and aliases. Only then does the renderer backslash-escape every
+backslash, backtick, asterisk, underscore, square bracket, and angle bracket in
+Findings, Non-claims, and Unverified prose; it also escapes an opening parenthesis
+immediately after a generated placeholder. Markdown and HTML therefore display those
+characters literally. Commands stay verbatim because the JSON fence already makes
+them literal. Prose punctuation and encoded-looking quoted text are not refusal
+categories. Publication refuses prose only for non-ASCII or control characters,
+unresolved private identifiers, reviewer-written reserved placeholders, and residual
+paths or aliases after sanitization. Schema tags, JSON fences and CLI placeholders are
+structural. The mechanical policy cannot prove that arbitrary prose contains no
+undeclared human name or secret, so the operator still inspects before committing.
 
 The CLI creates the public file only after sanitization and the pre-publication clean
 check, without replacement, staging, or committing. It then requires the same HEAD and

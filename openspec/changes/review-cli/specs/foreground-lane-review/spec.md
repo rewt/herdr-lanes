@@ -69,7 +69,7 @@ the private canonical .lane/reviews/<topic>/<head7>-rN.md and verifying sanitiza
 - **THEN** only whole path-segment/word-boundary matches are replaced with the design's fixed placeholders and counts; substring collisions, protected locations and unsupported payloads refuse exactly as defined there.
 #### Scenario: Verbatim command syntax and escaped prose
 - **WHEN** Re-executed command or witness-command strings contain shell syntax, markup characters or encoded-looking text
-- **THEN** path, alias, ASCII and reserved-placeholder checks still apply, remaining command characters are rendered verbatim inside the public JSON fence, and quoted punctuation in prose is backslash-escaped only after sanitization and idempotence checks on the unescaped payload.
+- **THEN** path, alias, ASCII and reserved-placeholder checks still apply, encoded scratch rescans cannot hide an alias or path, remaining command characters are rendered verbatim inside the public JSON fence, and quoted punctuation and backslashes in prose are backslash-escaped only after sanitization and idempotence checks on the unescaped payload.
 
 ### Requirement: After-check publication boundary
 The complete review command SHALL require successful sanitized public generation

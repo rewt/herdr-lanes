@@ -17,12 +17,13 @@ Write reviewer-authored payload prose in plain ASCII (U+0020 through U+007E), on
 line per field or bullet. Ordinary prose may quote error messages, usage strings, and
 identifiers with backticks, asterisks, underscores, square brackets, or angle brackets;
 write those characters literally. After sanitizing and rescanning the unescaped
-payload, the tool backslash-escapes every backtick, asterisk, underscore, square
-bracket, and angle bracket in public prose so Markdown and HTML render the characters
-literally. Re-executed command and witness-command strings remain verbatim inside the
-public JSON fence. The schema's headings, JSON fences, verdict emphasis, and
-completion marker are structural. Findings use the ASCII separator shown in the
-schema.
+payload, the tool backslash-escapes every backslash, backtick, asterisk, underscore,
+square bracket, and angle bracket in public prose so Markdown and HTML render the
+characters literally. Re-executed command and witness-command strings remain verbatim
+inside the public JSON fence. The schema's headings, JSON fences, verdict emphasis,
+and completion marker are structural. A finding file-and-line value is structural
+rather than prose and keeps the stricter markup and encoding restriction. Findings
+use the ASCII separator shown in the schema.
 
 ## Target and sources
 
@@ -94,7 +95,9 @@ credentials. Prose punctuation is not a refusal: after path and alias sanitizati
 publication refuses prose only for non-ASCII or control characters, unresolved
 private identifiers, reviewer-written reserved placeholders, or residual paths and
 aliases. Re-executed command strings are machine syntax and are rendered verbatim
-inside the JSON fence after required path and alias sanitization.
+inside the JSON fence after required path and alias sanitization. A finding
+file-and-line value is not prose and retains the stricter markup and encoding
+restriction.
 
 ````text
 **PASS**
