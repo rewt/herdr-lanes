@@ -3825,13 +3825,13 @@ test("review sanitizes deterministic aliases and path forms in a bounded public 
   }
 });
 
-test("review path detection preserves slash prose while retaining concrete path and alias safeguards", () => {
+test("review redacts syntax-shaped slash prose while retaining alias safeguards", () => {
   const fixtures = [];
   try {
     const accepted = makeReviewFixture("review-slash-prose", {
       verdict: "PASS",
       payload: {
-        findings: "- [Minor] shared.txt:1 - Regex /plain/giu, /items+/giu, and /( )/giu, phrase / alpha beta /, and URL https://example.invalid/a/b stay literal; Fix: preserve all five tokens",
+        findings: "- [Minor] shared.txt:1 - Patterns /tmp/gimu, /tmp/gimu/private, C:/tmp/gimu, and /alpha/beta/ were reported; Fix: spell patterns in words",
         reexecuted: [{
           command: "printf '%s\\n' $(cat /var/tmp/input.txt) $(type C:\\Temp\\input.txt) $(type \\\\server\\share\\input.txt)",
           cwd: "scratch",
@@ -3852,7 +3852,8 @@ test("review path detection preserves slash prose while retaining concrete path 
     const publicRecord = readFileSync(join(
       accepted.path, "docs", "reviews", "review-slash-prose", `${acceptedHead.slice(0, 7)}-r1.md`,
     ), "utf8");
-    assert.match(publicRecord, /Regex \/plain\/giu, \/items\+\/giu, and \/\( \)\/giu, phrase \/ alpha beta \/, and URL https:\/\/example\.invalid\/a\/b stay literal/);
+    assert.match(publicRecord, /Patterns \[ABS_PATH\], \[ABS_PATH\], \[ABS_PATH\], and \[ABS_PATH\] were reported; Fix: spell patterns in words/);
+    assert.doesNotMatch(publicRecord, /tmp\/gimu|alpha\/beta/);
     assert.match(publicRecord, /The external fixture at \[ABS_PATH\] was not re-executed\./);
     const executions = JSON.parse(publicRecord.match(/## Re-executed\n```json\n(.+)\n```/u)[1]);
     assert.equal(executions[0].command, "printf '%s\\n' $(cat [ABS_PATH]) $(type [ABS_PATH]) $(type [ABS_PATH])");
@@ -3871,9 +3872,87 @@ test("review path detection preserves slash prose while retaining concrete path 
     assert.equal(refusedRun.status, 2, refusedRun.stderr);
     assert.equal(refusedRun.stdout, "");
     assert.match(refusedRun.stderr, /finding description contains a declared private identifier/);
-    negativeControl("concrete review path detection");
+    negativeControl("syntax-shaped slash prose redaction");
   } finally {
     for (const fixture of fixtures) fixture.cleanup();
+  }
+});
+
+test("review redacts an absolute path inside a regex-like character class", () => {
+  const review = makeReviewFixture("review-regex-class-path", {
+    verdict: "PASS",
+    payload: {
+      findings: "- [Minor] shared.txt:1 - Pattern /[open /var/tmp/private.txt]/g was inspected; Fix: spell the pattern in words",
+    },
+  });
+  try {
+    const run = lane(review.fixture, [
+      "review", "review-regex-class-path", "--round", "1", "--brief", review.brief,
+    ]);
+    assert.equal(run.status, 0, run.stderr);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicRecord = readFileSync(join(
+      review.path, "docs", "reviews", "review-regex-class-path", `${head.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    assert.ok(publicRecord.includes("Pattern /\\[open [ABS_PATH]\\][ABS_PATH] was inspected"));
+    assert.doesNotMatch(publicRecord, /var\/tmp\/private/);
+    negativeControl("regex-like character class path redaction");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
+for (const [description, topic, location] of [
+  ["two-segment flag-letter path", "review-location-two-segment-flags", "/tmp/gimu"],
+  ["deeper path with a flag-letter second segment", "review-location-deep-flags", "/tmp/gimu/private.txt"],
+  ["drive path with a flag-letter segment", "review-location-drive-flags", "C:/tmp/gimu"],
+]) {
+  test(`review refuses a ${description} in a protected location`, () => {
+    const review = makeReviewFixture(topic, {
+      verdict: "PASS",
+      payload: { findings: `- [Major] ${location}:1 - issue; Fix: change it` },
+    });
+    try {
+      const run = lane(review.fixture, ["review", topic, "--round", "1", "--brief", review.brief]);
+      assert.equal(run.status, 2, run.stderr);
+      assert.equal(run.stdout, "");
+      const head = git(review.path, ["rev-parse", "HEAD"]);
+      assert.ok(!existsSync(join(review.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`)));
+      negativeControl(`protected ${description}`);
+    } finally {
+      review.fixture.cleanup();
+    }
+  });
+}
+
+test("review preserves a command-substitution delimiter after file URL redaction", () => {
+  const review = makeReviewFixture("review-file-url-delimiter", {
+    verdict: "PASS",
+    payload: {
+      reexecuted: [{
+        command: "printf '%s\\n' $(cat file:///var/tmp/input.txt)",
+        cwd: "scratch",
+        exit_code: 0,
+        result: "The command syntax was inspected without execution.",
+        tests_pass: false,
+        witness: null,
+      }],
+    },
+  });
+  try {
+    const run = lane(review.fixture, [
+      "review", "review-file-url-delimiter", "--round", "1", "--brief", review.brief,
+    ]);
+    assert.equal(run.status, 0, run.stderr);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicRecord = readFileSync(join(
+      review.path, "docs", "reviews", "review-file-url-delimiter", `${head.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    const executions = JSON.parse(publicRecord.match(/## Re-executed\n```json\n(.+)\n```/u)[1]);
+    assert.equal(executions[0].command, "printf '%s\\n' $(cat [ABS_PATH])");
+    negativeControl("file URL command-substitution delimiter");
+  } finally {
+    review.fixture.cleanup();
   }
 });
 
@@ -4592,6 +4671,27 @@ test("review protocol documents settled records, normalized boundaries, and cons
     assert.match(spec, /record settle/iu);
   }
   negativeControl("review boundary protocol documentation");
+});
+
+test("review protocol documents asymmetric path redaction and spaced-path refusal", () => {
+  const reference = readFileSync(join(HERE, "..", "docs", "REFERENCE.md"), "utf8");
+  const template = readFileSync(join(HERE, "..", "docs", "REVIEW_TEMPLATE.md"), "utf8");
+  const design = readFileSync(join(HERE, "..", "openspec", "changes", "review-cli", "design.md"), "utf8");
+  const currentSpec = readFileSync(join(
+    HERE, "..", "openspec", "specs", "foreground-lane-review", "spec.md",
+  ), "utf8");
+  const deltaSpec = readFileSync(join(
+    HERE, "..", "openspec", "changes", "review-cli", "specs", "foreground-lane-review", "spec.md",
+  ), "utf8");
+  for (const document of [reference, design]) {
+    assert.match(document, /regex literals and\s+slash-delimited phrases[^.]*may be replaced[^.]*absolute-path\s+placeholder/iu);
+    assert.match(document, /- Ambiguous spaced path:/u);
+  }
+  for (const spec of [currentSpec, deltaSpec]) {
+    assert.match(spec, /regex literals and\s+slash-delimited phrases[^.]*may be replaced[^.]*absolute-path\s+placeholder/iu);
+  }
+  assert.match(template, /ambiguous spaced path[^.]*public-safe words[^.]*separate fields/iu);
+  negativeControl("asymmetric path-redaction documentation");
 });
 
 test("review preflight requires ignored private and trackable absent public paths", () => {

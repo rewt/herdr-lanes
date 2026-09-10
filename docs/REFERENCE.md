@@ -532,18 +532,26 @@ docs/reviews/<topic>/<head7>-r<N>.md
 Every projected string is NFC-normalized. Proven paths inside the reviewed repository
 become repository-relative first. Other contiguous absolute POSIX tokens, drive-letter
 paths, UNC paths, and file URLs matched by the concrete path pattern become
-`[ABS_PATH]`. Before applying that pattern, the checker skips complete JavaScript
-regex-literal tokens with flags, so plain and quantifier-ending regex bodies remain
-literal. Shell command-substitution delimiters remain literal, but their bodies and
-any trailing path text are scanned normally; POSIX, drive-letter, and UNC paths there
-are sanitized. Slash-delimited prose and non-file URL-like tokens also remain literal.
-The checker does not infer a path by scanning from one slash across whitespace to
-another. After repository paths are converted, an absolute-path match followed by a
-space starts an ambiguity scan across subsequent whitespace-delimited tokens. The scan
-continues across separator-free tokens and stops at the end or at another concrete
-absolute-path token, which is sanitized independently. If a non-absolute token with a
-slash or backslash appears first, publication refuses rather than exposing a possible
-spaced-path suffix. Case-insensitive whole path-segment or Unicode
+`[ABS_PATH]`. There is no syntax exemption from that matcher. Regex literals and
+slash-delimited phrases in public prose may be replaced by the absolute-path
+placeholder; reviewers should spell patterns in words. This over-redaction is
+acceptable, and a matching regex literal is replaced rather than causing a refusal.
+Shell command-substitution delimiters remain literal, but their bodies and any trailing
+path text are scanned normally. Non-file URL-like tokens remain literal when the
+concrete matcher does not match them. After repository paths are converted, an
+absolute-path match followed by a space starts an ambiguity scan across subsequent
+whitespace-delimited tokens. The scan continues across separator-free tokens and stops
+at the end or at another concrete absolute-path token, which is sanitized
+independently. If a non-absolute token with a slash or backslash appears first,
+publication refuses rather than exposing a possible spaced-path suffix.
+
+The path-specific refusal is:
+
+- Ambiguous spaced path: after repository-path conversion, a concrete absolute-path
+  match followed by spaces reaches a non-absolute separator-bearing token before the
+  end or another independently sanitizable absolute path.
+
+Case-insensitive whole path-segment or Unicode
 word-boundary matches for the current OS username/home basename, hostname/full first
 label, and declared private identifiers become `[USER]`, `[HOST]`, and `[PRIVATE]`.
 Matches run longest-first; equal aliases use user, then host, then private precedence.

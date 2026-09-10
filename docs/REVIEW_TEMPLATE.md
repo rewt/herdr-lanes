@@ -98,6 +98,9 @@ aliases. Re-executed command strings are machine syntax and are rendered verbati
 inside the JSON fence after required path and alias sanitization. A finding
 file-and-line value is not prose and retains the stricter markup and encoding
 restriction.
+Spell regex patterns in words, and if a concrete absolute path is followed later in
+the same field by a separator-bearing token, avoid the ambiguous spaced path refusal
+by rewriting the path in public-safe words or putting independent paths in separate fields.
 
 ````text
 **PASS**

@@ -6,12 +6,10 @@ Status: READY for final commit and the required post-commit `lane check`.
 
 - Removed the whitespace-spanning slash heuristic from public sanitization. Absolute
   path handling now uses only the concrete matcher for contiguous POSIX tokens, file
-  URLs, drive-letter paths, and UNC paths. Its POSIX start boundary also excludes a
-  slash immediately following common JavaScript regex-closing delimiters.
-- A finding description containing a JavaScript regex literal with flags, a
-  slash-delimited phrase, and an HTTPS-like token now validates and projects those
-  forms literally. A real external absolute path still becomes `[ABS_PATH]`, and a
-  declared identifier in finding prose still refuses publication.
+  URLs, drive-letter paths, and UNC paths, without a syntax exemption. Regex literals
+  and slash-delimited phrases may therefore become `[ABS_PATH]` while the record still
+  publishes; reviewers should spell patterns in words. A declared identifier in
+  finding prose still refuses publication.
 - After the completion marker appears, review now requires the private record's size
   and modification time to remain unchanged for two continuous seconds. Any change
   resets the interval. The command then re-reads the bytes with metadata checks
@@ -57,11 +55,10 @@ read. The final clean-commit gate remains conversation-only evidence.
 
 ## Round 2 corrections
 
-- Restored the concrete POSIX start boundary after `)`, `]`, and `}`. Complete
-  JavaScript regex-literal tokens with flags and shell command-substitution tokens
-  are skipped as syntax instead, so plain and quantifier-ending regex bodies project
-  literally while protected locations containing delimiter-following absolute paths
-  refuse.
+- Round 2 restored the concrete POSIX start boundary after `)`, `]`, and `}` by
+  temporarily skipping complete JavaScript regex-literal and shell
+  command-substitution tokens. Round 4 supersedes that historical approach; the
+  current sanitizer has no syntax exemption.
 - Reintroduced a narrow ambiguity refusal: when a concrete absolute-path match is
   followed by a space and the next whitespace-delimited token still contains a path
   separator, publication stops instead of exposing a possible spaced-path suffix.
@@ -91,11 +88,10 @@ read. The final clean-commit gate remains conversation-only evidence.
 
 ## Round 3 corrections
 
-- Simplified syntax handling to exempt only complete JavaScript regex literals. A
-  candidate now ends at its first unescaped slash, so an external POSIX path ending
-  in a flag-letter segment cannot be mistaken for regex syntax. Shell
-  command-substitution delimiters remain literal while their bodies and trailing path
-  text are sanitized; fixtures cover POSIX, drive-letter, and UNC paths inside them.
+- Removed opaque shell command-substitution skipping while retaining a narrower regex
+  exemption at that round. Round 4 supersedes that exemption with unconditional
+  concrete path matching because syntax-shaped paths remained ambiguous. Shell
+  command-substitution bodies and trailing path text continue to be sanitized.
 - Moved spaced-path ambiguity detection after repository-root conversion. Its
   continuation scan now crosses any number of separator-free tokens, stops at an
   independently sanitizable absolute path, and refuses a separator-bearing suffix.
@@ -116,6 +112,40 @@ read. The final clean-commit gate remains conversation-only evidence.
 - Strict OpenSpec validation passed all 19 items. `git diff --check` and the added-line
   public-text scan passed. Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0,
   and OpenSpec 1.6.0. No Unix-socket `listen EPERM` occurred.
+- No live reviewer/Herdr mutation, alternate operating system, push, promotion,
+  archive, board-code edit, or change under `docs/reviews/` was performed. The final
+  commit and single post-commit gate are recorded in the operator conversation.
+
+## Round 4 corrections
+
+- Removed the regex-literal scanner and the syntax-range replacement helper. All
+  non-placeholder text now passes directly through the concrete absolute-path
+  matcher; the already-removed command-substitution helper remains absent. This
+  removes 60 net lines from `lane.mjs` (10 additions and 70 deletions).
+- Adopted asymmetric sanitization: matching regex literals and slash-delimited phrases
+  may become `[ABS_PATH]`, but they do not refuse an otherwise valid record. Reviewers
+  are directed to spell patterns in words. Shell command bodies remain scanned, while
+  their remaining syntax stays verbatim inside the public JSON fence.
+- Removed parentheses from the file-URL path class so redaction inside `$()` preserves
+  the closing delimiter. Kept the settle window, timeout floor, compact blank-boundary
+  matrix, post-repository-conversion ambiguity ordering, and multi-token continuation
+  scan unchanged.
+- Added independently controlled fixtures for two-segment and deeper flag-letter POSIX
+  paths, a drive-letter flag segment, an external path inside a regex-like character
+  class, protected finding locations, slash-phrase over-redaction, and a file URL in a
+  command substitution. REFERENCE and design again list the ambiguous spaced-path
+  refusal, and the template gives its public-safe alternative.
+- Before production changes, the seven-test focus produced four expected failures and
+  three already-safe coverage passes in 16.245 seconds. After implementation and two
+  test-expectation corrections for documented line wrapping and intentional double
+  over-redaction, all seven passed in 18.853 seconds. Every test retains its own
+  deliberate `negativeControl`.
+- Baseline `npm test` passed 129/129 with zero skips in 227.816 seconds. Final
+  `npm test` passed 135/135 with zero skips in 242.151 seconds. The final
+  `LANE_TEST_NEGATIVE_CONTROL=1 npm test` produced zero passes and all 135 deliberate
+  failures in 236.331 seconds.
+- Strict OpenSpec validation passed all 19 items. Verification used Node.js 20.19.4,
+  npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No Unix-socket `listen EPERM` occurred.
 - No live reviewer/Herdr mutation, alternate operating system, push, promotion,
   archive, board-code edit, or change under `docs/reviews/` was performed. The final
   commit and single post-commit gate are recorded in the operator conversation.

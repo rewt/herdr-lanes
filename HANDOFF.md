@@ -916,11 +916,9 @@ Living log for agents maintaining this repository. Newest entry last.
 
 ## 2026-09-10 — review CLI precise paths Round 2 corrections
 
-- Replaced the closing-delimiter boundary exclusion with complete regex-literal and
-  command-substitution token skipping. Absolute POSIX paths following `)`, `]`, or
-  `}` are detected again; plain and quantifier regex literals remain literal, while
-  file URLs, drive paths, UNC paths, contiguous POSIX paths, and alias rescans retain
-  their existing handling.
+- Round 2 replaced the closing-delimiter boundary exclusion with temporary
+  regex-literal and command-substitution token skipping. Round 4 supersedes that
+  historical approach; the current sanitizer has no syntax exemption.
 - Added a narrow refusal for a concrete absolute-path match followed by a space and a
   next whitespace token containing a slash or backslash. Raised the explicit review
   timeout minimum to three seconds and corrected the design's settle-before-validation
@@ -944,10 +942,10 @@ Living log for agents maintaining this repository. Newest entry last.
 
 ## 2026-09-10 — review CLI precise paths Round 3 corrections
 
-- Removed opaque shell command-substitution skipping and made regex candidates stop
-  at their first unescaped slash. POSIX, drive-letter, and UNC paths inside command
-  substitutions are now sanitized, and an external path ending in a regex flag-letter
-  segment is detected in protected locations.
+- Removed opaque shell command-substitution skipping while retaining a narrower regex
+  exemption at that round. Round 4 supersedes that exemption with unconditional
+  concrete path matching because syntax-shaped paths remained ambiguous. POSIX,
+  drive-letter, and UNC paths inside command substitutions remain sanitized.
 - Extended spaced-path ambiguity checks across separator-free tokens and moved them
   after repository-root conversion. Separator-bearing suffixes refuse, while adjacent
   in-repository absolute paths convert independently. REFERENCE, design, delta, and
@@ -963,6 +961,32 @@ Living log for agents maintaining this repository. Newest entry last.
   serialized after clear process probes.
 - `git diff --check` and the added-line public-text scan passed. Verification used
   Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No Unix-socket
+  `listen EPERM` occurred.
+- No live reviewer/Herdr mutation, alternate host, push, promotion, archive,
+  board-code edit, or `docs/reviews/` change was performed. The final commit and
+  single post-commit gate remain conversation-only evidence.
+
+## 2026-09-10 — review CLI precise paths Round 4 corrections
+
+- Deleted the regex-literal scanner and syntax-range replacement helper, leaving the
+  previously removed command-substitution helper absent. Every non-placeholder string
+  now uses the concrete absolute-path matcher directly, removing 60 net lines from
+  `lane.mjs` (10 additions and 70 deletions).
+- Matching regex literals and slash-delimited phrases may over-redact to `[ABS_PATH]`
+  without refusing the record; reviewers should spell patterns in words. Parentheses
+  were removed from the file-URL class so `$()` delimiters remain intact. Existing
+  settle, timeout, blank-boundary, ambiguity-ordering, and continuation behavior stays.
+- Added separately negative-controlled coverage for syntax-shaped two-segment, deeper,
+  drive-letter, character-class, protected-location, slash-phrase, and file-URL forms.
+  The seven-test pre-change focus failed four new expectations while three already-safe
+  controls passed in 16.245 seconds; all seven passed after correction in 18.853 seconds.
+- Baseline `npm test` passed 129/129 in 227.816 seconds. Final `npm test` passed
+  135/135 with zero skips in 242.151 seconds; all 135 deliberate controls failed with
+  zero passes in 236.331 seconds. Strict OpenSpec validation passed 19/19. Runs were
+  serialized after clear process probes.
+- REFERENCE, the review template, design, delta, current spec, and implementation
+  report document the asymmetric rule and ambiguous spaced-path refusal. Verification
+  used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No Unix-socket
   `listen EPERM` occurred.
 - No live reviewer/Herdr mutation, alternate host, push, promotion, archive,
   board-code edit, or `docs/reviews/` change was performed. The final commit and

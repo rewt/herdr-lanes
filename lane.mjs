@@ -1643,71 +1643,11 @@ function containsAlias(value, aliases) {
 }
 
 function absolutePathPattern() {
-  return /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]+/giu;
-}
-
-function regexLiteralTokenEnd(value, start) {
-  if (value[start] !== "/" || value[start + 1] === "/") return undefined;
-  const before = value[start - 1];
-  if (before !== undefined && /[-\p{L}\p{M}\p{N}_.\/\\]/u.test(before)) return undefined;
-  let escaped = false;
-  let inCharacterClass = false;
-  for (let index = start + 1; index < value.length; index += 1) {
-    const character = value[index];
-    if (character === "\n" || character === "\r") return undefined;
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (character === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (character === "[") {
-      inCharacterClass = true;
-      continue;
-    }
-    if (character === "]" && inCharacterClass) {
-      inCharacterClass = false;
-      continue;
-    }
-    if (character !== "/" || inCharacterClass) continue;
-    let end = index + 1;
-    const flags = new Set();
-    while (end < value.length && /[dgimsuvy]/u.test(value[end]) && !flags.has(value[end])) {
-      flags.add(value[end]);
-      end += 1;
-    }
-    if (flags.size === 0) return undefined;
-    if (end < value.length && /[\p{L}\p{M}\p{N}_]/u.test(value[end])) return undefined;
-    return end;
-  }
-  return undefined;
-}
-
-function replaceOutsidePathSyntax(value, replace) {
-  const ranges = [];
-  for (let index = 0; index < value.length;) {
-    const end = regexLiteralTokenEnd(value, index);
-    if (end === undefined) {
-      index += 1;
-      continue;
-    }
-    ranges.push([index, end]);
-    index = end;
-  }
-  let cursor = 0;
-  let output = "";
-  for (const [start, end] of ranges) {
-    output += replace(value.slice(cursor, start)) + value.slice(start, end);
-    cursor = end;
-  }
-  return output + replace(value.slice(cursor));
+  return /file:\/\/\/[A-Za-z0-9._~!$&'+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]+/giu;
 }
 
 function replaceConcreteAbsolutePaths(value, replace) {
-  return replaceOutsidePlaceholders(value, (part) =>
-    replaceOutsidePathSyntax(part, (candidate) => candidate.replace(absolutePathPattern(), replace)));
+  return replaceOutsidePlaceholders(value, (part) => part.replace(absolutePathPattern(), replace));
 }
 
 function containsConcreteAbsolutePath(value) {
@@ -1721,15 +1661,15 @@ function containsConcreteAbsolutePath(value) {
 
 function containsAmbiguousAbsolutePath(value) {
   let found = false;
-  replaceOutsidePlaceholders(value, (part) => replaceOutsidePathSyntax(part, (candidate) => {
-    for (const match of candidate.matchAll(absolutePathPattern())) {
+  replaceOutsidePlaceholders(value, (part) => {
+    for (const match of part.matchAll(absolutePathPattern())) {
       let cursor = match.index + match[0].length;
-      while (candidate[cursor] === " ") {
-        while (candidate[cursor] === " ") cursor += 1;
+      while (part[cursor] === " ") {
+        while (part[cursor] === " ") cursor += 1;
         let end = cursor;
-        while (end < candidate.length && !/\s/u.test(candidate[end])) end += 1;
+        while (end < part.length && !/\s/u.test(part[end])) end += 1;
         if (end === cursor) break;
-        const token = candidate.slice(cursor, end);
+        const token = part.slice(cursor, end);
         if (/[\\/]/u.test(token)) {
           if (!containsConcreteAbsolutePath(token)) found = true;
           break;
@@ -1737,8 +1677,8 @@ function containsAmbiguousAbsolutePath(value) {
         cursor = end;
       }
     }
-    return candidate;
-  }));
+    return part;
+  });
   return found;
 }
 

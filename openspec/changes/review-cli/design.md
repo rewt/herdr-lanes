@@ -221,17 +221,19 @@ Tests inject these exact OS values so host fixtures remain deterministic.
 First convert paths proven inside the reviewed repository to repository-relative
 paths. Replace other contiguous absolute POSIX tokens, drive-letter paths, UNC paths,
 and file URLs matched by the concrete absolute-path pattern, including their private
-segments. Skip complete JavaScript regex-literal tokens with flags before applying
-that pattern; regex bodies with plain or quantifier endings remain literal. Shell
-command-substitution delimiters remain literal, but neither their bodies nor trailing
-path text are exempt from path sanitization. Do not infer a path by scanning from one
-slash across whitespace to another. Slash-delimited prose and non-file URL-like tokens
-also remain literal. After repository-path conversion, if a concrete absolute-path
-match is immediately followed by a space, scan subsequent whitespace-delimited tokens
-while they remain separator-free. Stop at the end or at another concrete absolute-path
-token, which will be sanitized independently; refuse if a non-absolute token containing
-a slash or backslash is reached first rather than publish a partially redacted suffix.
-Then redact aliases, matching case-
+segments. There is no syntax exemption from the concrete matcher. Regex literals and
+slash-delimited phrases in public prose may be replaced by the absolute-path
+placeholder; this over-redaction is acceptable because publishing a path is not, and
+reviewers should spell patterns in words. A regex literal that matches is replaced
+rather than refused. Shell command-substitution delimiters remain literal, but neither
+their bodies nor trailing path text are exempt from path sanitization. Non-file
+URL-like tokens remain literal when the concrete matcher does not match them. After
+repository-path conversion, if a concrete absolute-path match is immediately followed
+by a space, scan subsequent whitespace-delimited tokens while they remain
+separator-free. Stop at the end or at another concrete absolute-path token, which will
+be sanitized independently; refuse if a non-absolute token containing a slash or
+backslash is reached first rather than publish a partially redacted suffix. Then
+redact aliases, matching case-
 insensitively at whole path segments (delimited by slash/backslash or string ends)
 or Unicode word boundaries (adjacent characters must not be letters, combining
 marks or numbers; underscore is therefore a boundary). Never substring-replace a username inside an
@@ -258,6 +260,9 @@ payload text to hide a value.
 
 The following are concrete refusal triggers, before writing any public file:
 
+- Ambiguous spaced path: after repository-path conversion, a concrete absolute-path
+  match followed by spaces reaches a non-absolute separator-bearing token before the
+  end or another independently sanitizable absolute path.
 - Ambiguous aliases: after deduplication, one remaining declared token is a proper
   case-insensitive substring of another declared token. Do not guess which identity
   was intended. Known nested automatic hostname aliases use the longest-first rule.
