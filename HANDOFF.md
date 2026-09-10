@@ -759,3 +759,29 @@ Living log for agents maintaining this repository. Newest entry last.
 - No live reviewer/Herdr mutation, alternate host, push, promotion, archive, or
   `docs/reviews/` edit was performed. The final clean-commit gate remains
   conversation-only evidence.
+
+## 2026-09-10 — board actions and CLI-client UI
+
+- Added verified `lane board focus <row-id>` and `done <row-id>` actions. Focus
+  refreshes the recorded server and refuses missing, replacement, stale, or foreign
+  occupants before one non-retried Herdr call; done verifies canonical registered
+  metadata and writes only the atomic display completion marker.
+- Rewired the unchanged table/navigation onto one foreground CLI observation process
+  and one CLI child per explicit action. Split/batched JSON, malformed frames, child
+  errors, one-call action routing, and permanent quit during reconnect/refresh are
+  covered without direct UI Git, target-file, registry, or Herdr socket imports.
+- Applied the operator-approved A3 replacement verbatim to the Product contract in
+  `AGENTS.md`; no other amendment was applied. README, REFERENCE, CLI usage, current
+  OpenSpec, completed task, and `docs/reports/board-actions.md` are synchronized.
+- Baseline `npm test` passed 115/115. Five focused product groups failed before
+  implementation; the socket-backed focus case initially hit sandbox `listen EPERM`
+  and passed outside that restriction. The affected set later passed 7/7. Before the
+  upstream sync the full suite passed 121/121 and all 121 deliberate controls failed.
+- Rebased cleanly onto advanced main `a7b0ac7`, retaining its HANDOFF entries first.
+  The rebased suite passed 126/126 with zero skips in 113.226 seconds; the seven
+  affected deliberate controls all failed in 1.433 seconds; strict OpenSpec passed
+  19/19. Runs were serialized after clear probes. Verified Node.js v20.19.4, npm
+  10.8.2, Git 2.54.0, Herdr 0.8.2, and OpenSpec 1.6.0.
+- No real-TTY UI or live-Herdr mutation was available; both are explicit skips. No
+  alternate host, push, promotion, archive, independent review, or `docs/reviews/`
+  edit was performed. The final clean-commit gate remains conversation-only evidence.

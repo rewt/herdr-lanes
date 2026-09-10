@@ -121,7 +121,7 @@ rebases automatically when clean and refuses with a file list when conflicts exi
 | `lane check [--cmd <validate command>]` | Record validation against this worktree's HEAD |
 | `lane promote <topic>` | Rebase, validate, and fast-forward local main |
 | `lane close <topic>` | Remove and delete or archive a lane |
-| `lane board [--once \| --json \| --watch --json] [--repo <path>]` | Open the UI, print a snapshot, or stream JSON snapshots |
+| `lane board [--once \| --json \| --watch --json \| focus <row-id> \| done <row-id>] [--repo <path>]` | Open the UI, observe sessions, focus one, or mark one done |
 | `lane seams [pattern]` | List work that can be resumed |
 | `lane prepare <topic>` | Run missing setup steps |
 | `lane rebase-check <topic>` | Check whether promotion will conflict |
@@ -152,6 +152,8 @@ lane board
 lane board --once
 lane board --json
 lane board --watch --json --repo /path/to/your-repository
+lane board focus <row-id> --repo /path/to/your-repository
+lane board done <row-id> --repo /path/to/your-repository
 ```
 
 Run the interactive view in a Herdr pane; use `--once` for a plain snapshot,
@@ -164,6 +166,12 @@ per-session files in `<registry>.d/`. Board completion and successful `lane clos
 atomic done markers; this metadata is display-only and never controls validation,
 promotion, scheduling, retries, or deletion. A report is incomplete without the
 `GATE` line printed by `lane check`.
+The interactive table consumes one foreground `lane board --watch --json` process;
+Enter or `a` runs the verified focus action, `d` runs the verified done action, and
+`r` restarts only the observation process. Focus refreshes the recorded session on
+its stored Herdr server before targeting its current agent or pane. Done accepts only
+canonical registered rows and changes only their completion marker. Neither action
+is retried or replayed during observation reconnection.
 Run `lane check` again after the last commit; before handoff, the board's `GATE`
 column must read `exit=0 @<head7>` against the lane's current HEAD.
 

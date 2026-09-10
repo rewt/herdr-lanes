@@ -203,15 +203,18 @@ following read interfaces use only Node.js built-ins:
 lane board --once [--repo <path>]
 lane board --json [--repo <path>]
 lane board --watch --json [--repo <path>]
+lane board focus <row-id> [--repo <path>]
+lane board done <row-id> [--repo <path>]
 ```
 
 `--once` prints the existing columns without ANSI styling. `--json` prints exactly
 one compact schema-v1 JSON document. `--watch --json` stays in the foreground and
 prints one complete schema-v1 document per line for the initial sample and observed
 changes. Diagnostics use stderr and never interrupt JSON framing. The watch creates
-no daemon, job, or persistent observation cache. Duplicate options, unknown flags,
-extra operands, missing `--repo` values, `--once` combined with a JSON mode, and
-`--watch` without `--json` are rejected before observation.
+no daemon, job, or persistent observation cache. Duplicate options, unknown flags or
+actions, extra operands, missing action row IDs, missing `--repo` values, `--once`
+combined with a JSON mode, and `--watch` without `--json` are rejected before
+observation or action.
 
 Without `--repo`, all modes use the current repository. `--repo` resolves from the
 invoking directory, identifies the selected repository by its canonical Git common
@@ -220,10 +223,27 @@ layered configuration. Repository paths are passed as arguments rather than shel
 text.
 
 From a linked worktree, every board mode retargets the canonical checkout. The
-interactive child receives the resolved main branch and inherited registry
-explicitly, while descendant lane commands retain normal layered configuration
-resolution. Plain and JSON service orchestration belongs to `lane.mjs`; the
-interactive application retains its existing imported board services.
+interactive child receives the canonical repository path, then acquires every
+observation through one foreground `lane board --watch --json` child of its own
+installation. Focus and done each use a separate argument-array CLI child. The UI
+does not import target-file, Git, registry, or Herdr socket control services, and
+descendant lane commands retain normal layered configuration resolution.
+
+`focus` first reloads the exact registered `row_id`, requires its canonical
+repository metadata and open lane worktree, and requests one fresh snapshot from the
+recorded server. The current workspace must still identify the same Git common
+directory, canonical checkout, linked checkout, workspace, pane, and agent when a
+name is available. A live unnamed occupant is focused by pane ID. Missing, replaced,
+stale, or foreign occupants fail without invoking focus. A successful action invokes
+`herdr agent focus` once with `HERDR_SOCKET_PATH` set to the recorded server; failures
+are not retried.
+
+`done` reloads the exact registered `row_id`, applies the normal repository-local,
+gitignored, untracked and no-symlink registry policy, and verifies that the session's
+repository ID and canonical path match the selected repository. Unregistered,
+legacy-without-canonical-metadata, and foreign rows fail without a write. Success
+atomically writes only `<registry>.d/<session-id>.done.json`; it does not change Git,
+gate, validation, promotion, scheduling, or lifecycle state.
 
 ### JSON schema v1
 
@@ -309,13 +329,17 @@ The `GATE` column reads `<lane worktree>/.lane/gate.json` and compares its full
 A failed prepare step writes no new gate, so the prior gate remains missing, stale,
 or tied to its earlier head.
 
-Interactive keys are arrow keys or `j`/`k` to select, `a` to display `herdr agent
-attach <name>`, `d` to atomically set the selected registry entry's `done` field,
-`r` to refresh, and `q` to quit. It redraws for subscribed events and on a five-second
-host/git/report tick; there is no busy loop. Herdr sets `HERDR_SOCKET_PATH` inside its
-panes. Outside Herdr, `--once` degrades to offline status while retaining git, report,
-deadline, and host data. `TRIPWIRE` and `LAST OUTPUT` are live-only columns populated
-by interactive subscriptions, so they display `-` under `--once`.
+Interactive keys are arrow keys or `j`/`k` to select, Enter or `a` to run verified
+focus, `d` to run verified completion, `r` to restart only the foreground observation
+child, and `q` to quit. The CLI watch redraws the table for subscribed events and on
+a five-second host/git/report tick; there is no busy loop. Split or batched JSON lines
+are framed before rendering. Child diagnostics and action refusals appear in the
+table status line. Quit, EOF, signals, render failure, or unmount permanently stop the
+observer, reconnect timer, and pending action children; late output cannot restart an
+observer or replay an action. Herdr sets `HERDR_SOCKET_PATH` inside its panes. Outside
+Herdr, `--once` degrades to offline status while retaining git, report, deadline, and
+host data. `TRIPWIRE` and `LAST OUTPUT` are live-only columns populated by interactive
+subscriptions, so they display `-` under `--once`.
 
 ## Workspace setup
 

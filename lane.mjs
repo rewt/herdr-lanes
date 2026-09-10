@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   loadRegistry,
+  markSessionDone,
   markTopicSessionsDone,
   newSessionId,
   registryDirectoryFor,
@@ -37,26 +38,43 @@ import {
   joinBoardRows,
   renderPlainBoard,
 } from "./board/board.mjs";
+import { verifyCanonicalSession, verifyFocusSelection } from "./board/actions.mjs";
 import { HerdrClient, herdrSocketPath } from "./board/herdr-client.mjs";
 
 const IS_REVIEW_COMMAND = process.argv[2] === "review";
 const CALLER_CWD = process.cwd();
-const BOARD_USAGE = "usage: lane board [--once | --json | --watch --json] [--repo <path>]";
+const BOARD_USAGE = "usage: lane board [--once | --json | --watch --json | focus <row-id> | done <row-id>] [--repo <path>]";
 let stopBoardObservation;
 
 function parseBoardArguments(args) {
   const seen = new Set();
   let repo;
+  let action;
+  let rowId;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
+    if (argument === "focus" || argument === "done") {
+      if (action !== undefined || seen.size > 0) throw new Error(BOARD_USAGE);
+      action = argument;
+      continue;
+    }
+    if (action !== undefined && rowId === undefined && !argument.startsWith("--")) {
+      rowId = argument;
+      continue;
+    }
     if (!["--once", "--json", "--watch", "--repo"].includes(argument)) {
+      if (!argument.startsWith("--")) throw new Error(BOARD_USAGE);
       throw new Error(`${BOARD_USAGE} (unknown option or operand: ${argument})`);
     }
-    if (seen.has(argument)) throw new Error(`${BOARD_USAGE} (duplicate option: ${argument})`);
+    if (seen.has(argument)) {
+      if (action !== undefined) throw new Error(BOARD_USAGE);
+      throw new Error(`${BOARD_USAGE} (duplicate option: ${argument})`);
+    }
     seen.add(argument);
     if (argument === "--repo") {
       const value = args[index + 1];
       if (value === undefined || value === "" || value.startsWith("--")) {
+        if (action !== undefined) throw new Error(BOARD_USAGE);
         throw new Error(`${BOARD_USAGE} (--repo requires a path)`);
       }
       repo = value;
@@ -66,6 +84,14 @@ function parseBoardArguments(args) {
   const once = seen.has("--once");
   const json = seen.has("--json");
   const watch = seen.has("--watch");
+  if (action !== undefined) {
+    if (rowId === undefined || once || json || watch) throw new Error(BOARD_USAGE);
+    return {
+      mode: action,
+      rowId,
+      repo: repo === undefined ? undefined : resolve(CALLER_CWD, repo),
+    };
+  }
   if ((once && json) || (once && watch) || (watch && !json)) {
     throw new Error(`${BOARD_USAGE} (contradictory output modes)`);
   }
@@ -2145,6 +2171,66 @@ function boardDocument(state) {
   });
 }
 
+function registeredBoardSession(rowId, action) {
+  const loaded = loadRegistry(REPO_ROOT, CONFIG);
+  const matches = loaded.sessions.filter((session) => session.session_id === rowId);
+  if (matches.length !== 1) {
+    throw new Error(`board row ${rowId} is not a registered session; ${action} is unsupported`);
+  }
+  return matches[0];
+}
+
+function canonicalBoardSession(rowId, action) {
+  const session = registeredBoardSession(rowId, action);
+  return verifyCanonicalSession(session, {
+    repoId: REPO_IDENTITY,
+    repoRoot: REPO_ROOT,
+    samePath,
+  });
+}
+
+async function focusBoardSession(rowId) {
+  const session = canonicalBoardSession(rowId, "focus");
+  const branch = typeof session.lane === "string" && session.lane.startsWith(LANE_PREFIX)
+    ? session.lane
+    : undefined;
+  if (branch === undefined) throw new Error("board row has no verified lane branch; focus is unsupported");
+  const checkout = worktreeFor(branch);
+  if (checkout === undefined) throw new Error("stale board selection: selected lane worktree is no longer open");
+  const client = new HerdrClient({ socketPath: session.server, requestTimeoutMs: 500 });
+  let snapshot;
+  try {
+    snapshot = await client.snapshot();
+  } catch (error) {
+    throw new Error(`cannot refresh selected Herdr session: ${error.message}`);
+  } finally {
+    client.close();
+  }
+  const selected = verifyFocusSelection({
+    session,
+    snapshot,
+    repoId: REPO_IDENTITY,
+    repoRoot: REPO_ROOT,
+    checkout,
+    samePath,
+  });
+  const run = spawnSync("herdr", ["agent", "focus", selected.target], {
+    encoding: "utf8",
+    env: { ...process.env, HERDR_SOCKET_PATH: selected.server },
+  });
+  if (run.status !== 0) {
+    throw new Error(`Herdr focus failed for ${selected.name ?? selected.pane}`);
+  }
+  process.stdout.write(`focused ${selected.name ?? selected.pane} (${rowId})\n`);
+}
+
+function completeBoardSession(rowId) {
+  const registryPath = preflightRegistryAutomation({ create: false });
+  canonicalBoardSession(rowId, "done");
+  markSessionDone(registryPath, rowId, { repoRoot: REPO_ROOT });
+  process.stdout.write(`marked ${rowId} done\n`);
+}
+
 function writeBoardJson(state) {
   process.stdout.write(`${JSON.stringify(boardDocument(state))}\n`);
 }
@@ -2242,6 +2328,15 @@ async function watchBoard() {
 }
 
 async function board(options) {
+  if (options.mode === "focus" || options.mode === "done") {
+    try {
+      if (options.mode === "focus") await focusBoardSession(options.rowId);
+      else completeBoardSession(options.rowId);
+    } catch (error) {
+      fail(error.message);
+    }
+    return;
+  }
   if (options.mode === "watch-json") {
     await watchBoard();
     return;
@@ -2276,8 +2371,6 @@ async function board(options) {
   }
   const boardArgs = [
     "--repo", REPO_ROOT,
-    "--main", MAIN,
-    "--registry", CONFIG.registry ?? ".lane/sessions.json",
   ];
   const boardEnvironment = EXPLICIT_CONFIG
     ? { ...process.env, LANE_CONFIG: CONFIG_LAYERS[0].file }
@@ -2417,9 +2510,10 @@ switch (command) {
         `  status           list open lanes vs ${MAIN}\n` +
         "  check [--cmd <validate command>]\n" +
         "                   validate this clean worktree and record its HEAD gate\n" +
-        "  board [--once | --json | --watch --json] [--repo <path>]\n" +
-        "                   open the interactive board, print one plain/JSON snapshot,\n" +
-        "                   or stream foreground newline-delimited JSON snapshots\n" +
+        "  board [--once | --json | --watch --json | focus <row-id> | done <row-id>]\n" +
+        "        [--repo <path>]\n" +
+        "                   open the UI, observe sessions, focus a verified live row,\n" +
+        "                   or mark a verified registered row done\n" +
         `  promote <topic>  validate then fast-forward ${MAIN} (clean + rebased + green only)\n` +
         "  close <topic>    remove worktree; delete merged branch or archive-tag unmerged;\n" +
         "                   mark matching display sessions done after git succeeds\n",

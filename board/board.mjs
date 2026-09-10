@@ -8,34 +8,18 @@ import { basename, isAbsolute, resolve } from "node:path";
 
 import { HerdrClient } from "./herdr-client.mjs";
 import { loadRegistry } from "./registry.mjs";
+import {
+  renderPlainBoard,
+} from "./view.mjs";
 
 export { loadRegistry, markSessionDone } from "./registry.mjs";
-
-const TABLE_COLUMNS = [
-  ["NAME", "name", 20],
-  ["ROLE", "role", 10],
-  ["LANE", "lane", 18],
-  ["STATUS", "status", 8],
-  ["PANE", "pane", 9],
-  ["GIT", "git", 10],
-  ["GATE", "gate", 17],
-  ["REPORT", "report", 20],
-  ["DEADLINE", "deadline", 12],
-  ["TRIPWIRE", "tripwire", 14],
-  ["LAST OUTPUT", "output", 28],
-  ["DONE", "done", 4],
-];
-const WIDE_TABLE_WIDTH = TABLE_COLUMNS.reduce((total, [, , width]) => total + width, 0)
-  + TABLE_COLUMNS.length - 1;
-
-function truncate(value, width) {
-  const text = `${value ?? "-"}`.replaceAll(/\s+/gu, " ").trim() || "-";
-  return text.length <= width ? text : `${text.slice(0, Math.max(1, width - 1))}…`;
-}
-
-function pad(value, width) {
-  return truncate(value, width).padEnd(width);
-}
+export {
+  footerLine,
+  interactiveMessage,
+  renderPlainBoard,
+  tableLineEntries,
+  tableLines,
+} from "./view.mjs";
 
 export function parseVerdict(text) {
   const matches = [...text.matchAll(/\*\*(PASS|NEEDS-WORK|FAIL)\*\*/gu)];
@@ -309,94 +293,6 @@ export function countWorkers(command) {
     if (worker !== undefined) workers[worker] += 1;
   }
   return workers;
-}
-
-export function tableLineEntries(rows, { width = Number.POSITIVE_INFINITY } = {}) {
-  if (width >= WIDE_TABLE_WIDTH + 2) {
-    const header = TABLE_COLUMNS.map(([title, , columnWidth]) => pad(title, columnWidth)).join(" ").trimEnd();
-    const separator = TABLE_COLUMNS.map(([, , columnWidth]) => "-".repeat(columnWidth)).join(" ");
-    const body = rows.map((row, rowIndex) => {
-      const cells = [];
-      let offset = 0;
-      let gateStart;
-      let gateText;
-      for (const [, key, columnWidth] of TABLE_COLUMNS) {
-        const cell = pad(row[key], columnWidth);
-        if (key === "gate") {
-          gateStart = offset;
-          gateText = truncate(row.gate, columnWidth);
-        }
-        cells.push(cell);
-        offset += cell.length + 1;
-      }
-      return {
-        text: cells.join(" ").trimEnd(),
-        rowIndex,
-        gateStart,
-        gateText,
-        gateColor: row.gateColor,
-      };
-    });
-    return [{ text: header }, { text: separator }, ...body];
-  }
-
-  const usable = Math.max(40, width - 2);
-  const columns = [
-    ["NAME", "name", 16],
-    ["ROLE", "role", 8],
-    ["LANE", "lane", 12],
-    ["STATUS", "status", 8],
-    ["PANE", "pane", 8],
-    ["GIT", "git", 9],
-    ["DONE", "done", 4],
-  ];
-  const header = columns.map(([title, , columnWidth]) => pad(title, columnWidth)).join(" ").trimEnd();
-  const separator = "-".repeat(Math.min(usable, header.length));
-  const entries = [{ text: header }, { text: separator }];
-  rows.forEach((row, rowIndex) => {
-    entries.push({
-      text: columns.map(([, key, columnWidth]) => pad(row[key], columnWidth)).join(" ").trimEnd(),
-      rowIndex,
-    });
-    const gateText = truncate(row.gate, usable - 5);
-    entries.push({ text: `gate ${gateText}`, rowIndex, gateStart: 5, gateText, gateColor: row.gateColor });
-    entries.push({ text: `report ${truncate(row.report, usable - 7)}`, rowIndex });
-    const deadline = truncate(row.deadline, 12);
-    entries.push({
-      text: `deadline ${deadline} | tripwire ${truncate(row.tripwire, usable - 33)}`,
-      rowIndex,
-    });
-    entries.push({ text: `output ${truncate(row.output, usable - 7)}`, rowIndex });
-  });
-  return entries;
-}
-
-export function tableLines(rows, options) {
-  return tableLineEntries(rows, options).map((entry) => entry.text);
-}
-
-export function footerLine(stats) {
-  const load = Number(stats.load ?? 0).toFixed(2);
-  const workers = stats.workers ?? {};
-  return `load ${load} | free ${stats.freeMemory} | workers vitest=${workers.vitest ?? 0} cargo=${workers.cargo ?? 0} go=${workers.go ?? 0} rustc=${workers.rustc ?? 0}`;
-}
-
-export function renderPlainBoard(rows, stats, { connection = "offline", missingRegistry, registryErrors = [] } = {}) {
-  const registryNotice = missingRegistry === undefined ? [] : [`registry not found: ${missingRegistry}`];
-  return [
-    `lane board (${connection})`,
-    ...registryNotice,
-    ...registryErrors.map((error) => `registry error: ${error}`),
-    ...tableLines(rows),
-    footerLine(stats),
-  ].join("\n") + "\n";
-}
-
-export function interactiveMessage(state, message) {
-  if (message) return message;
-  if (state.errors?.length > 0) return `registry error: ${state.errors[0]}`;
-  if (state.exists === false) return `registry not found: ${state.path}`;
-  return "↑/↓ select · a attach command · d done · r refresh · q quit";
 }
 
 export async function collectBoardState({ repoRoot, config = {}, client, runtime = new Map(), now = new Date() }) {

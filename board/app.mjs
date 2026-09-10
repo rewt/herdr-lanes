@@ -1,116 +1,74 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, render, useApp, useInput } from "ink";
 
 import { boardOptionsFromArgs } from "./args.mjs";
+import { LaneCliClient } from "./cli-client.mjs";
 import {
-  applyHerdrEvent,
-  buildSubscriptions,
-  collectBoardState,
   footerLine,
   interactiveMessage,
-  joinBoardRows,
-  markSessionDone,
+  stateFromBoardDocument,
   tableLineEntries,
-} from "./board.mjs";
-import { HerdrClient } from "./herdr-client.mjs";
+} from "./view.mjs";
 
 const h = React.createElement;
 
-function BoardApp({ repoRoot, config }) {
+function BoardApp({ repoRoot }) {
   const { exit } = useApp();
   const clientRef = useRef();
   const mountedRef = useRef(false);
-  const subscriptionSignature = useRef("");
-  const runtimeRef = useRef(new Map());
   const [selected, setSelected] = useState(0);
-  const [message, setMessage] = useState("loading registry and Herdr snapshot…");
+  const [message, setMessage] = useState("starting lane CLI observer…");
   const [state, setState] = useState({
     rows: [],
-    sessions: [],
-    snapshot: { agents: [], workspaces: [] },
-    runtime: new Map(),
-    gitStates: new Map(),
-    reportStates: new Map(),
     stats: { load: 0, freeMemory: "-", workers: {} },
     connection: "connecting",
+    coverage: {},
+    errors: [],
   });
-
-  const installSubscriptions = useCallback((next) => {
-    if (!mountedRef.current) return;
-    const subscriptions = buildSubscriptions(next.sessions, next.snapshot);
-    const signature = JSON.stringify(subscriptions);
-    if (signature !== subscriptionSignature.current) {
-      subscriptionSignature.current = signature;
-      clientRef.current.subscribe(subscriptions);
-    }
-  }, []);
-
-  const refresh = useCallback(async () => {
-    try {
-      const next = await collectBoardState({
-        repoRoot,
-        config,
-        client: clientRef.current,
-        runtime: runtimeRef.current,
-      });
-      if (!mountedRef.current) return;
-      next.gitStates = next.gitStates ?? new Map();
-      next.reportStates = next.reportStates ?? new Map();
-      setState(next);
-      installSubscriptions(next);
-      setSelected((current) => Math.min(current, Math.max(0, next.rows.length - 1)));
-      setMessage("");
-    } catch (error) {
-      if (mountedRef.current) setMessage(error.message);
-    }
-  }, [config, installSubscriptions, repoRoot]);
 
   useEffect(() => {
     mountedRef.current = true;
-    const client = new HerdrClient();
+    const client = new LaneCliClient({ repoRoot });
     clientRef.current = client;
-
-    const onEvent = (event) => {
-      setState((current) => {
-        const snapshot = {
-          ...current.snapshot,
-          agents: current.snapshot.agents.map((agent) => ({ ...agent })),
-        };
-        const runtime = new Map(current.runtime);
-        applyHerdrEvent(snapshot, runtime, current.sessions, event);
-        runtimeRef.current = runtime;
-        return {
-          ...current,
-          snapshot,
-          runtime,
-          rows: joinBoardRows({
-            registry: current.sessions,
-            snapshot,
-            gitStates: current.gitStates,
-            reportStates: current.reportStates,
-            runtime,
-          }),
-        };
-      });
+    const onSnapshot = (document) => {
+      if (!mountedRef.current) return;
+      const next = stateFromBoardDocument(document);
+      setState(next);
+      setSelected((current) => Math.min(current, Math.max(0, next.rows.length - 1)));
+      setMessage("");
     };
-    const onReady = () => setMessage("");
-    const onDisconnected = () => setMessage("Herdr stream disconnected; reconnecting…");
-    const onConnectionError = (error) => setMessage(`Herdr: ${error.message}`);
-    client.on("event", onEvent);
-    client.on("ready", onReady);
+    const onDiagnostic = (diagnostic) => {
+      if (mountedRef.current) setMessage(diagnostic);
+    };
+    const onClientError = (error) => {
+      if (mountedRef.current) setMessage(`lane CLI: ${error.message}`);
+    };
+    const onDisconnected = () => {
+      if (mountedRef.current) setMessage("lane CLI stream disconnected; reconnecting…");
+    };
+    client.on("snapshot", onSnapshot);
+    client.on("diagnostic", onDiagnostic);
+    client.on("clientError", onClientError);
     client.on("disconnected", onDisconnected);
-    client.on("connectionError", onConnectionError);
-    void refresh();
-    const tick = setInterval(() => void refresh(), 5_000);
+    client.start();
     return () => {
       mountedRef.current = false;
-      clearInterval(tick);
       client.close();
     };
-  }, []);
+  }, [repoRoot]);
+
+  const runAction = async (action) => {
+    const row = state.rows[selected];
+    if (row === undefined) return;
+    setMessage(`${action === "focus" ? "focusing" : "marking done"}: ${row.name}`);
+    try {
+      const result = await clientRef.current[action](row.sessionId);
+      if (mountedRef.current) setMessage(result);
+    } catch (error) {
+      if (mountedRef.current) setMessage(error.message);
+    }
+  };
 
   useInput((input, key) => {
     if (input === "q" || key.escape) {
@@ -118,24 +76,16 @@ function BoardApp({ repoRoot, config }) {
       clientRef.current?.close();
       exit();
     } else if (input === "r") {
-      void refresh();
+      setMessage("refreshing lane CLI observer…");
+      clientRef.current?.refresh();
     } else if (key.downArrow || input === "j") {
       setSelected((current) => Math.min(current + 1, Math.max(0, state.rows.length - 1)));
     } else if (key.upArrow || input === "k") {
       setSelected((current) => Math.max(0, current - 1));
-    } else if (input === "a") {
-      const row = state.rows[selected];
-      setMessage(row?.pane === "-" ? "selected session is offline" : `attach: herdr agent attach ${row.name}`);
+    } else if (key.return || input === "a") {
+      void runAction("focus");
     } else if (input === "d") {
-      const row = state.rows[selected];
-      if (row === undefined) return;
-      try {
-        markSessionDone(state.path, row.sessionId, { repoRoot });
-        setMessage(`marked ${row.name} done`);
-        void refresh();
-      } catch (error) {
-        setMessage(error.message);
-      }
+      void runAction("done");
     }
   });
 
@@ -179,15 +129,5 @@ try {
   process.stderr.write(`lane board: ${error.message}\n`);
   process.exit(1);
 }
-const { repoRoot } = options;
-const configPath = process.env.LANE_CONFIG ?? resolve(repoRoot, ".lane.json");
-let config = {};
-try {
-  config = JSON.parse(readFileSync(configPath, "utf8"));
-} catch {
-  // Every lane configuration key is optional.
-}
-if (options.main !== undefined) config.main = options.main;
-if (options.registry !== undefined) config.registry = options.registry;
 
-render(h(BoardApp, { repoRoot, config }));
+render(h(BoardApp, { repoRoot: options.repoRoot }));

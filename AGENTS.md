@@ -30,7 +30,12 @@ user request defines the work; the handoff provides state and prior verification
 ## Product contract
 
 - One topic maps to one `lane/<topic>` branch and one git worktree.
-- Herdr integration is optional except for `dispatch`.
+- Herdr integration is optional for git-only operations and offline board snapshots.
+  Dispatch in any form, including review dispatch and dispatch-from-idea, live
+  discovery, and session focus require an available Herdr server. The optional board
+  UI invokes lane CLI interfaces for observations
+  and actions; it does not implement a second git or Herdr control path. Reconnection
+  may restore display subscriptions only and must never replay lifecycle actions.
 - Promotion means clean checkout, clean rebase, green validation, and fast-forward.
 - `promote` must never push, create merge commits, or bypass validation.
 - Unmerged work closed through the CLI must remain recoverable through an archive tag.

@@ -208,6 +208,35 @@ function boardSnapshotResult({ status = "working" } = {}) {
   };
 }
 
+function writeBoardSession(fixture, overrides = {}) {
+  const sessionId = overrides.session_id ?? "12345678-1234-4123-8123-123456789abc";
+  const directory = join(fixture.repo, ".lane", "sessions.json.d");
+  mkdirSync(directory, { recursive: true });
+  const session = {
+    session_id: sessionId,
+    repo_id: repositoryIdentity(fixture.repo),
+    root_id: fixture.root,
+    repo: fixture.repo,
+    topic: "board-action",
+    name: "board-agent",
+    workspace: "workspace-1",
+    pane: "pane-1",
+    server: join(fixture.root, "board.sock"),
+    lane: "lane/board-action",
+    role: "engineer",
+    brief: null,
+    goal: "Exercise board actions",
+    report: "docs/reports/board-action.md",
+    deadline: null,
+    done: false,
+    created_at: "2026-09-10T00:00:00.000Z",
+    ...overrides,
+  };
+  const path = join(directory, `${sessionId}.json`);
+  writeFileSync(path, `${JSON.stringify(session, null, 2)}\n`);
+  return { directory, path, session };
+}
+
 function discoveredEnv(fixture, overrides = {}) {
   const env = { ...fixture.env };
   delete env.LANE_CONFIG;
@@ -370,6 +399,11 @@ if (args[0] === "workspace" && args[1] === "list") {
   }] : [] });
 } else if (args[0] === "agent" && args[1] === "read") {
   process.stdout.write("");
+} else if (args[0] === "agent" && args[1] === "focus") {
+  state.focusSocket = process.env.HERDR_SOCKET_PATH;
+  save();
+  if (process.env.FAKE_HERDR_FOCUS_FAIL === "1") process.exit(5);
+  result("cli:agent:focus", { type: "agent_focus", target: args[2] });
 } else if (args[0] === "agent" && args[1] === "prompt") {
   if (process.env.FAKE_HERDR_PROMPT_FAIL === "1") process.exit(4);
   if (process.env.FAKE_REVIEW_VERDICT) {
@@ -526,6 +560,7 @@ if (args[0] === "workspace" && args[1] === "list") {
     FAKE_HERDR_START_FAIL: options.startFail ? "1" : undefined,
     FAKE_HERDR_AGENT_CWD: options.agentCwd,
     FAKE_HERDR_PROMPT_FAIL: options.promptFail ? "1" : undefined,
+    FAKE_HERDR_FOCUS_FAIL: options.focusFail ? "1" : undefined,
     FAKE_HERDR_BREAK_REGISTRY: options.breakRegistry,
     FAKE_HERDR_BREAK_REGISTRY_LINK: options.breakRegistryLink,
     FAKE_HERDR_DANGLING_TARGET: options.danglingTarget,
@@ -535,6 +570,9 @@ if (args[0] === "workspace" && args[1] === "list") {
   }
   return {
     log,
+    state() {
+      return existsSync(state) ? JSON.parse(readFileSync(state, "utf8")) : {};
+    },
     calls() {
       if (!existsSync(log)) return [];
       return readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
@@ -2688,7 +2726,7 @@ test("plain and JSON board reads run from an isolated built-ins-only tool copy",
     const tool = join(fixture.root, "tool");
     mkdirSync(join(tool, "board"), { recursive: true });
     copyFileSync(LANE, join(tool, "lane.mjs"));
-    for (const file of ["board.mjs", "herdr-client.mjs", "registry.mjs"]) {
+    for (const file of ["actions.mjs", "board.mjs", "herdr-client.mjs", "registry.mjs", "view.mjs"]) {
       copyFileSync(resolve(HERE, "..", "board", file), join(tool, "board", file));
     }
     assert.equal(existsSync(join(tool, "board", "node_modules")), false);
@@ -2911,6 +2949,348 @@ test("board JSON watch frames event snapshots and stops pending refresh, reconne
   } finally {
     if (server !== undefined) await server.close();
     fixture.cleanup();
+  }
+});
+
+test("board action arguments reject missing, extra, and unknown operands before observation", () => {
+  const fixture = makeFixture();
+  try {
+    const expectedUsage = "lane: usage: lane board [--once | --json | --watch --json | focus <row-id> | done <row-id>] [--repo <path>]\n";
+    for (const args of [
+      ["focus"],
+      ["focus", "row-1", "extra"],
+      ["done"],
+      ["done", "row-1", "extra"],
+      ["retry", "row-1"],
+      ["focus", "row-1", "--repo"],
+    ]) {
+      const run = lane(fixture, ["board", ...args]);
+      assert.equal(run.status, 1, `${args.join(" ")}\n${run.stderr}`);
+      assert.equal(run.stdout, "");
+      assert.equal(run.stderr, expectedUsage);
+    }
+    negativeControl("board action argument validation");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("focus target verification distinguishes unnamed, stale, replacement, and foreign occupants", async () => {
+  const { verifyFocusSelection } = await import("../board/actions.mjs");
+  const repoId = "/repository/.git";
+  const repoRoot = "/repository";
+  const checkout = "/lanes/lane-board-action";
+  const session = {
+    session_id: "12345678-1234-4123-8123-123456789abc",
+    repo_id: repoId,
+    repo: repoRoot,
+    name: "board-agent",
+    workspace: "workspace-1",
+    pane: "pane-1",
+    server: "/run/herdr.sock",
+  };
+  const snapshot = (agent, repoKey = repoId) => ({
+    agents: agent === undefined ? [] : [agent],
+    panes: [{ pane_id: "pane-1", tab_id: "tab-1", workspace_id: "workspace-1" }],
+    workspaces: [{
+      workspace_id: "workspace-1",
+      worktree: {
+        checkout_path: checkout,
+        is_linked_worktree: true,
+        repo_key: repoKey,
+        repo_root: repoRoot,
+      },
+    }],
+  });
+  const named = { name: "board-agent", workspace_id: "workspace-1", pane_id: "pane-1", cwd: checkout };
+  assert.deepEqual(verifyFocusSelection({ session, snapshot: snapshot(named), repoId, repoRoot, checkout }), {
+    target: "board-agent",
+    name: "board-agent",
+    pane: "pane-1",
+    server: "/run/herdr.sock",
+  });
+  const unnamed = { workspace_id: "workspace-1", pane_id: "pane-1", cwd: checkout };
+  assert.equal(
+    verifyFocusSelection({
+      session: { ...session, name: null },
+      snapshot: snapshot(unnamed),
+      repoId,
+      repoRoot,
+      checkout,
+    }).target,
+    "pane-1",
+  );
+  assert.throws(
+    () => verifyFocusSelection({ session, snapshot: snapshot(undefined), repoId, repoRoot, checkout }),
+    /stale board selection.*no longer live/u,
+  );
+  assert.throws(
+    () => verifyFocusSelection({
+      session,
+      snapshot: snapshot({ ...named, name: "replacement-agent" }),
+      repoId,
+      repoRoot,
+      checkout,
+    }),
+    /stale board selection.*different agent/u,
+  );
+  assert.throws(
+    () => verifyFocusSelection({ session, snapshot: snapshot(named, "/foreign/.git"), repoId, repoRoot, checkout }),
+    /foreign board selection.*repository identity/u,
+  );
+  negativeControl("focus target verification");
+});
+
+test("board done verifies the registered canonical target and changes only its marker", () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  try {
+    ignoreLaneState(fixture);
+    const valid = writeBoardSession(fixture);
+    const recordBefore = readFileSync(valid.path, "utf8");
+    const gitBefore = git(fixture.repo, ["status", "--porcelain=v1"]);
+    const run = lane(fixture, ["board", "done", valid.session.session_id]);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stdout, `marked ${valid.session.session_id} done\n`);
+    assert.equal(readFileSync(valid.path, "utf8"), recordBefore);
+    assert.equal(git(fixture.repo, ["status", "--porcelain=v1"]), gitBefore);
+    const marker = join(valid.directory, `${valid.session.session_id}.done.json`);
+    const markerValue = JSON.parse(readFileSync(marker, "utf8"));
+    assert.deepEqual(markerValue, {
+      session_id: valid.session.session_id,
+      done: true,
+      completed_at: markerValue.completed_at,
+    });
+
+    const foreign = writeBoardSession(fixture, {
+      session_id: "22345678-1234-4123-8123-123456789abc",
+      repo_id: join(fixture.root, "foreign.git"),
+      repo: join(fixture.root, "foreign"),
+    });
+    const refused = lane(fixture, ["board", "done", foreign.session.session_id]);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /foreign session metadata/u);
+    assert.ok(!existsSync(join(foreign.directory, `${foreign.session.session_id}.done.json`)));
+
+    const missing = lane(fixture, ["board", "done", "32345678-1234-4123-8123-123456789abc"]);
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /not a registered session.*done is unsupported/u);
+    negativeControl("verified board done action");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("board focus verifies the current pane occupant and stored server without retrying", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  let server;
+  try {
+    ignoreLaneState(fixture);
+    const checkout = openLane(fixture, "board-action");
+    const record = writeBoardSession(fixture);
+    const fake = writeFakeHerdr(fixture);
+    let mode = "named";
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      if (request.method !== "session.snapshot") return;
+      const agent = mode === "missing" ? undefined : {
+        ...(mode === "unnamed" ? {} : { name: mode === "replacement" ? "replacement-agent" : "board-agent" }),
+        workspace_id: "workspace-1",
+        pane_id: "pane-1",
+        cwd: checkout,
+        agent_status: "working",
+      };
+      const repoKey = mode === "foreign" ? join(fixture.root, "foreign.git") : repositoryIdentity(fixture.repo);
+      socket.write(`${JSON.stringify({
+        id: request.id,
+        result: {
+          type: "session_snapshot",
+          snapshot: {
+            protocol: 20,
+            version: "test",
+            agents: agent === undefined ? [] : [agent],
+            panes: [{ pane_id: "pane-1", tab_id: "tab-1", workspace_id: "workspace-1" }],
+            workspaces: [{
+              workspace_id: "workspace-1",
+              label: "lane-board-action",
+              worktree: {
+                checkout_path: checkout,
+                is_linked_worktree: true,
+                repo_key: repoKey,
+                repo_name: "repo",
+                repo_root: fixture.repo,
+              },
+            }],
+          },
+        },
+      })}\n`);
+    });
+    record.session.server = server.socketPath;
+    writeFileSync(record.path, `${JSON.stringify(record.session, null, 2)}\n`);
+    const env = { ...fixture.env, HERDR_SOCKET_PATH: join(fixture.root, "wrong.sock") };
+
+    const named = laneProcess(fixture, ["board", "focus", record.session.session_id], { env });
+    const namedResult = await named.completed;
+    assert.equal(namedResult.status, 0, namedResult.stderr);
+    assert.match(namedResult.stdout, /^focused /u);
+    assert.deepEqual(fake.calls().filter((args) => args[0] === "agent" && args[1] === "focus"), [
+      ["agent", "focus", "board-agent"],
+    ]);
+    assert.equal(fake.state().focusSocket, server.socketPath);
+
+    for (const [refusalMode, pattern] of [
+      ["missing", /stale board selection.*no longer live/u],
+      ["replacement", /stale board selection.*different agent/u],
+      ["foreign", /foreign board selection.*repository identity/u],
+    ]) {
+      const before = fake.calls().filter((args) => args[0] === "agent" && args[1] === "focus").length;
+      mode = refusalMode;
+      const refused = laneProcess(fixture, ["board", "focus", record.session.session_id], { env });
+      const result = await refused.completed;
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, pattern);
+      assert.equal(
+        fake.calls().filter((args) => args[0] === "agent" && args[1] === "focus").length,
+        before,
+      );
+    }
+    mode = "named";
+    const beforeFailure = fake.calls().filter((args) => args[0] === "agent" && args[1] === "focus").length;
+    const failed = laneProcess(fixture, ["board", "focus", record.session.session_id], {
+      env: { ...env, FAKE_HERDR_FOCUS_FAIL: "1" },
+    });
+    const failedResult = await failed.completed;
+    assert.equal(failedResult.status, 1);
+    assert.match(failedResult.stderr, /Herdr focus failed/u);
+    assert.equal(
+      fake.calls().filter((args) => args[0] === "agent" && args[1] === "focus").length,
+      beforeFailure + 1,
+    );
+    negativeControl("verified board focus action");
+  } finally {
+    if (server !== undefined) await server.close();
+    fixture.cleanup();
+  }
+});
+
+test("interactive board data and actions cross only the lane CLI process boundary", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-cli-client-")));
+  const fakeLane = join(root, "lane.mjs");
+  const log = join(root, "calls.jsonl");
+  const repo = join(root, "repo");
+  let client;
+  mkdirSync(repo);
+  writeFileSync(fakeLane, `
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(process.env.FAKE_LANE_LOG, JSON.stringify(args) + "\\n");
+if (args[1] === "--watch") {
+  process.stdout.write("not-json\\n");
+  const frames = [1, 2, 3].map((value) => JSON.stringify({
+    schema_version: 1,
+    captured_at: "2026-09-10T00:00:0" + value + ".000Z",
+    coverage: { herdr: "connected" }, repositories: [], rows: [{ row_id: "row-" + value }],
+    host: { load_1m: value, free_memory_bytes: value, workers: {} }, errors: [],
+  }) + "\\n");
+  process.stdout.write(frames[0].slice(0, 9));
+  setTimeout(() => process.stdout.write(frames[0].slice(9) + frames[1] + frames[2]), 10);
+  setInterval(() => {}, 1000);
+} else if (args[1] === "focus" || args[1] === "done") {
+  process.stdout.write((args[1] === "focus" ? "focused " : "marked ") + args[2] + (args[1] === "done" ? " done" : "") + "\\n");
+} else {
+  process.stderr.write("unexpected fake lane arguments\\n");
+  process.exit(2);
+}
+`);
+  try {
+    const { LaneCliClient } = await import("../board/cli-client.mjs");
+    const { stateFromBoardDocument } = await import("../board/view.mjs");
+    const snapshots = [];
+    const errors = [];
+    client = new LaneCliClient({
+      lanePath: fakeLane,
+      repoRoot: repo,
+      env: { ...process.env, FAKE_LANE_LOG: log },
+      minBackoffMs: 10,
+      maxBackoffMs: 20,
+    });
+    client.on("snapshot", (snapshot) => snapshots.push(snapshot));
+    client.on("clientError", (error) => errors.push(error.message));
+    client.start();
+    await waitForCondition(() => snapshots.length === 3, "split and batched fake CLI snapshots");
+    assert.deepEqual(snapshots.map((snapshot) => snapshot.rows[0].row_id), ["row-1", "row-2", "row-3"]);
+    assert.deepEqual(stateFromBoardDocument(snapshots[2]).rows[0], {
+      name: "(unnamed)", role: "-", lane: "-", status: "offline", pane: "-", git: "-", gate: "-",
+      report: "-", deadline: "-", tripwire: "-", output: "-", done: "no", sessionId: "row-3",
+    });
+    assert.match(errors[0], /invalid JSON from lane board/u);
+    assert.equal(await client.focus("row-2"), "focused row-2");
+    assert.equal(await client.done("row-2"), "marked row-2 done");
+    client.close();
+    const calls = readFileSync(log, "utf8").trim().split("\n").map(JSON.parse);
+    assert.deepEqual(calls, [
+      ["board", "--watch", "--json", "--repo", repo],
+      ["board", "focus", "row-2", "--repo", repo],
+      ["board", "done", "row-2", "--repo", repo],
+    ]);
+
+    const appSource = readFileSync(resolve(HERE, "..", "board", "app.mjs"), "utf8");
+    const imports = [...appSource.matchAll(/from\s+["']([^"']+)["']/gu)].map((match) => match[1]);
+    assert.deepEqual(imports.sort(), ["./args.mjs", "./cli-client.mjs", "./view.mjs", "ink", "react"].sort());
+    assert.doesNotMatch(appSource, /readFileSync|collectBoardState|HerdrClient|markSessionDone|registry\.mjs/u);
+    assert.match(appSource, /key\.return \|\| input === "a"[\s\S]*runAction\("focus"\)/u);
+    assert.match(appSource, /input === "d"[\s\S]*runAction\("done"\)/u);
+    negativeControl("interactive board CLI process boundary");
+  } finally {
+    client?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("closing the UI CLI client permanently stops pending observation and reconnect work", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-cli-close-")));
+  const fakeLane = join(root, "lane.mjs");
+  const log = join(root, "calls.jsonl");
+  writeFileSync(fakeLane, `
+import { appendFileSync } from "node:fs";
+appendFileSync(process.env.FAKE_LANE_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
+if (process.env.FAKE_LANE_PENDING === "1") setInterval(() => {}, 1000);
+`);
+  try {
+    const { LaneCliClient } = await import("../board/cli-client.mjs");
+    const reconnecting = new LaneCliClient({
+      lanePath: fakeLane,
+      repoRoot: root,
+      env: { ...process.env, FAKE_LANE_LOG: log },
+      minBackoffMs: 30,
+      maxBackoffMs: 30,
+    });
+    const observerErrors = [];
+    reconnecting.on("clientError", (error) => observerErrors.push(error.message));
+    reconnecting.start();
+    await waitForCondition(() => existsSync(log), "first fake CLI observer");
+    await waitForCondition(() => observerErrors.length === 1, "observer child exit error");
+    assert.match(observerErrors[0], /lane board observer exited 0/u);
+    reconnecting.close();
+    const atClose = readFileSync(log, "utf8").trim().split("\n").length;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 60));
+    assert.equal(readFileSync(log, "utf8").trim().split("\n").length, atClose);
+
+    const pendingLog = join(root, "pending.jsonl");
+    const pending = new LaneCliClient({
+      lanePath: fakeLane,
+      repoRoot: root,
+      env: { ...process.env, FAKE_LANE_LOG: pendingLog, FAKE_LANE_PENDING: "1" },
+    });
+    pending.start();
+    await waitForCondition(() => existsSync(pendingLog), "pending fake CLI observer");
+    const child = pending.observer;
+    pending.refresh();
+    pending.close();
+    await once(child, "close");
+    assert.equal(pending.closed, true);
+    assert.equal(pending.observer, undefined);
+    negativeControl("permanent UI CLI client close");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -3988,7 +4368,7 @@ test("usage exits one with no command and with an unknown command", () => {
     );
     assert.match(
       missing.stdout,
-      /  board \[--once \| --json \| --watch --json\] \[--repo <path>\]\n                   open the interactive board, print one plain\/JSON snapshot,/,
+      /  board \[--once \| --json \| --watch --json \| focus <row-id> \| done <row-id>\]\n        \[--repo <path>\]\n                   open the UI, observe sessions, focus a verified live row,/,
     );
     assert.match(missing.stdout, /  config           print resolved configuration as key, JSON value, and source/);
     const unknown = lane(fixture, ["not-a-command"]);
@@ -3998,7 +4378,7 @@ test("usage exits one with no command and with an unknown command", () => {
     assert.match(readme, /\| `lane config` \| Print resolved configuration values and sources \|/);
     assert.match(
       readme,
-      /\| `lane board \[--once \\\| --json \\\| --watch --json\] \[--repo <path>\]` \| Open the UI, print a snapshot, or stream JSON snapshots \|/,
+      /\| `lane board \[--once \\\| --json \\\| --watch --json \\\| focus <row-id> \\\| done <row-id>\] \[--repo <path>\]` \| Open the UI, observe sessions, focus one, or mark one done \|/,
     );
     negativeControl("usage exits");
   } finally {

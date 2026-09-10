@@ -33,7 +33,7 @@ Use the route's configured agent/model; do not change routing defaults.
 
 ## 1. Lane-sized task
 
-- [ ] 1.1 Deliver the action commands and UI process boundary; verify all scenarios below, write `docs/reports/board-actions.md` and a dated HANDOFF entry, commit, then obtain a passing GATE against the final commit.
+- [x] 1.1 Deliver the action commands and UI process boundary; verify all scenarios below, write `docs/reports/board-actions.md` and a dated HANDOFF entry, commit, then obtain a passing GATE against the final commit.
 
 ## Acceptance checks
 
