@@ -533,14 +533,17 @@ Every projected string is NFC-normalized. Proven paths inside the reviewed repos
 become repository-relative first. Other contiguous absolute POSIX tokens, drive-letter
 paths, UNC paths, and file URLs matched by the concrete path pattern become
 `[ABS_PATH]`. Before applying that pattern, the checker skips complete JavaScript
-regex-literal tokens with flags and complete shell command-substitution tokens, so
-their slash syntax remains literal. Plain and quantifier-ending regex bodies are
-covered. Slash-delimited prose and non-file URL-like tokens also remain literal.
+regex-literal tokens with flags, so plain and quantifier-ending regex bodies remain
+literal. Shell command-substitution delimiters remain literal, but their bodies and
+any trailing path text are scanned normally; POSIX, drive-letter, and UNC paths there
+are sanitized. Slash-delimited prose and non-file URL-like tokens also remain literal.
 The checker does not infer a path by scanning from one slash across whitespace to
-another. It does, however, refuse an ambiguous spaced path when a concrete absolute
-path match is immediately followed by a space and the next whitespace-delimited
-token still contains a slash or backslash; partial redaction must not publish a
-possible path suffix. Case-insensitive whole path-segment or Unicode
+another. After repository paths are converted, an absolute-path match followed by a
+space starts an ambiguity scan across subsequent whitespace-delimited tokens. The scan
+continues across separator-free tokens and stops at the end or at another concrete
+absolute-path token, which is sanitized independently. If a non-absolute token with a
+slash or backslash appears first, publication refuses rather than exposing a possible
+spaced-path suffix. Case-insensitive whole path-segment or Unicode
 word-boundary matches for the current OS username/home basename, hostname/full first
 label, and declared private identifiers become `[USER]`, `[HOST]`, and `[PRIVATE]`.
 Matches run longest-first; equal aliases use user, then host, then private precedence.

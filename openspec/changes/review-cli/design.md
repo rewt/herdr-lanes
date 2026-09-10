@@ -221,14 +221,17 @@ Tests inject these exact OS values so host fixtures remain deterministic.
 First convert paths proven inside the reviewed repository to repository-relative
 paths. Replace other contiguous absolute POSIX tokens, drive-letter paths, UNC paths,
 and file URLs matched by the concrete absolute-path pattern, including their private
-segments. Skip complete JavaScript regex-literal tokens with flags and complete shell
-command-substitution tokens before applying that pattern; regex bodies with plain or
-quantifier endings remain literal. Do not infer a path by scanning from one slash
-across whitespace to another. Slash-delimited prose and non-file URL-like tokens also
-remain literal. If a concrete absolute-path match is immediately followed by a space
-and the next whitespace-delimited token still contains a slash or backslash, refuse
-the ambiguous spaced path rather than publish a partially redacted suffix. Then
-redact aliases, matching case-
+segments. Skip complete JavaScript regex-literal tokens with flags before applying
+that pattern; regex bodies with plain or quantifier endings remain literal. Shell
+command-substitution delimiters remain literal, but neither their bodies nor trailing
+path text are exempt from path sanitization. Do not infer a path by scanning from one
+slash across whitespace to another. Slash-delimited prose and non-file URL-like tokens
+also remain literal. After repository-path conversion, if a concrete absolute-path
+match is immediately followed by a space, scan subsequent whitespace-delimited tokens
+while they remain separator-free. Stop at the end or at another concrete absolute-path
+token, which will be sanitized independently; refuse if a non-absolute token containing
+a slash or backslash is reached first rather than publish a partially redacted suffix.
+Then redact aliases, matching case-
 insensitively at whole path segments (delimited by slash/backslash or string ends)
 or Unicode word boundaries (adjacent characters must not be letters, combining
 marks or numbers; underscore is therefore a boundary). Never substring-replace a username inside an

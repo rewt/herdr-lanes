@@ -941,3 +941,29 @@ Living log for agents maintaining this repository. Newest entry last.
 - No live reviewer/Herdr mutation, alternate host, push, promotion, archive,
   board-code edit, or `docs/reviews/` change was performed. The final commit and
   single post-commit gate remain conversation-only evidence.
+
+## 2026-09-10 — review CLI precise paths Round 3 corrections
+
+- Removed opaque shell command-substitution skipping and made regex candidates stop
+  at their first unescaped slash. POSIX, drive-letter, and UNC paths inside command
+  substitutions are now sanitized, and an external path ending in a regex flag-letter
+  segment is detected in protected locations.
+- Extended spaced-path ambiguity checks across separator-free tokens and moved them
+  after repository-root conversion. Separator-bearing suffixes refuse, while adjacent
+  in-repository absolute paths convert independently. REFERENCE, design, delta, and
+  current review specs are synchronized.
+- Corrected the compact boundary matrix to cover one and two leading blank lines and
+  a zero-blank before-section boundary. The added behavior fixtures failed before the
+  production change: three affected groups failed in a 54.040-second focus, and the
+  reordered multi-token refusal failed in a 36.417-second focus. Each retains a
+  deliberate `negativeControl`; the four-group post-fix focus passed in 76.485 seconds.
+- Baseline `npm test` passed 129/129 in 222.803 seconds. Final `npm test` passed
+  129/129 with zero skips in 231.430 seconds; all 129 deliberate controls failed with
+  zero passes in 221.923 seconds. Strict OpenSpec validation passed 19/19. Runs were
+  serialized after clear process probes.
+- `git diff --check` and the added-line public-text scan passed. Verification used
+  Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No Unix-socket
+  `listen EPERM` occurred.
+- No live reviewer/Herdr mutation, alternate host, push, promotion, archive,
+  board-code edit, or `docs/reviews/` change was performed. The final commit and
+  single post-commit gate remain conversation-only evidence.

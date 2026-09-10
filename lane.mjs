@@ -1646,33 +1646,6 @@ function absolutePathPattern() {
   return /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]+/giu;
 }
 
-function commandSubstitutionTokenEnd(value, start) {
-  if (value.slice(start, start + 2) !== "$(") return undefined;
-  let depth = 1;
-  let quote;
-  for (let index = start + 2; index < value.length; index += 1) {
-    const character = value[index];
-    if (character === "\\" && quote !== "'") {
-      index += 1;
-      continue;
-    }
-    if (quote !== undefined) {
-      if (character === quote) quote = undefined;
-      continue;
-    }
-    if (character === "'" || character === '"') {
-      quote = character;
-    } else if (character === "(") {
-      depth += 1;
-    } else if (character === ")" && --depth === 0) {
-      let end = index + 1;
-      while (end < value.length && !/[\s,;:]/u.test(value[end])) end += 1;
-      return end;
-    }
-  }
-  return undefined;
-}
-
 function regexLiteralTokenEnd(value, start) {
   if (value[start] !== "/" || value[start + 1] === "/") return undefined;
   const before = value[start - 1];
@@ -1705,8 +1678,8 @@ function regexLiteralTokenEnd(value, start) {
       flags.add(value[end]);
       end += 1;
     }
-    if (flags.size === 0) continue;
-    if (end < value.length && /[\p{L}\p{M}\p{N}_]/u.test(value[end])) continue;
+    if (flags.size === 0) return undefined;
+    if (end < value.length && /[\p{L}\p{M}\p{N}_]/u.test(value[end])) return undefined;
     return end;
   }
   return undefined;
@@ -1715,7 +1688,7 @@ function regexLiteralTokenEnd(value, start) {
 function replaceOutsidePathSyntax(value, replace) {
   const ranges = [];
   for (let index = 0; index < value.length;) {
-    const end = commandSubstitutionTokenEnd(value, index) ?? regexLiteralTokenEnd(value, index);
+    const end = regexLiteralTokenEnd(value, index);
     if (end === undefined) {
       index += 1;
       continue;
@@ -1750,9 +1723,19 @@ function containsAmbiguousAbsolutePath(value) {
   let found = false;
   replaceOutsidePlaceholders(value, (part) => replaceOutsidePathSyntax(part, (candidate) => {
     for (const match of candidate.matchAll(absolutePathPattern())) {
-      const remainder = candidate.slice(match.index + match[0].length);
-      const continuation = remainder.match(/^ +([^\s]+)/u);
-      if (continuation !== null && /[\\/]/u.test(continuation[1])) found = true;
+      let cursor = match.index + match[0].length;
+      while (candidate[cursor] === " ") {
+        while (candidate[cursor] === " ") cursor += 1;
+        let end = cursor;
+        while (end < candidate.length && !/\s/u.test(candidate[end])) end += 1;
+        if (end === cursor) break;
+        const token = candidate.slice(cursor, end);
+        if (/[\\/]/u.test(token)) {
+          if (!containsConcreteAbsolutePath(token)) found = true;
+          break;
+        }
+        cursor = end;
+      }
     }
     return candidate;
   }));
@@ -1794,7 +1777,6 @@ function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
   if (!allowGenerated && REVIEW_PLACEHOLDER_PATTERN.test(value)) fail("projected payload contains a reserved sanitizer placeholder");
   REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
   if (/[\u0000-\u001f\u007f\n\r]/u.test(value)) fail("projected payload must be single-line text");
-  if (containsAmbiguousAbsolutePath(value)) fail("projected payload contains an ambiguous absolute path");
 
   const roots = [...new Set([context.path, REPO_ROOT].map((root) => realpathSync(root)))].sort((a, b) => b.length - a.length);
   for (const root of roots) {
@@ -1808,6 +1790,7 @@ function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
       return converted;
     }));
   }
+  if (containsAmbiguousAbsolutePath(value)) fail("projected payload contains an ambiguous absolute path");
 
   value = replaceConcreteAbsolutePaths(value, () => {
     context.counts["absolute-path"] += 1;

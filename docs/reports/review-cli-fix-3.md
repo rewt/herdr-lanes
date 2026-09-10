@@ -88,3 +88,34 @@ read. The final clean-commit gate remains conversation-only evidence.
   public-text scan passed, and main remained at `3367cd5`, so no rebase was required.
   Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
   The final commit and post-commit gate are recorded in the operator conversation.
+
+## Round 3 corrections
+
+- Simplified syntax handling to exempt only complete JavaScript regex literals. A
+  candidate now ends at its first unescaped slash, so an external POSIX path ending
+  in a flag-letter segment cannot be mistaken for regex syntax. Shell
+  command-substitution delimiters remain literal while their bodies and trailing path
+  text are sanitized; fixtures cover POSIX, drive-letter, and UNC paths inside them.
+- Moved spaced-path ambiguity detection after repository-root conversion. Its
+  continuation scan now crosses any number of separator-free tokens, stops at an
+  independently sanitizable absolute path, and refuses a separator-bearing suffix.
+  Two adjacent in-repository absolute paths therefore convert safely.
+- Corrected the representative boundary matrix to exercise one and two leading blank
+  lines and a zero-blank before-section boundary. REFERENCE, the review design, and
+  both synced capability specs describe the corrected scanner and ordering.
+- Before production changes, a four-group focus recorded three failures in 54.040
+  seconds: adjacent repository paths refused, command-substitution paths leaked, and
+  a protected flag-segment path projected. A reordered refusal focus then recorded
+  the multi-token spaced-path leak in 36.417 seconds. Every affected group retains a
+  deliberate `negativeControl`.
+- After implementation, all four focused groups passed in 76.485 seconds. The final
+  ordinary `npm test` passed 129/129 with zero skips in 231.430 seconds, compared with
+  the clean 222.803-second baseline. The final
+  `LANE_TEST_NEGATIVE_CONTROL=1 npm test` produced zero passes and all 129 deliberate
+  failures in 221.923 seconds.
+- Strict OpenSpec validation passed all 19 items. `git diff --check` and the added-line
+  public-text scan passed. Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0,
+  and OpenSpec 1.6.0. No Unix-socket `listen EPERM` occurred.
+- No live reviewer/Herdr mutation, alternate operating system, push, promotion,
+  archive, board-code edit, or change under `docs/reviews/` was performed. The final
+  commit and single post-commit gate are recorded in the operator conversation.

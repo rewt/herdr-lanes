@@ -3690,9 +3690,10 @@ test("review preserves a final finding immediately before the next section headi
 
 test("review completion admits representative validator-accepted record boundaries", () => {
   const boundaries = [
-    ["record-start", 0],
+    ["record-start", 1],
+    ["record-start", 2],
     ["after-Findings", 1],
-    ["before-Unverified", 2],
+    ["before-Unverified", 0],
     ["after-marker", 2],
   ];
   const findings = [
@@ -3791,7 +3792,7 @@ test("review sanitizes deterministic aliases and path forms in a bounded public 
     review.fixture.env.FAKE_REVIEW_PAYLOAD = JSON.stringify({
       findings: `- [Moderate] shared.txt:1 - User ${username} inspected ${review.path}/shared.txt; Fix: ask ${homeName} to use a relative path`,
       reexecuted: [{
-        command: `node scripts/check.mjs ${review.path}/shared.txt --user ${username}`,
+        command: `node scripts/check.mjs ${review.path}/shared.txt ${review.path}/other.txt --user ${username}`,
         cwd: "scratch",
         exit_code: 1,
         result: `host ${host}; posix /opt/tools/check; drive C:\\Temp\\check.exe; unc \\\\server\\share\\check; url file:///var/tmp/check; prefix ${review.path}-private/secret`,
@@ -3809,11 +3810,11 @@ test("review sanitizes deterministic aliases and path forms in a bounded public 
     const publicPath = join(review.path, "docs", "reviews", "review-sanitize", `${head.slice(0, 7)}-r1.md`);
     const publicRecord = readFileSync(publicPath, "utf8");
     assert.match(publicRecord, /User \[USER\] inspected shared\.txt; Fix: ask \[USER\] to use a relative path/);
-    assert.match(publicRecord, /node scripts\/check\.mjs shared\.txt --user \[USER\]/);
+    assert.match(publicRecord, /node scripts\/check\.mjs shared\.txt other\.txt --user \[USER\]/);
     assert.match(publicRecord, /host \[HOST\]; posix \[ABS_PATH\]; drive \[ABS_PATH\]; unc \[ABS_PATH\]; url \[ABS_PATH\]; prefix \[ABS_PATH\]/);
     assert.match(publicRecord, /- \[PRIVATE\] was not independently authenticated\./);
     assert.match(publicRecord, /- annex behavior remains unverified\./);
-    assert.match(publicRecord, /- absolute-path: 5\n- user: 3\n- host: 1\n- private: 1\n- relative-path: 2/);
+    assert.match(publicRecord, /- absolute-path: 5\n- user: 3\n- host: 1\n- private: 1\n- relative-path: 3/);
     assert.match(publicRecord, /- redacted execution fields: 0\.command, 0\.result/);
     assert.doesNotMatch(publicRecord, /Private identifiers|## Analysis|Private analysis|private\/source/);
     assert.ok(Buffer.byteLength(publicRecord) <= 64 * 1024);
@@ -3832,10 +3833,10 @@ test("review path detection preserves slash prose while retaining concrete path 
       payload: {
         findings: "- [Minor] shared.txt:1 - Regex /plain/giu, /items+/giu, and /( )/giu, phrase / alpha beta /, and URL https://example.invalid/a/b stay literal; Fix: preserve all five tokens",
         reexecuted: [{
-          command: "printf '%s\\n' $(pwd)/artifact",
+          command: "printf '%s\\n' $(cat /var/tmp/input.txt) $(type C:\\Temp\\input.txt) $(type \\\\server\\share\\input.txt)",
           cwd: "scratch",
           exit_code: 0,
-          result: "Command-substitution path syntax was inspected without execution.",
+          result: "Command-substitution path content was inspected without execution.",
           tests_pass: false,
           witness: null,
         }],
@@ -3854,7 +3855,7 @@ test("review path detection preserves slash prose while retaining concrete path 
     assert.match(publicRecord, /Regex \/plain\/giu, \/items\+\/giu, and \/\( \)\/giu, phrase \/ alpha beta \/, and URL https:\/\/example\.invalid\/a\/b stay literal/);
     assert.match(publicRecord, /The external fixture at \[ABS_PATH\] was not re-executed\./);
     const executions = JSON.parse(publicRecord.match(/## Re-executed\n```json\n(.+)\n```/u)[1]);
-    assert.equal(executions[0].command, "printf '%s\\n' $(pwd)/artifact");
+    assert.equal(executions[0].command, "printf '%s\\n' $(cat [ABS_PATH]) $(type [ABS_PATH]) $(type [ABS_PATH])");
 
     const refused = makeReviewFixture("review-slash-alias", {
       verdict: "PASS",
@@ -3910,7 +3911,8 @@ test("review sanitization preserves unrelated words and fails closed on ambiguou
       ["location-path-after-paren", { findings: "- [Major] wrapper)/var/tmp/private.txt:1 - issue; Fix: change it" }],
       ["location-path-after-bracket", { findings: "- [Major] wrapper]/var/tmp/private.txt:1 - issue; Fix: change it" }],
       ["location-path-after-brace", { findings: "- [Major] wrapper}/var/tmp/private.txt:1 - issue; Fix: change it" }],
-      ["ambiguous-spaced-path", { nonclaims: "- The external record /var/tmp/private next/segment was not inspected." }],
+      ["ambiguous-spaced-path", { nonclaims: "- The external record /var/tmp/private first second next/segment was not inspected." }],
+      ["location-path-flag-segment", { findings: "- [Major] wrapper)/var/tmp/g:1 - issue; Fix: change it" }],
       ["percent-encoded-alias", { nonclaims: "- A%6En was not independently authenticated.", identifiers: ["Ann"] }],
       ["numeric-reference-alias", { nonclaims: "- A&#110;n was not independently authenticated.", identifiers: ["Ann"] }],
       ["non-ascii", { findings: "- [Minor] shared.txt:1 - caf\u00e9 issue; Fix: use ASCII" }],

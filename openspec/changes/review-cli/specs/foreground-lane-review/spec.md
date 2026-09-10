@@ -74,8 +74,8 @@ the private canonical .lane/reviews/<topic>/<head7>-rN.md and verifying sanitiza
 - **WHEN** Re-executed command or witness-command strings contain shell syntax, markup characters or encoded-looking text
 - **THEN** path, alias, ASCII and reserved-placeholder checks still apply, encoded scratch rescans cannot hide an alias or path, remaining command characters are rendered verbatim inside the public JSON fence, and quoted punctuation and backslashes in prose are backslash-escaped only after sanitization and idempotence checks on the unescaped payload.
 #### Scenario: Concrete absolute paths and slash prose
-- **WHEN** a projected description contains complete plain-body and quantifier-ending JavaScript regex literals with flags, a command-substitution token, a slash-delimited phrase, a non-file URL-like token, or a real absolute path following `)`, `]`, or `}`
-- **THEN** complete syntax tokens and prose slash forms remain literal, concrete absolute paths are still replaced or refused in protected locations, an ambiguous spaced-path suffix refuses instead of being partially published, and declared aliases retain their existing refusal rules.
+- **WHEN** projected text contains complete plain-body and quantifier-ending JavaScript regex literals with flags, shell command substitutions containing POSIX, drive-letter, or UNC paths, a slash-delimited phrase, a non-file URL-like token, or a real absolute path following `)`, `]`, or `}`
+- **THEN** complete regex and prose slash forms remain literal, paths inside command substitutions are sanitized, other concrete absolute paths are replaced or refused in protected locations, a spaced-path scan continues across separator-free tokens and refuses a separator-bearing suffix, adjacent in-repository paths convert safely, and declared aliases retain their existing refusal rules.
 
 ### Requirement: After-check publication boundary
 The complete review command SHALL require successful sanitized public generation
