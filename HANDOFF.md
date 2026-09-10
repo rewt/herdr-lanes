@@ -1239,6 +1239,27 @@ Living log for agents maintaining this repository. Newest entry last.
   `board/app.mjs` change, or `docs/reviews/` change occurred. No further approval is
   needed; the final clean-commit gate remains conversation-only evidence.
 
+## 2026-09-10 — message previews Round 6 corrections
+
+- Narrowed Claude approval chrome to indented boundary rows and required elapsed time
+  to end a trailing status form. This preserves approval-worded Claude answers and
+  progress-verb prose containing three dots plus a later duration without adding a
+  sentence-shape, word-count, or general prose heuristic.
+- Added one negative-controlled paired-fixture invariant: 30 chrome/answer definitions
+  exercised as 43 adapter pairs across status and ellipsis forms, tool words, approval
+  wording, and count-clause tool summaries. Before product changes the focused file
+  passed 28/29 and failed the invariant; afterward it passed 29/29 in 0.044 seconds.
+- The untouched baseline passed 160/160 in 116.702 seconds. Final `npm test` passed
+  161/161 with zero skips in 114.426 seconds. The negative run had zero passes,
+  161 failures, and zero skips in 103.725 seconds: 155 deliberate controls and six
+  known sandbox `listen EPERM: operation not permitted …/board.sock` failures. Strict
+  OpenSpec passed 20/20; every build or test followed a clear load probe and ran alone.
+  Verified Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+- No live pane, interactive render, alternate host, model API, push, promotion,
+  archive, contract amendment, `board/app.mjs` change, or `docs/reviews/` change
+  occurred. No further approval is needed; the final clean-commit gate remains
+  conversation-only evidence and may encounter the known sandbox socket restriction.
+
 ## 2026-09-11 — review CLI precise paths Round 10 corrections
 
 - Removed the fixed terminator class from spaced-path continuation scanning. After

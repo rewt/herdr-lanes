@@ -264,3 +264,34 @@ live pane, interactive render, alternate host, model API, push, promotion, archi
 or contract change was exercised. No further approval is needed. `board/app.mjs` and
 every file under `docs/reviews/` remain unchanged; the post-commit lane gate remains
 conversation-only evidence.
+
+## Round 6 corrections — 2026-09-10
+
+The cumulative parser corpus now includes 30 paired chrome/answer fixtures exercised
+as 43 adapter pairs. Each pair rejects the rendered status, tool-word, approval,
+ellipsis, or tool-summary form while preserving an ordinary answer with the same
+opening words. The new invariant is one negative-controlled group. Against the
+reviewed parser, the focused file passed 28/29 groups and failed on the new invariant;
+after the correction it passed 29/29 in 0.044 seconds.
+
+`board/message-preview.mjs` now requires an elapsed time to end the rendered trailing
+status form, so three-dot prose followed by a later duration remains substantive. The
+Claude approval boundary requires at least two leading spaces, keeping indented prompt
+chrome out of a response without rejecting an approval-worded Claude opening. Boundary
+comments state the standing paired-fixture rule. No new sentence-shape, word-count, or
+general prose heuristic was added.
+
+The untouched baseline passed 160/160 with zero skips in 116.702 seconds. Final
+`npm test` passed 161/161 with zero skips in 114.426 seconds. The serialized
+`LANE_TEST_NEGATIVE_CONTROL=1 npm test` run produced zero passes, 161 failures, and
+zero skips in 103.725 seconds: 155 cases reached their deliberate controls, while six
+board socket cases first hit the known sandbox `listen EPERM: operation not permitted
+…/board.sock` restriction. No product or test workaround was made. Strict OpenSpec
+validation passed 20/20. Every build or test followed a clear executable-aware load
+probe and ran alone. Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and
+OpenSpec 1.6.0.
+
+No live pane, interactive render, alternate host, model API, push, promotion, archive,
+or contract change was exercised. No further approval is needed. `board/app.mjs` and
+every file under `docs/reviews/` remain unchanged; the post-commit lane gate remains
+conversation-only evidence and may encounter the same sandbox socket restriction.

@@ -66,6 +66,75 @@ function answerFixture(kind, lines) {
   ].join("\n");
 }
 
+const PAIRED_CHROME_FIXTURES = [
+  ...[
+    ["working interrupt", "Working (1m 23s • esc to interrupt)", "Working on the timeout... 30s is the current budget."],
+    ["working compact interrupt", "Working (2m 04s • esc to interrupt)", "Working through the queue while the timeout is reviewed."],
+    ["working spinner interrupt", "✻ Working… esc to interrupt", "Working carefully through the remaining parser cases."],
+    ["compacting interrupt", "Compacting context (1m 42s • esc to interrupt)", "Compacting context safely preserves the latest answer."],
+    ["consolidating interrupt", "Consolidating context… 48s · esc to interrupt", "Consolidating context now keeps the useful details."],
+    ["working duration", "Working (2m 04s)", "Working on the timeout... 30s is the current budget."],
+    ["worked duration", "Worked [48s]", "Worked through the queue... 12:30 is the final slot."],
+    ["thinking ellipsis", "Thinking… 30s", "Thinking about caching… the measured saving is 200 ms per read."],
+    ["thinking three dots", "Thinking... 12s", "Thinking about caching... 200 ms is saved per read."],
+    ["running duration", "Running (45s)", "Running the full suite... 2 minutes is the current estimate."],
+  ].map(([name, chrome, answer]) => ({
+    name,
+    kinds: ["codex", "claude"],
+    position: "candidate",
+    chrome,
+    answer,
+    expectedChrome: "Earlier response.",
+  })),
+  ...[
+    ["codex", "Added", "Added it."],
+    ["codex", "Updated", "Updated the parser in board/message-preview.mjs."],
+    ["codex", "Applied", "Applied the narrow boundary correction."],
+    ["codex", "Opened", "Opened the file and verified the result."],
+    ["codex", "Read", "Read the config and confirmed the setting."],
+    ["codex", "Found", "Found the cause: the boundary rule."],
+    ["codex", "Ran", "Ran into a compatibility issue."],
+    ["claude", "Read", "Read the guide and confirmed the behavior."],
+    ["claude", "Search", "Search found three relevant call sites."],
+    ["claude", "Save", "Save points remain available for recovery."],
+    ["claude", "Edit", "Edit history shows the narrow correction."],
+    ["claude", "Bash", "Bash output is summarized below."],
+  ].map(([kind, chrome, answer]) => ({
+    name: `${kind} ${chrome.toLowerCase()} tool word`,
+    kinds: [kind],
+    position: "candidate",
+    chrome,
+    answer,
+    expectedChrome: null,
+  })),
+  ...[
+    ["would run", "Would you like to run the following command?", "Would you like to run through the design together?"],
+    ["want to run", "Do you want to run this command?", "Do you want to run the suite after this change?"],
+    ["want to allow", "Do you want to allow this action?", "Do you want to allow callers to retry safely?"],
+    ["want to approve", "Do you want to approve this command?", "Do you want to approve the documented workflow?"],
+    ["allow Codex", "Allow Codex to run this command?", "Allow Codex to explain the result before proceeding."],
+  ].map(([name, chrome, answer]) => ({
+    name: `Claude approval ${name}`,
+    kinds: ["claude"],
+    position: "continuation",
+    chrome,
+    answer,
+    expectedChrome: "Current response.",
+  })),
+  ...[
+    ["full tool summary", "Searched for 5 patterns, read 2 files, listed 2 directories, ran 55 shell commands", "Searched for 5 patterns, read 2 files, listed 2 directories, and then summarized the result."],
+    ["short tool summary", "Searched for 2 patterns, read 3 files", "Searched for 2 patterns, read 3 files before explaining the result."],
+    ["reordered tool summary", "Ran 4 shell commands, listed 2 directories, read 3 files", "Ran 4 shell commands, listed 2 directories, and documented what changed."],
+  ].map(([name, chrome, answer]) => ({
+    name,
+    kinds: ["codex", "claude"],
+    position: "continuation",
+    chrome,
+    answer,
+    expectedChrome: "Current response.",
+  })),
+];
+
 for (const [name, lines] of ROUND_THREE_ANSWER_FIXTURES) {
   test(`cumulative answer corpus preserves ${name} in both adapters`, async () => {
     const { extractAssistantPreview } = await previewApi();
@@ -79,6 +148,31 @@ for (const [name, lines] of ROUND_THREE_ANSWER_FIXTURES) {
     negativeControl(`cumulative answer corpus: ${name}`);
   });
 }
+
+test("every chrome fixture has a substantive same-opening answer pair", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  for (const fixture of PAIRED_CHROME_FIXTURES) {
+    for (const kind of fixture.kinds) {
+      const marker = kind === "codex" ? "•" : "⏺";
+      const chromeText = fixture.position === "continuation"
+        ? `${marker} Current response.\n\n  ${fixture.chrome}`
+        : `${marker} Earlier response.\n\n${marker} ${fixture.chrome}`;
+      const chromePreview = extractAssistantPreview({ kind, text: chromeText });
+      if (fixture.expectedChrome === null) {
+        assert.equal(chromePreview.available, false, `${kind}: ${fixture.name} chrome`);
+      } else {
+        assert.equal(chromePreview.text, fixture.expectedChrome, `${kind}: ${fixture.name} chrome`);
+      }
+
+      const answerPreview = extractAssistantPreview({
+        kind,
+        text: answerFixture(kind, [fixture.answer]),
+      });
+      assert.equal(answerPreview.text, fixture.answer, `${kind}: ${fixture.name} answer`);
+    }
+  }
+  negativeControl("paired chrome and answer invariant");
+});
 
 test("Codex preview extracts the last multiline assistant block before footer chrome", async () => {
   const { extractAssistantPreview } = await previewApi();

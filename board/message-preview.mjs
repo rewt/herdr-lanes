@@ -14,9 +14,10 @@ const CONTEXT_BAR = /^\s*(?:[\d,.]+%?\s+)?context left(?:\s|$)/iu;
 const TOKEN_OR_COST_BAR = /^\s*(?:[\d,.]+[km]?\s+)?tokens?\b.*(?:\$|cost|used)/iu;
 const INTERRUPT_AFFORDANCE = /\besc(?:ape)? to interrupt\b/iu;
 const PROGRESS_PREFIX = /^\s*(?:[✻✽✶✳·]\s+)?(?:Working|Worked|Thinking|Running)\b/iu;
-const ELAPSED_TIME = /(?:\b\d+(?:[.,]\d+)?\s*(?:ms|s|m|h|secs?|seconds?|mins?|minutes?|hours?)\b|\b\d{1,2}:\d{2}(?::\d{2})?\b)/iu;
+const ELAPSED_TIME_AT_END = /(?:\b\d+(?:[.,]\d+)?\s*(?:ms|s|m|h|secs?|seconds?|mins?|minutes?|hours?)\b|\b\d{1,2}:\d{2}(?::\d{2})?\b)(?:\)|\])?\s*$/iu;
 const TRAILING_STATUS = /(?:\([^\n)]*\)|\[[^\n\]]*\]|(?:…|\.{3})[^\n]*)\s*$/u;
 const APPROVAL_PROMPT = /^\s*(?:Would you like to run|Do you want to (?:run|allow|approve)|Allow Codex to)\b/iu;
+const INDENTED_APPROVAL_PROMPT = /^\s{2,}(?:Would you like to run|Do you want to (?:run|allow|approve)|Allow Codex to)\b/iu;
 const RESULT_MARKER = /^(\s{2,})(└|⎿|├)(?:\s+|$)/u;
 const TREE_MARKER = /^(\s{2,})[└├](?:\s+|$)/u;
 const TOOL_SUMMARY_CLAUSE = String.raw`(?:Searched for|Read|Listed|Ran)\s+\d+\s+[\p{L}-]+(?:\s+[\p{L}-]+)?`;
@@ -27,7 +28,7 @@ function statusChrome(line) {
   if (INTERRUPT_AFFORDANCE.test(line)) return true;
   if (!PROGRESS_PREFIX.test(line)) return false;
   const trailing = line.match(TRAILING_STATUS)?.[0];
-  return trailing !== undefined && ELAPSED_TIME.test(trailing);
+  return trailing !== undefined && ELAPSED_TIME_AT_END.test(trailing);
 }
 
 function divider(line) {
@@ -62,6 +63,8 @@ function continuation(line) {
 }
 
 function codexBoundary(line, lines = [line], index = 0) {
+  // Other than exact status evidence, keep chrome additions scoped to rendered
+  // block boundaries; paired chrome/prose fixtures protect candidate openings.
   return /^•\s+/u.test(line)
     || /^›(?:\s|$)/u.test(line)
     || divider(line)
@@ -80,6 +83,8 @@ function codexToolLabel(text) {
 }
 
 function claudeBoundary(line, lines = [line], index = 0) {
+  // Other than exact status evidence, keep chrome additions scoped to rendered
+  // block boundaries; paired chrome/prose fixtures protect candidate openings.
   return /^(?:⏺|●)\s+/u.test(line)
     || /^(?:❯|›|>)\s*/u.test(line)
     || divider(line)
@@ -91,7 +96,7 @@ function claudeBoundary(line, lines = [line], index = 0) {
     || SHORTCUT_BAR.test(line)
     || CONTEXT_BAR.test(line)
     || TOKEN_OR_COST_BAR.test(line)
-    || APPROVAL_PROMPT.test(line);
+    || INDENTED_APPROVAL_PROMPT.test(line);
 }
 
 function claudeToolLabel(text) {
