@@ -567,6 +567,34 @@ Living log for agents maintaining this repository. Newest entry last.
   `docs/reviews/` change was performed. The post-commit lane check remains the final
   conversation-only verification.
 
+## 2026-09-09 — concurrent session registry and close completion
+
+- Added immutable per-session dispatch records and atomic done markers alongside
+  legacy registry arrays. Dispatch records only after verified startup/cwd/prompt,
+  refuses unsafe registry paths before Herdr, reports partial persistence honestly,
+  and never replays delivered work. The board merges both formats, exposes localized
+  errors, marks by session ID, and resolves lane reports before canonical fallback.
+- Successful Git close now marks all exact repository/topic sessions done; dirty or
+  failed archive paths leave them open, no-registry close remains Git-only, and a
+  post-close write failure says the lane is already closed. README, REFERENCE, usage,
+  current OpenSpec, task state, and `docs/reports/session-registry.md` are synchronized
+  at implementation commit `25aeab386ce5714a73f3390be42dd678ccd281e4`.
+- Appended the operator-approved A2 text verbatim to the Product contract in
+  `AGENTS.md`; no other amendment was applied. No file under `docs/reviews/` changed.
+- Baseline `npm test` passed 92/92. Six new focused feature groups failed before
+  product changes while one preservation control passed; a fake-Herdr escaping defect
+  was corrected before interpreting that evidence. The 101-test deliberate-control
+  run failed all tests in 90.125 seconds, and the later focused board-safety control
+  failed its one selected test with 79 filtered skips in 0.122 seconds.
+- Final `npm test` passed 102/102 with zero skips in 101.776 seconds. The concurrency
+  case retained one legacy entry, two concurrent records, and all three simultaneous
+  completion attempts in 0.070 seconds. The earlier no-Herdr matrix passed 100/101
+  with one explicit skip in 130.124 seconds. Strict OpenSpec validation passed 17/17;
+  staged diff checks and the public-text scan were clean.
+- Verified Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No live Herdr
+  mutation, daemon-backed concurrent dispatch, alternate host, filesystem race,
+  Linux/Windows run, push, promotion, archive, or independent review was performed.
+
 ## 2026-09-09 — review command-string and round-five follow-up
 
 - Exempted Re-executed command and witness-command strings from only the prose markup
