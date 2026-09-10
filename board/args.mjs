@@ -12,7 +12,5 @@ export function boardOptionsFromArgs(args, cwd = process.cwd()) {
   const repo = optionValue(args, "--repo", "a path");
   return {
     repoRoot: resolve(repo ?? cwd),
-    main: optionValue(args, "--main"),
-    registry: optionValue(args, "--registry"),
   };
 }

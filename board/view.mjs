@@ -45,23 +45,26 @@ function reportCell(report = {}) {
 }
 
 export function rowsFromBoardDocument(document) {
-  return (document.rows ?? []).map((row) => ({
-    name: row.name ?? "(unnamed)",
-    role: row.role ?? "-",
-    lane: row.topic ?? row.branch ?? "-",
-    status: row.status ?? "offline",
-    pane: row.pane_id ?? "-",
-    git: Number.isInteger(row.git?.ahead)
-      ? `+${row.git.ahead}${row.git.dirty ? " DIRTY" : ""}`
-      : "-",
-    ...gateCell(row.gate),
-    report: reportCell(row.report),
-    deadline: row.done ? "done" : row.overdue ? "OVERDUE" : row.deadline?.slice(0, 10) ?? "-",
-    tripwire: row.tripwire ?? "-",
-    output: row.last_message?.text ?? "-",
-    done: row.done ? "yes" : "no",
-    sessionId: row.row_id,
-  }));
+  return (document.rows ?? []).map((row) => {
+    const status = row.status ?? "offline";
+    return {
+      name: row.name ?? "(unnamed)",
+      role: row.role ?? "-",
+      lane: row.branch ?? "-",
+      status,
+      pane: status === "offline" ? "-" : row.pane_id ?? "-",
+      git: Number.isInteger(row.git?.ahead)
+        ? `+${row.git.ahead}${row.git.dirty ? " DIRTY" : ""}`
+        : "-",
+      ...gateCell(row.gate),
+      report: reportCell(row.report),
+      deadline: row.done ? "done" : row.overdue ? "OVERDUE" : row.deadline?.slice(0, 10) ?? "-",
+      tripwire: row.tripwire ?? "-",
+      output: row.last_message?.text ?? "-",
+      done: row.done ? "yes" : "no",
+      sessionId: row.row_id,
+    };
+  });
 }
 
 export function stateFromBoardDocument(document) {

@@ -21,9 +21,6 @@ try {
 } catch {
   // Every lane configuration key is optional.
 }
-if (options.main !== undefined) config.main = options.main;
-if (options.registry !== undefined) config.registry = options.registry;
-
 if (args.includes("--once")) {
   try {
     await runOnce({ repoRoot, config });

@@ -4,6 +4,7 @@ import { Box, Text, render, useApp, useInput } from "ink";
 
 import { boardOptionsFromArgs } from "./args.mjs";
 import { LaneCliClient } from "./cli-client.mjs";
+import { installBoardSignalHandlers } from "./process-lifetime.mjs";
 import {
   footerLine,
   interactiveMessage,
@@ -12,6 +13,9 @@ import {
 } from "./view.mjs";
 
 const h = React.createElement;
+let activeClient;
+
+installBoardSignalHandlers(() => activeClient);
 
 function BoardApp({ repoRoot }) {
   const { exit } = useApp();
@@ -30,6 +34,7 @@ function BoardApp({ repoRoot }) {
   useEffect(() => {
     mountedRef.current = true;
     const client = new LaneCliClient({ repoRoot });
+    activeClient = client;
     clientRef.current = client;
     const onSnapshot = (document) => {
       if (!mountedRef.current) return;
@@ -55,6 +60,7 @@ function BoardApp({ repoRoot }) {
     return () => {
       mountedRef.current = false;
       client.close();
+      if (activeClient === client) activeClient = undefined;
     };
   }, [repoRoot]);
 
@@ -74,6 +80,7 @@ function BoardApp({ repoRoot }) {
     if (input === "q" || key.escape) {
       mountedRef.current = false;
       clientRef.current?.close();
+      activeClient = undefined;
       exit();
     } else if (input === "r") {
       setMessage("refreshing lane CLI observer…");

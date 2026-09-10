@@ -77,3 +77,38 @@ Herdr session was part of this lane; that check is explicitly skipped. Promotion
 review records, and archival remain facilitator/operator actions. The required final
 clean-commit `lane check` is conversation-only evidence and is not recorded here so
 it can measure the final commit.
+
+## Round 2 review corrections — 2026-09-10
+
+The authoritative Round 1 review of `3ef8230` returned NEEDS-WORK with one Moderate
+and six Minor findings. All seven are resolved:
+
+- The interactive entrypoint now holds its CLI client at module scope. Preemptive
+  SIGINT, SIGTERM, and SIGHUP handlers synchronously close the observer and every
+  in-flight action child, restore terminal SGR/cursor state, remove themselves, and
+  re-raise the original signal instead of relying on asynchronous React cleanup.
+- The schema-v1 table adapter now uses the full branch for LANE and hides recorded
+  pane IDs for offline rows, matching `lane board --once`.
+- The UI boundary regression rejects dynamic imports plus direct `node:fs`,
+  `node:child_process`, `execFileSync`, and `spawnSync` paths, with mutations proving
+  both new guards fire.
+- Focus now requires a parseable Herdr result document and rejects error documents,
+  malformed output, nonzero exits, and spawn errors while reporting stderr or the
+  spawn error code. Every case still makes only the single requested focus call.
+- REFERENCE now states that `last_message` and `tripwire` are unavailable outside
+  the watch subscription; projection parity covers `tab_id`; and the obsolete main
+  and registry fields/overrides were removed from the isolated board argument path.
+
+Round 2 baseline `npm test` passed 126/126 with zero skips in 112.349 seconds. Before
+the fixes, the six focused groups produced five intended failures and one passing
+`tab_id` preservation case in 1.039 seconds. Afterward all six passed in 1.336
+seconds; the signal regression separately sent all three signals and verified that
+both observer and in-flight focus child PIDs were gone after each board process
+exited. The final full suite passed 127/127 with zero skips in 111.953 seconds, and
+all 127 deliberate controls failed with zero passes in 106.290 seconds. Strict
+OpenSpec validation passed 19/19; `git diff --check` passed. Every build/test or
+validation followed a clear load probe and ran alone.
+
+No live Herdr action, installed real-TTY UI, alternate host, push, promotion,
+archive, or new review was performed. The facilitator-owned Round 1 public record
+remains unchanged, and this correction did not touch any file under `docs/reviews/`.

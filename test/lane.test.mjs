@@ -19,7 +19,7 @@ import {
 import { createServer } from "node:net";
 import { homedir, hostname, tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import {
   boardSnapshotDocument,
@@ -31,6 +31,8 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LANE = resolve(process.env.LANE_TEST_CLI ?? join(HERE, "..", "lane.mjs"));
 const HERDR_CLIENT = resolve(HERE, "..", "board", "herdr-client.mjs");
+const CLI_CLIENT = resolve(HERE, "..", "board", "cli-client.mjs");
+const PROCESS_LIFETIME = resolve(HERE, "..", "board", "process-lifetime.mjs");
 const GIT = execFileSync("/bin/sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
 const HEAD = execFileSync("/bin/sh", ["-c", "command -v head"], { encoding: "utf8" }).trim();
 const HAS_HERDR = spawnSync("/bin/sh", ["-c", "command -v herdr"], { stdio: "ignore" }).status === 0;
@@ -402,7 +404,18 @@ if (args[0] === "workspace" && args[1] === "list") {
 } else if (args[0] === "agent" && args[1] === "focus") {
   state.focusSocket = process.env.HERDR_SOCKET_PATH;
   save();
-  if (process.env.FAKE_HERDR_FOCUS_FAIL === "1") process.exit(5);
+  if (process.env.FAKE_HERDR_FOCUS_FAIL === "1") {
+    process.stderr.write("focus refused by fake Herdr\\n");
+    process.exit(5);
+  }
+  if (process.env.FAKE_HERDR_FOCUS_ERROR_DOCUMENT === "1") {
+    process.stdout.write(JSON.stringify({ error: { code: "focus_refused", message: "focus error document" } }) + "\\n");
+    process.exit(0);
+  }
+  if (process.env.FAKE_HERDR_FOCUS_MALFORMED === "1") {
+    process.stdout.write("not-json\\n");
+    process.exit(0);
+  }
   result("cli:agent:focus", { type: "agent_focus", target: args[2] });
 } else if (args[0] === "agent" && args[1] === "prompt") {
   if (process.env.FAKE_HERDR_PROMPT_FAIL === "1") process.exit(4);
@@ -2568,6 +2581,7 @@ test("plain and JSON board projections resolve the same session context", () => 
     gate: plain.gate,
     report: plain.report,
     branch: plain.lane.startsWith("lane/") ? plain.lane : `lane/${plain.lane}`,
+    tab_id: "tab-1",
   }, {
     workspace: json.workspace_id,
     pane: json.pane_id,
@@ -2578,6 +2592,7 @@ test("plain and JSON board projections resolve the same session context", () => 
     gate: `exit=${json.gate.exit_code} @${json.gate.head.slice(0, 7)}`,
     report: `${json.report.verdict}@${json.report.mtime}`,
     branch: json.branch,
+    tab_id: json.tab_id,
   });
   negativeControl("shared board session context");
 });
@@ -2711,6 +2726,11 @@ test("board JSON snapshots expose schema v1 from canonical --repo config without
     const secondResult = await second.completed;
     assert.equal(secondResult.status, 0, secondResult.stderr);
     assert.equal(JSON.parse(secondResult.stdout).rows[0].row_id, row.row_id);
+    const reference = readFileSync(join(HERE, "..", "docs", "REFERENCE.md"), "utf8");
+    assert.match(
+      reference,
+      /`last_message` and `tripwire` are unavailable outside `lane board --watch --json`/u,
+    );
     negativeControl("board JSON schema, canonical repo, and observation-only behavior");
   } finally {
     if (server !== undefined) await server.close();
@@ -3159,11 +3179,38 @@ test("board focus verifies the current pane occupant and stored server without r
     });
     const failedResult = await failed.completed;
     assert.equal(failedResult.status, 1);
-    assert.match(failedResult.stderr, /Herdr focus failed/u);
+    assert.match(failedResult.stderr, /Herdr focus failed.*focus refused by fake Herdr/u);
     assert.equal(
       fake.calls().filter((args) => args[0] === "agent" && args[1] === "focus").length,
       beforeFailure + 1,
     );
+
+    for (const [flag, pattern] of [
+      ["FAKE_HERDR_FOCUS_ERROR_DOCUMENT", /Herdr focus failed.*focus error document/u],
+      ["FAKE_HERDR_FOCUS_MALFORMED", /Herdr focus failed.*malformed Herdr response/u],
+    ]) {
+      const before = fake.calls().filter((args) => args[0] === "agent" && args[1] === "focus").length;
+      const refused = laneProcess(fixture, ["board", "focus", record.session.session_id], {
+        env: { ...env, [flag]: "1" },
+      });
+      const result = await refused.completed;
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, pattern);
+      assert.equal(
+        fake.calls().filter((args) => args[0] === "agent" && args[1] === "focus").length,
+        before + 1,
+      );
+    }
+
+    const noHerdrBin = join(fixture.root, "bin-without-herdr");
+    mkdirSync(noHerdrBin);
+    symlinkSync(GIT, join(noHerdrBin, "git"));
+    const unavailable = laneProcess(fixture, ["board", "focus", record.session.session_id], {
+      env: { ...env, PATH: noHerdrBin },
+    });
+    const unavailableResult = await unavailable.completed;
+    assert.equal(unavailableResult.status, 1);
+    assert.match(unavailableResult.stderr, /Herdr focus failed.*ENOENT/u);
     negativeControl("verified board focus action");
   } finally {
     if (server !== undefined) await server.close();
@@ -3187,7 +3234,13 @@ if (args[1] === "--watch") {
   const frames = [1, 2, 3].map((value) => JSON.stringify({
     schema_version: 1,
     captured_at: "2026-09-10T00:00:0" + value + ".000Z",
-    coverage: { herdr: "connected" }, repositories: [], rows: [{ row_id: "row-" + value }],
+    coverage: { herdr: "connected" }, repositories: [], rows: [{
+      row_id: "row-" + value,
+      topic: "topic-" + value,
+      branch: "lane/topic-" + value,
+      pane_id: "pane-" + value,
+      status: "offline",
+    }],
     host: { load_1m: value, free_memory_bytes: value, workers: {} }, errors: [],
   }) + "\\n");
   process.stdout.write(frames[0].slice(0, 9));
@@ -3218,7 +3271,7 @@ if (args[1] === "--watch") {
     await waitForCondition(() => snapshots.length === 3, "split and batched fake CLI snapshots");
     assert.deepEqual(snapshots.map((snapshot) => snapshot.rows[0].row_id), ["row-1", "row-2", "row-3"]);
     assert.deepEqual(stateFromBoardDocument(snapshots[2]).rows[0], {
-      name: "(unnamed)", role: "-", lane: "-", status: "offline", pane: "-", git: "-", gate: "-",
+      name: "(unnamed)", role: "-", lane: "lane/topic-3", status: "offline", pane: "-", git: "-", gate: "-",
       report: "-", deadline: "-", tripwire: "-", output: "-", done: "no", sessionId: "row-3",
     });
     assert.match(errors[0], /invalid JSON from lane board/u);
@@ -3233,14 +3286,92 @@ if (args[1] === "--watch") {
     ]);
 
     const appSource = readFileSync(resolve(HERE, "..", "board", "app.mjs"), "utf8");
-    const imports = [...appSource.matchAll(/from\s+["']([^"']+)["']/gu)].map((match) => match[1]);
-    assert.deepEqual(imports.sort(), ["./args.mjs", "./cli-client.mjs", "./view.mjs", "ink", "react"].sort());
-    assert.doesNotMatch(appSource, /readFileSync|collectBoardState|HerdrClient|markSessionDone|registry\.mjs/u);
+    const assertProcessBoundary = (source) => {
+      const imports = [...source.matchAll(/from\s+["']([^"']+)["']/gu)].map((match) => match[1]);
+      assert.deepEqual(imports.sort(), [
+        "./args.mjs", "./cli-client.mjs", "./process-lifetime.mjs", "./view.mjs", "ink", "react",
+      ].sort());
+      assert.doesNotMatch(source, /\bimport\s*\(/u);
+      assert.doesNotMatch(
+        source,
+        /readFileSync|collectBoardState|HerdrClient|markSessionDone|registry\.mjs|execFileSync|spawnSync|node:fs|node:child_process/u,
+      );
+    };
+    assertProcessBoundary(appSource);
+    assert.throws(
+      () => assertProcessBoundary(`${appSource}\nvoid import("node:child_process");\n`),
+      /The input was expected to not match/u,
+    );
+    assert.throws(
+      () => assertProcessBoundary(`${appSource}\nspawnSync("git", ["status"]);\n`),
+      /The input was expected to not match/u,
+    );
     assert.match(appSource, /key\.return \|\| input === "a"[\s\S]*runAction\("focus"\)/u);
     assert.match(appSource, /input === "d"[\s\S]*runAction\("done"\)/u);
     negativeControl("interactive board CLI process boundary");
   } finally {
     client?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("interactive board signals synchronously terminate observer and action children", async () => {
+  const { BOARD_TERMINAL_RESET } = await import(pathToFileURL(PROCESS_LIFETIME));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-signals-")));
+  const fakeLane = join(root, "lane.mjs");
+  writeFileSync(fakeLane, `
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(process.env.FAKE_LANE_LOG, JSON.stringify({ args, pid: process.pid }) + "\\n");
+setInterval(() => {}, 1000);
+`);
+  try {
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+      const log = join(root, `${signal}.jsonl`);
+      const harness = join(root, `${signal}.mjs`);
+      writeFileSync(harness, `
+import { LaneCliClient } from ${JSON.stringify(pathToFileURL(CLI_CLIENT).href)};
+import { installBoardSignalHandlers } from ${JSON.stringify(pathToFileURL(PROCESS_LIFETIME).href)};
+const client = new LaneCliClient({
+  lanePath: ${JSON.stringify(fakeLane)},
+  repoRoot: ${JSON.stringify(root)},
+  env: { ...process.env, FAKE_LANE_LOG: ${JSON.stringify(log)} },
+});
+installBoardSignalHandlers(() => client);
+client.start();
+void client.focus("row-1").catch(() => {});
+process.stdout.write("ready\\n");
+setInterval(() => {}, 1000);
+`);
+      const board = spawn(process.execPath, [harness], { stdio: ["ignore", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      board.stdout.setEncoding("utf8");
+      board.stderr.setEncoding("utf8");
+      board.stdout.on("data", (chunk) => { stdout += chunk; });
+      board.stderr.on("data", (chunk) => { stderr += chunk; });
+      await waitForCondition(
+        () => existsSync(log) && readFileSync(log, "utf8").trim().split("\n").length === 2,
+        `${signal} board children`,
+      );
+      const children = readFileSync(log, "utf8").trim().split("\n").map(JSON.parse);
+      const closed = once(board, "close");
+      board.kill(signal);
+      const [status, exitSignal] = await closed;
+      assert.equal(status, null, stderr);
+      assert.equal(exitSignal, signal, stderr);
+      await waitForCondition(() => children.every(({ pid }) => {
+        try {
+          process.kill(pid, 0);
+          return false;
+        } catch (error) {
+          return error.code === "ESRCH";
+        }
+      }), `${signal} child termination`);
+      assert.ok(stdout.includes(BOARD_TERMINAL_RESET), `${signal} did not reset the terminal`);
+    }
+    negativeControl("interactive board synchronous signal teardown");
+  } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });

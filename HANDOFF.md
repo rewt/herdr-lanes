@@ -785,3 +785,19 @@ Living log for agents maintaining this repository. Newest entry last.
 - No real-TTY UI or live-Herdr mutation was available; both are explicit skips. No
   alternate host, push, promotion, archive, independent review, or `docs/reviews/`
   edit was performed. The final clean-commit gate remains conversation-only evidence.
+
+## 2026-09-10 — board actions Round 2 corrections
+
+- Resolved the Round 1 NEEDS-WORK Moderate and all six Minors: synchronous
+  SIGINT/SIGTERM/SIGHUP child teardown with terminal reset and signal re-raise;
+  plain/UI lane and pane parity; dynamic-import/child-process boundary guards; parsed
+  Herdr focus results with useful failure detail; live-only message documentation;
+  `tab_id` parity coverage; and removal of dead board main/registry argument fields.
+- Five of six focused groups failed before fixes while the new `tab_id` preservation
+  check passed; afterward 6/6 passed. Baseline was 126/126; the corrected suite passed
+  127/127 in 111.953 seconds, all 127 deliberate controls failed in 106.290 seconds,
+  strict OpenSpec passed 19/19, and whitespace checks passed after clear serialized
+  load probes.
+- No live action, installed real-TTY UI, alternate host, push, promotion, archive,
+  or `docs/reviews/` change was performed. The facilitator-owned Round 1 record is
+  unchanged; the final clean-commit gate remains conversation-only evidence.

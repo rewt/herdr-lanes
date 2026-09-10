@@ -2218,8 +2218,25 @@ async function focusBoardSession(rowId) {
     encoding: "utf8",
     env: { ...process.env, HERDR_SOCKET_PATH: selected.server },
   });
-  if (run.status !== 0) {
-    throw new Error(`Herdr focus failed for ${selected.name ?? selected.pane}`);
+  const stderr = run.stderr?.trim();
+  let document;
+  let malformed = false;
+  try {
+    document = JSON.parse(run.stdout);
+  } catch {
+    malformed = true;
+  }
+  const documentError = document?.error;
+  if (run.error !== undefined || run.status !== 0 || malformed ||
+      documentError !== undefined || !Object.hasOwn(document ?? {}, "result")) {
+    const responseMessage = typeof documentError === "string"
+      ? documentError
+      : documentError?.message ?? documentError?.code;
+    const reason = stderr || run.error?.code || responseMessage ||
+      (malformed || !Object.hasOwn(document ?? {}, "result")
+        ? "malformed Herdr response"
+        : `exit ${run.status}`);
+    throw new Error(`Herdr focus failed for ${selected.name ?? selected.pane}: ${reason}`);
   }
   process.stdout.write(`focused ${selected.name ?? selected.pane} (${rowId})\n`);
 }

@@ -270,6 +270,9 @@ Repository records contain canonical `repo_id`, development `root_id`, canonical
 - `last_message` (`text`, source `pane-output`, UTC `observed_at`, `truncated`,
   `available`).
 
+`last_message` and `tripwire` are unavailable outside `lane board --watch --json`;
+only that live subscription populates them.
+
 Unknown scalar values are `null` and carry `available: false` where defined; they are
 never reported as clean or passing. Consumers must accept absent optional v1 fields
 and ignore unknown fields. Row IDs come from immutable session identity and remain
