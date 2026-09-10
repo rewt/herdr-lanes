@@ -163,9 +163,10 @@ newline-delimited snapshots. `--repo` selects a repository by path and uses its
 canonical configuration; without it, board reads use the current repository. Plain
 and JSON reads use only Node.js built-ins and do not require the optional board
 package installation. When Herdr can read a registered Codex or Claude pane, every
-mode shows the last confidently bounded assistant response instead of terminal
-footer or tool chrome. Unsupported or incomplete output is labeled unavailable;
-JSON keeps any bounded raw excerpt separately labeled as pane output. The board
+mode uses the same conservative visible-text adapter to show the last confidently
+bounded assistant response. Recognized terminal footer and tool chrome are excluded;
+unsupported or incomplete output is labeled unavailable. JSON keeps any bounded raw
+excerpt separately labeled as pane output. The board
 reads legacy JSON-array entries plus immutable per-session files in
 `<registry>.d/`. Board completion and successful `lane close` write independent
 atomic done markers; this metadata is display-only and never controls validation,

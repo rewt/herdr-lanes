@@ -286,12 +286,16 @@ are localized with source `message` and do not discard Git/report state.
 For registered Codex and Claude agents, the board reads `recent_unwrapped` text with
 an explicit 200-line request and retains at most the final 16 KiB. Small
 kind-specific adapters strip ANSI/control sequences and recognize only documented
-assistant and prompt markers; call-shaped or result-marker tool evidence; timed or
-interrupt-advertising status; and approval, pure composer-frame, and footer
-boundaries. An indented result marker is both tool evidence and a block boundary. A
-tool-label opening without corroboration remains unavailable unless its continuation
-is sentence-shaped. Indented approval prompts are chrome, while indented quotes,
-bullets, directory trees, and tables remain message content. The detail value
+assistant and prompt markers; call-shaped or contextual result-marker tool evidence;
+timed or interrupt-advertising status; a covered in-flight tool-summary shape; and
+approval, pure composer-frame, and footer boundaries. An indented result marker is
+both tool evidence and a block boundary unless it belongs to a same-indent run of
+hand-drawn tree lines. A tool-label opening remains unavailable only when its first
+line is bare or its remainder has a command-invocation shape; prose, colon-introduced
+lists, short sentences, and paths within prose remain messages. Indented approval
+prompts are chrome, while indented quotes, bullets, covered directory-tree runs, and
+tables remain message content. An isolated bare elbow line remains ambiguous and is
+treated as a result marker. The detail value
 preserves the last confidently bounded multiline assistant block; the table
 summarizes its first substantive line. Tool-only, footer-only, unsupported, or
 otherwise ambiguous text yields `source: "unavailable"`, never a guessed message. A

@@ -162,9 +162,13 @@ The untouched baseline passed 142/142 in 120.972 seconds. Final `npm test` passe
 146/146 with zero skips in 124.049 seconds. The serialized
 `LANE_TEST_NEGATIVE_CONTROL=1 npm test` run produced zero passes and all 146
 deliberate failures with zero skips in 106.511 seconds. Strict OpenSpec validation
-passed 20/20. Each build or test began after a clear executable-aware load probe and
-ran alone; no Unix-socket sandbox failure occurred in these Round 3 runs. Verification
-used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+passed 20/20. Each pre-commit build or test began after a clear executable-aware load
+probe and ran alone; no Unix-socket sandbox failure occurred in those pre-commit
+runs. The single post-commit lane check then failed 140/146 solely because the sandbox
+refused six system-temp Unix sockets with `listen EPERM: operation not permitted
+…/board.sock`; no product or test workaround was made. The facilitator's gate for
+the same commit exited zero. Verification used Node.js 20.19.4, npm 10.8.2, Git
+2.54.0, and OpenSpec 1.6.0.
 
 The adapters remain conservative, bounded classifiers of rendered pane text rather
 than semantic transcripts. No live pane or real TTY was exercised in this correction
@@ -173,3 +177,57 @@ fixtures only. Unrecognized formats, missing alternate-screen history, alternate
 hosts, model APIs, push, promotion, and archive remain unverified. No contract
 amendment or further implementation approval is needed; `board/app.mjs` and every
 file under `docs/reviews/` remain unchanged.
+
+## Round 4 corrections — 2026-09-10
+
+The parser now rejects named progress lines only when an elapsed time occurs in the
+trailing rendered status form: parentheses, brackets, or text after an ellipsis. An
+interrupt affordance remains independently sufficient evidence of status chrome.
+This preserves ordinary answers that start with Working, Worked, Thinking, or
+Running and merely discuss a duration.
+
+Tool-label candidates are unavailable only when their first line is the bare tool
+word or the remainder has a command-invocation shape. Prose, short sentences,
+colon-introduced lists, and file paths in prose remain substantive, while a trailing
+partially rendered command suppresses the older superseded answer. The exact
+public-safe Claude in-flight summary captured by one bounded 120-line
+`recent-unwrapped` read is now a block boundary in both adapters. Same-indent runs
+of bare elbow and tee tree lines remain answer content; an isolated bare elbow is
+still treated conservatively as an ambiguous result marker. README and REFERENCE
+now promise exclusion only for recognized chrome and document these limits.
+
+Files changed in this round are `board/message-preview.mjs` for classification,
+`test/message-preview.test.mjs` for the cumulative regression corpus, README and
+`docs/REFERENCE.md` for the qualified public behavior, and this report plus
+HANDOFF for measured delivery evidence.
+
+The cumulative message-preview corpus now has 28 negative-controlled test groups:
+24 visible-text extraction groups and four read-state groups. Round 4 added 14 groups
+covering 19 distinct fixture variants and 34 adapter cases: the ten answer strings
+quoted by the Round 3 review in both adapters, three trailing-duration chrome forms
+in both adapters, four partially rendered command variants, the bounded live tool
+summary in both adapters, and a bare hand-drawn tree run in both adapters. Existing
+Round 1 and Round 2 answer, status, footer, approval, result-marker, composer-frame,
+tree, table, prompt, and tool fixtures remain in the cumulative file.
+
+Against the reviewed parser, the first focused run passed 15/28 and failed the 13
+newly exposed cases. After the first correction passed 28/28, a separately added
+inline-command assertion failed its group at 27/28 before the final command-shape
+branch was restored. The final focused run passed 28/28 in 0.043 seconds. The
+untouched baseline passed 146/146 in 111.644 seconds.
+
+Final `npm test` passed 160/160 with zero skips in 114.092 seconds. The serialized
+`LANE_TEST_NEGATIVE_CONTROL=1 npm test` run produced zero passes, 160 failures, and
+zero skips in 102.976 seconds: 159 cases reached their deliberate controls, while the
+board-focus case first hit the known sandbox `listen EPERM: operation not permitted
+…/board.sock` restriction. No product or test workaround was made. Strict OpenSpec
+validation passed 20/20, and `git diff --check` was clean. Each build or test began
+after a clear executable-aware load probe and ran alone. Verification used Node.js
+20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+
+Only the one sanitized in-flight summary from the bounded live read was incorporated;
+raw pane text, paths, host details, and unrelated output were not retained. No live
+interactive render, alternate host, model API, push, promotion, archive, or product
+contract change was exercised. `board/app.mjs` and every file under `docs/reviews/`
+remain unchanged. The single post-commit lane gate remains to be run and reported as
+conversation-only evidence.

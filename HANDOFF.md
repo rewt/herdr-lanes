@@ -1181,12 +1181,42 @@ Living log for agents maintaining this repository. Newest entry last.
   baseline passed 142/142 in 120.972 seconds.
 - Final `npm test` passed 146/146 with zero skips in 124.049 seconds; all 146
   deliberate controls failed with zero passes or skips in 106.511 seconds; strict
-  OpenSpec validation passed 20/20. Runs were serialized after clear executable-aware
-  probes, and no Unix-socket sandbox failure occurred in this round. Verification used
-  Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+  OpenSpec validation passed 20/20. Pre-commit runs were serialized after clear
+  executable-aware probes and had no socket failure. The single post-commit lane check
+  failed 140/146 solely on the known sandbox `listen EPERM: operation not permitted
+  …/board.sock` restriction across six fake-server cases; no workaround was made, and
+  the facilitator gate for the same commit exited zero. Verification used Node.js
+  20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
 - No live-pane repeat, real-TTY or alternate-host check, model API, push, promotion,
   archive, contract amendment, `board/app.mjs` change, or `docs/reviews/` change was
   performed. The final clean-commit gate remains conversation-only evidence.
+
+## 2026-09-10 — message previews Round 4 corrections
+
+- Resolved the five Round 3 findings without broad sentence-length heuristics:
+  progress durations must occupy a trailing rendered status form; bare and
+  command-shaped tool openings suppress superseded answers; a bounded live Claude
+  tool summary ends the answer; and same-indent bare tree-marker runs remain content.
+  README and REFERENCE now qualify chrome exclusion and document the isolated-elbow
+  limitation. The Round 3 gate record now distinguishes its passing pre-commit runs,
+  sandboxed post-commit socket failure, and passing facilitator gate.
+- The cumulative parser file contains 28 negative-controlled groups, comprising 24
+  extraction groups and four read-state groups. Round 4 added 14 groups with 19
+  distinct variants and 34 adapter cases while retaining the Round 1 and Round 2
+  corpus. The initial focus passed 15/28 and failed 13/28; a later inline-command
+  control failed 1/28; the final focus passed 28/28 in 0.043 seconds. The unchanged
+  baseline passed 146/146 in 111.644 seconds.
+- Final `npm test` passed 160/160 with zero skips in 114.092 seconds. The negative run
+  had zero passes, 160 failures, and zero skips in 102.976 seconds: 159 deliberate
+  controls and one known sandbox `listen EPERM: operation not permitted …/board.sock`
+  failure in the board-focus case. Strict OpenSpec passed 20/20 and
+  `git diff --check` was clean after clear serialized load probes. Verified Node.js 20.19.4,
+  npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+- One bounded 120-line Herdr pane read supplied only the sanitized public-safe tool
+  summary fixture. No raw pane output, private path, live interactive render,
+  alternate host, model API, push, promotion, archive, contract amendment,
+  `board/app.mjs` change, or `docs/reviews/` change occurred. The final clean-commit
+  gate remains conversation-only evidence.
 
 ## 2026-09-11 — review CLI precise paths Round 10 corrections
 

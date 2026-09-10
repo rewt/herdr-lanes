@@ -43,6 +43,43 @@ const CLAUDE_RESPONSE = [
   "  ? for shortcuts",
 ].join("\n");
 
+const ROUND_THREE_ANSWER_FIXTURES = [
+  ["updated path", ["Updated the parser in board/message-preview.mjs"]],
+  ["colon list", ["Added two tests:", "- parser case", "- adapter case"]],
+  ["found cause", ["Found the cause: the boundary rule"]],
+  ["two-word answer", ["Added it."]],
+  ["read prose", ["Read the config and it sets worktree_root"]],
+  ["search path", ["Search found three call sites in board/board.mjs"]],
+  ["running duration", ["Running the full suite takes about 2 minutes."]],
+  ["working duration", ["Working on the 30s timeout is the next step."]],
+  ["worked clock", ["Worked through the 12:30 backlog entry and closed it."]],
+  ["thinking duration", ["Thinking about caching saves 200 ms per read."]],
+];
+
+function answerFixture(kind, lines) {
+  const marker = kind === "codex" ? "•" : "⏺";
+  return [
+    `${marker} Superseded response.`,
+    "",
+    `${marker} ${lines[0]}`,
+    ...lines.slice(1).map((line) => `  ${line}`),
+  ].join("\n");
+}
+
+for (const [name, lines] of ROUND_THREE_ANSWER_FIXTURES) {
+  test(`cumulative answer corpus preserves ${name} in both adapters`, async () => {
+    const { extractAssistantPreview } = await previewApi();
+    for (const kind of ["codex", "claude"]) {
+      assert.equal(
+        extractAssistantPreview({ kind, text: answerFixture(kind, lines) }).text,
+        lines.join("\n"),
+        kind,
+      );
+    }
+    negativeControl(`cumulative answer corpus: ${name}`);
+  });
+}
+
 test("Codex preview extracts the last multiline assistant block before footer chrome", async () => {
   const { extractAssistantPreview } = await previewApi();
   const preview = extractAssistantPreview({ kind: "codex", text: CODEX_RESPONSE });
@@ -151,6 +188,24 @@ test("interrupt affordances are status chrome while ordinary progress-verb prose
   negativeControl("general interrupt chrome and progress-verb prose");
 });
 
+test("cumulative status corpus rejects only trailing rendered duration forms", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  for (const kind of ["codex", "claude"]) {
+    const marker = kind === "codex" ? "•" : "⏺";
+    for (const status of [
+      "Working (2m 04s)",
+      "Worked [48s]",
+      "Thinking… 30s",
+    ]) {
+      assert.equal(extractAssistantPreview({
+        kind,
+        text: `${marker} Earlier response.\n\n${marker} ${status}`,
+      }).text, "Earlier response.", `${kind}: ${status}`);
+    }
+  }
+  negativeControl("cumulative trailing status forms");
+});
+
 test("ordinary answer verbs need corroborating evidence before they count as tool calls", async () => {
   const { extractAssistantPreview } = await previewApi();
   for (const word of ["Added", "Updated", "Applied", "Opened", "Read", "Found"]) {
@@ -200,7 +255,7 @@ test("Claude result markers independently identify tool blocks and bound answer 
   negativeControl("Claude result-marker tool evidence and boundary");
 });
 
-test("pending tool labels stay unavailable unless their text is sentence-shaped", async () => {
+test("pending tool labels stay unavailable while prose remains substantive", async () => {
   const { extractAssistantPreview } = await previewApi();
   for (const text of [
     "• Ran",
@@ -214,7 +269,37 @@ test("pending tool labels stay unavailable unless their text is sentence-shaped"
     kind: "codex",
     text: "• Earlier response.\n\n• Ran into a compatibility issue.",
   }).text, "Ran into a compatibility issue.");
-  negativeControl("pending tool labels require sentence-shaped text");
+  negativeControl("pending tool labels distinguish prose");
+});
+
+test("a trailing partially rendered command does not resurrect an older answer", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  for (const [kind, marker, tool] of [
+    ["codex", "•", "Ran"],
+    ["claude", "⏺", "Bash"],
+  ]) {
+    for (const pending of [`${tool}\n  git status --short`, `${tool} npm test`]) {
+      const preview = extractAssistantPreview({
+        kind,
+        text: `${marker} Superseded response.\n\n${marker} ${pending}`,
+      });
+      assert.equal(preview.available, false, `${kind}: ${pending}`);
+      assert.equal(preview.text, null, `${kind}: ${pending}`);
+    }
+  }
+  negativeControl("pending command suppresses superseded fallback");
+});
+
+test("the bounded live Claude tool-summary shape ends an answer block", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  const toolSummary = "Searched for 5 patterns, read 2 files, listed 2 directories, ran 55 shell commands";
+  for (const [kind, marker] of [["codex", "•"], ["claude", "⏺"]]) {
+    assert.equal(extractAssistantPreview({
+      kind,
+      text: `${marker} The answer is complete.\n\n  ${toolSummary}`,
+    }).text, "The answer is complete.", kind);
+  }
+  negativeControl("bounded live in-flight tool summary");
 });
 
 test("indented quotes and bullets remain inside the assistant response", async () => {
@@ -280,6 +365,21 @@ test("directory trees and tables remain content while pure composer frames stay 
     text: "• First paragraph.\n  \n  Second paragraph.",
   }).text, "First paragraph.\n\nSecond paragraph.");
   negativeControl("frame content and composer boundaries");
+});
+
+test("runs of bare hand-drawn tree markers remain answer content", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  for (const [kind, marker] of [["codex", "•"], ["claude", "⏺"]]) {
+    assert.equal(extractAssistantPreview({
+      kind,
+      text: [
+        `${marker} The tree is:`,
+        "  ├ root",
+        "  └ child",
+      ].join("\n"),
+    }).text, "The tree is:\n├ root\n└ child", kind);
+  }
+  negativeControl("bare hand-drawn tree run");
 });
 
 test("tool-only, footer-only, and unknown formats stay unavailable with labeled raw output", async () => {

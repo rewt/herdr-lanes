@@ -15,17 +15,31 @@ const TOKEN_OR_COST_BAR = /^\s*(?:[\d,.]+[km]?\s+)?tokens?\b.*(?:\$|cost|used)/i
 const INTERRUPT_AFFORDANCE = /\besc(?:ape)? to interrupt\b/iu;
 const PROGRESS_PREFIX = /^\s*(?:[✻✽✶✳·]\s+)?(?:Working|Worked|Thinking|Running)\b/iu;
 const ELAPSED_TIME = /(?:\b\d+(?:[.,]\d+)?\s*(?:ms|s|m|h|secs?|seconds?|mins?|minutes?|hours?)\b|\b\d{1,2}:\d{2}(?::\d{2})?\b)/iu;
+const TRAILING_STATUS = /(?:\([^\n)]*\)|\[[^\n\]]*\]|…[^\n]*)\s*$/u;
 const APPROVAL_PROMPT = /^\s*(?:Would you like to run|Do you want to (?:run|allow|approve)|Allow Codex to)\b/iu;
-const RESULT_MARKER = /^\s{2,}(?:└|⎿|├)(?:\s+|$)/u;
+const RESULT_MARKER = /^(\s{2,})(└|⎿|├)(?:\s+|$)/u;
+const TREE_MARKER = /^(\s{2,})[└├](?:\s+|$)/u;
+const TOOL_SUMMARY = /^\s{2,}Searched for \d+ patterns?, read \d+ files?, listed \d+ director(?:y|ies), ran \d+ shell commands?\s*$/iu;
+const COMMAND_INVOCATION = /^(?:(?:npm|npx|node|pnpm|yarn|bun|deno|git|rg|grep|sed|awk|find|ls|pwd|cd|cat|head|tail|printf|echo|cp|mv|rm|mkdir|touch|chmod|curl|wget|cargo|rustc|go|python3?|pytest|make|cmake|sh|bash|zsh)(?:\s|$)|[A-Z_][A-Z0-9_]*=|(?:\.{0,2}|~)\/\S+(?:\s.*)?$|(?:[\w.-]+\/)+[\w.-]+$|[\w.-]+\.[A-Za-z0-9]+$)/u;
 
 function statusChrome(line) {
-  return INTERRUPT_AFFORDANCE.test(line)
-    || (PROGRESS_PREFIX.test(line) && ELAPSED_TIME.test(line));
+  if (INTERRUPT_AFFORDANCE.test(line)) return true;
+  if (!PROGRESS_PREFIX.test(line)) return false;
+  const trailing = line.match(TRAILING_STATUS)?.[0];
+  return trailing !== undefined && ELAPSED_TIME.test(trailing);
 }
 
 function divider(line) {
   return HORIZONTAL_DIVIDER.test(line)
     || (FRAME_LINE.test(line) && FRAME_CHARACTER.test(line));
+}
+
+function resultMarker(lines, index) {
+  const match = lines[index]?.match(RESULT_MARKER);
+  if (match === null || match === undefined) return false;
+  if (match[2] === "⎿") return true;
+  const sameIndentTree = (line) => line?.match(TREE_MARKER)?.[1] === match[1];
+  return !sameIndentTree(lines[index - 1]) && !sameIndentTree(lines[index + 1]);
 }
 
 function cleanPaneText(text) {
@@ -46,11 +60,12 @@ function continuation(line) {
   return line.startsWith("  ") ? line.slice(2) : line;
 }
 
-function codexBoundary(line) {
+function codexBoundary(line, lines = [line], index = 0) {
   return /^•\s+/u.test(line)
     || /^›(?:\s|$)/u.test(line)
     || divider(line)
-    || RESULT_MARKER.test(line)
+    || resultMarker(lines, index)
+    || TOOL_SUMMARY.test(line)
     || statusChrome(line)
     || SHORTCUT_BAR.test(line)
     || CONTEXT_BAR.test(line)
@@ -60,16 +75,17 @@ function codexBoundary(line) {
 }
 
 function codexToolLabel(text) {
-  return /^(?:Ran|Explored|Waited|Searched|Read|Listed|Viewed|Called|Edited|Added|Deleted|Updated|Applied|Opened|Found)\b/iu.test(text);
+  return text.match(/^(?:Ran|Explored|Waited|Searched|Read|Listed|Viewed|Called|Edited|Added|Deleted|Updated|Applied|Opened|Found)\b/iu);
 }
 
-function claudeBoundary(line) {
+function claudeBoundary(line, lines = [line], index = 0) {
   return /^(?:⏺|●)\s+/u.test(line)
     || /^(?:❯|›|>)\s*/u.test(line)
     || divider(line)
     || /^\s*(?:\?|⏵⏵)\s+/u.test(line)
     || /^\s*[✻✽✶✳·]\s+/u.test(line)
-    || RESULT_MARKER.test(line)
+    || resultMarker(lines, index)
+    || TOOL_SUMMARY.test(line)
     || statusChrome(line)
     || SHORTCUT_BAR.test(line)
     || CONTEXT_BAR.test(line)
@@ -77,11 +93,11 @@ function claudeBoundary(line) {
 }
 
 function claudeToolLabel(text) {
-  return /^(?:Read|Write|Edit|Update|Bash|Glob|Grep|Search|Task|WebFetch|WebSearch|Skill|TodoWrite|AskUserQuestion|NotebookEdit|EnterPlanMode|ExitPlanMode|Save|Fetch|mcp__[^\s(]+)\b/iu.test(text);
+  return text.match(/^(?:Read|Write|Edit|Update|Bash|Glob|Grep|Search|Task|WebFetch|WebSearch|Skill|TodoWrite|AskUserQuestion|NotebookEdit|EnterPlanMode|ExitPlanMode|Save|Fetch|mcp__[^\s(]+)\b/iu);
 }
 
 function hasToolEvidence(lines, index, text, toolLabel) {
-  if (RESULT_MARKER.test(lines[index + 1] ?? "")) return true;
+  if (resultMarker(lines, index + 1)) return true;
   return toolLabel(text) && /^[^\s(\n]+\([^\n)]*\)\s*$/u.test(text);
 }
 
@@ -89,29 +105,38 @@ function plausibleContinuation(line) {
   return line.trim() === "" || /^\s{2,}\S/u.test(line);
 }
 
-function sentenceShaped(text) {
-  const flattened = text.replace(/\s+/gu, " ").trim();
-  const words = flattened.match(/\p{L}+/gu) ?? [];
-  return words.length >= 3 && /[.!?…]["'”’)}\]]*$/u.test(flattened);
+function pendingToolCommand(text, toolLabel) {
+  const firstLine = text.split("\n", 1)[0].trimEnd();
+  const match = toolLabel(firstLine);
+  if (match === null) return false;
+  const remainder = firstLine.slice(match[0].length).trim();
+  return remainder === "" || COMMAND_INVOCATION.test(remainder);
 }
 
 function extractBlocks(lines, { start, toolLabel, boundary }) {
   const blocks = [];
+  let trailingPendingTool = false;
   for (let index = 0; index < lines.length; index += 1) {
     const match = lines[index].match(start);
     if (match === null || boundary(match[1]) || hasToolEvidence(lines, index, match[1], toolLabel)) continue;
     const block = [match[1].trimEnd()];
     for (index += 1;
-      index < lines.length && !boundary(lines[index]) && plausibleContinuation(lines[index]);
+      index < lines.length && !boundary(lines[index], lines, index) && plausibleContinuation(lines[index]);
       index += 1) {
       block.push(continuation(lines[index]).trimEnd());
     }
     index -= 1;
     const text = trimBlock(block);
-    if (toolLabel(match[1]) && !sentenceShaped(text)) continue;
-    if (/\p{L}|\p{N}/u.test(text)) blocks.push(text);
+    if (pendingToolCommand(text, toolLabel)) {
+      trailingPendingTool = true;
+      continue;
+    }
+    if (/\p{L}|\p{N}/u.test(text)) {
+      blocks.push(text);
+      trailingPendingTool = false;
+    }
   }
-  return blocks;
+  return trailingPendingTool ? [] : blocks;
 }
 
 function rawExcerpt(text) {
