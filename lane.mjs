@@ -1207,6 +1207,7 @@ function privateReviewIsComplete(value) {
 }
 
 function validateReviewRecord(record, expected) {
+  if (record.includes("\r\n")) fail("private review must use LF line endings; CRLF is not supported");
   const normalized = normalizeReviewNewlineBoundaries(record);
   const lines = normalized.split("\n");
   const verdictMatch = lines[0]?.match(/^\*\*(PASS|NEEDS-WORK|FAIL)\*\*$/u);
@@ -1377,7 +1378,7 @@ function absolutePathPattern() {
   return /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]*/giu;
 }
 
-function assertPublicPayloadRestrictions(value, label, { allowGenerated = false } = {}) {
+function assertPublicPayloadRestrictions(value, label, { allowGenerated = false, machineSyntax = false } = {}) {
   if (!allowGenerated && REVIEW_PLACEHOLDER_PATTERN.test(value)) {
     REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
     fail(`${label} contains a reserved sanitizer placeholder`);
@@ -1389,15 +1390,17 @@ function assertPublicPayloadRestrictions(value, label, { allowGenerated = false 
   if ([...withoutPlaceholders].some((character) => character.codePointAt(0) < 0x20 || character.codePointAt(0) > 0x7e)) {
     fail(`${label} contains unsupported non-ASCII text`);
   }
-  const markup = /[`<>\[\]]|\*\*|__/u.test(withoutPlaceholders);
-  const encoded = /%[0-9A-Fa-f]{2}|&(?:#?[A-Za-z0-9]+);|\\x[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}/u
-    .test(withoutPlaceholders);
-  if (markup || encoded) {
-    fail(`${label} contains unsupported markup or encoded text`);
+  if (!machineSyntax) {
+    const markup = /[`<>\[\]]|\*\*|__/u.test(withoutPlaceholders);
+    const encoded = /%[0-9A-Fa-f]{2}|&(?:#?[A-Za-z0-9]+);|\\x[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}/u
+      .test(withoutPlaceholders);
+    if (markup || encoded) {
+      fail(`${label} contains unsupported markup or encoded text`);
+    }
   }
 }
 
-function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
+function sanitizePublicString(input, context, { allowGenerated = false, machineSyntax = false } = {}) {
   let value = input.normalize("NFC");
   if (!allowGenerated && REVIEW_PLACEHOLDER_PATTERN.test(value)) fail("projected payload contains a reserved sanitizer placeholder");
   REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
@@ -1430,7 +1433,7 @@ function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
     }));
   }
 
-  assertPublicPayloadRestrictions(value, "projected payload", { allowGenerated: true });
+  assertPublicPayloadRestrictions(value, "projected payload", { allowGenerated: true, machineSyntax });
   const withoutPlaceholders = value.replace(REVIEW_PLACEHOLDER_PATTERN, "");
   REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
   if (absolutePathPattern().test(withoutPlaceholders) || containsAlias(withoutPlaceholders, context.aliases)) {
@@ -1462,6 +1465,7 @@ function sanitizeReviewProjection(parsed, expected) {
   };
   const modifiedExecutionFields = [];
   const sanitize = (value) => sanitizePublicString(value, context);
+  const sanitizeMachineSyntax = (value) => sanitizePublicString(value, context, { machineSyntax: true });
   const findingPayloads = [];
   const findingLines = parsed.sections.get("Findings") === "None"
     ? ["None"]
@@ -1477,13 +1481,15 @@ function sanitizeReviewProjection(parsed, expected) {
   const executions = parsed.executions.map((execution, index) => {
     const projected = { ...execution };
     for (const field of ["command", "result"]) {
-      projected[field] = sanitize(execution[field]);
+      projected[field] = field === "command" ? sanitizeMachineSyntax(execution[field]) : sanitize(execution[field]);
       if (projected[field] !== execution[field]) modifiedExecutionFields.push(`${index}.${field}`);
     }
     if (execution.witness !== null) {
       projected.witness = { ...execution.witness };
       for (const field of ["command", "result", "observed_failure"]) {
-        projected.witness[field] = sanitize(execution.witness[field]);
+        projected.witness[field] = field === "command"
+          ? sanitizeMachineSyntax(execution.witness[field])
+          : sanitize(execution.witness[field]);
         if (projected.witness[field] !== execution.witness[field]) modifiedExecutionFields.push(`${index}.witness.${field}`);
       }
     }
@@ -1496,13 +1502,18 @@ function sanitizeReviewProjection(parsed, expected) {
   const unverified = bullets("Unverified");
 
   const payloads = [
-    ...findingPayloads,
+    ...findingPayloads.map((value) => ({ value, machineSyntax: false })),
     ...executions.flatMap((execution) => [
-      execution.command, execution.result,
-      ...(execution.witness === null ? [] : [execution.witness.command, execution.witness.result, execution.witness.observed_failure]),
+      { value: execution.command, machineSyntax: true },
+      { value: execution.result, machineSyntax: false },
+      ...(execution.witness === null ? [] : [
+        { value: execution.witness.command, machineSyntax: true },
+        { value: execution.witness.result, machineSyntax: false },
+        { value: execution.witness.observed_failure, machineSyntax: false },
+      ]),
     ]),
-    ...nonClaims.filter((line) => line !== "None").map((line) => line.slice(2)),
-    ...unverified.filter((line) => line !== "None").map((line) => line.slice(2)),
+    ...nonClaims.filter((line) => line !== "None").map((line) => ({ value: line.slice(2), machineSyntax: false })),
+    ...unverified.filter((line) => line !== "None").map((line) => ({ value: line.slice(2), machineSyntax: false })),
   ];
   const verification = {
     path: expected.path,
@@ -1511,8 +1522,10 @@ function sanitizeReviewProjection(parsed, expected) {
   };
   for (let index = 0; index < payloads.length; index += 1) {
     const payload = payloads[index];
-    const second = sanitizePublicString(payload, verification, { allowGenerated: true });
-    if (second !== payload) {
+    const second = sanitizePublicString(payload.value, verification, {
+      allowGenerated: true, machineSyntax: payload.machineSyntax,
+    });
+    if (second !== payload.value) {
       const categories = Object.entries(verification.counts).filter(([, count]) => count > 0).map(([name]) => name).join(",");
       fail(`review sanitization is not idempotent at projected field ${index} (${categories || "text"})`);
     }

@@ -356,10 +356,10 @@ and a finite count for each command and witness. Every authorized build or test 
 for a clear machine-load probe and runs alone; the CLI passes the budget but executes
 none of it.
 
-The private record is valid UTF-8, at most 1 MiB, ends with
-`<!-- lane-review-complete -->`, and has exactly `**PASS**`, `**NEEDS-WORK**`, or
-`**FAIL**` as its first nonempty line. Leading and trailing blank-line runs around the
-whole record and each section are ignored symmetrically. It uses `Schema:
+The private record is valid UTF-8 with LF line endings only, at most 1 MiB, ends
+with `<!-- lane-review-complete -->`, and has exactly `**PASS**`, `**NEEDS-WORK**`,
+or `**FAIL**` as its first nonempty line. Leading and trailing blank-line runs around
+the whole record and each section are ignored symmetrically. It uses `Schema:
 lane-review/v1`, the captured full SHA/topic/round/review ID/base, and the unique
 ordered sections Findings, Re-executed, Non-claims, Unverified, Private identifiers,
 and Analysis. Findings are `None` or `[Major]`, `[Moderate]`, or `[Minor]` bullets
@@ -375,7 +375,9 @@ and `witness`. A witness is null or an object with exactly `kind`
 (`negative-control` or `mutation`), `command`, `cwd`, integer `exit_code`, nonempty
 `result`, and nonempty `observed_failure`. A tests-pass entry requires exit zero and
 an observed witness. Free prose cannot claim tests passed; inherited gates are not
-fresh Re-executed evidence.
+fresh Re-executed evidence. Re-executed command strings, including witness commands,
+are machine syntax and are rendered verbatim inside the JSON fence after required path
+and alias sanitization; prose fields are restricted to the plain-text rules below.
 
 After completion, the command validates that schema and rechecks the exact HEAD,
 branch, and a completely clean lane before accepting the verdict. It polls only the
@@ -406,15 +408,16 @@ the longest-first rule.
 The Sanitization section records counts for absolute-path, user, host, private, and
 repository-relative conversions, including zero, plus modified execution fields by
 array index/name without original values. Generated placeholders are reserved;
-reviewer-supplied reserved placeholders and other unsupported payload syntax are
-refused in every projected field, including protected finding locations. The checker
-also refuses aliases in protected file:line or captured metadata, ambiguous paths,
-controls/newlines, non-ASCII residue, backticks, angle/square brackets, emphasis
-sequences, percent/HTML/backslash-encoded
-text, residual paths/aliases, and any non-idempotent second pass. Reviewer payloads
-are intentionally plain ASCII; schema tags, JSON fences and CLI placeholders are
-structural. The mechanical policy cannot prove that arbitrary prose contains no
-undeclared human name or secret, so the operator still inspects before committing.
+reviewer-supplied reserved placeholders are refused in every projected field,
+including protected finding locations. The checker also refuses aliases in protected
+file:line or captured metadata, ambiguous paths, controls/newlines, non-ASCII residue,
+residual paths/aliases, and any non-idempotent second pass. Prose fields additionally
+refuse backticks, angle/square brackets, emphasis sequences, and percent/HTML/
+backslash-encoded text. Command strings are exempt only from that prose markup and
+encoded-text check because the JSON fence renders them verbatim. Schema tags, JSON
+fences and CLI placeholders are structural. The mechanical policy cannot prove that
+arbitrary prose contains no undeclared human name or secret, so the operator still
+inspects before committing.
 
 The CLI creates the public file only after sanitization and the pre-publication clean
 check, without replacement, staging, or committing. It then requires the same HEAD and

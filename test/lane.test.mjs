@@ -1860,7 +1860,7 @@ test("review completion admits every validator-accepted record and section bound
         });
         fixtures.push(review.fixture);
         const run = lane(review.fixture, [
-          "review", topic, "--round", "1", "--brief", review.brief,
+          "review", topic, "--round", "1", "--brief", review.brief, "--timeout", "2",
         ]);
         const head = git(review.path, ["rev-parse", "HEAD"]);
         const publicPath = join(review.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`);
@@ -2020,6 +2020,110 @@ test("review sanitization preserves unrelated words and fails closed on ambiguou
       assert.ok(!existsSync(join(refused.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`)));
     }
     negativeControl("sanitization boundaries and refusals");
+  } finally {
+    for (const fixture of fixtures) fixture.cleanup();
+  }
+});
+
+test("review projects command syntax verbatim while keeping prose markup restricted", () => {
+  const fixtures = [];
+  const machineSyntax = "env PATH=<node and system bin only> printf '`value` [item] ** %2F &amp; \\x41 \\u0041' > $VAR";
+  try {
+    const accepted = makeReviewFixture("review-command-syntax", {
+      verdict: "NEEDS-WORK",
+      payload: {
+        findings: [
+          "- [Minor] first.txt:1 - first issue; Fix: fix the first issue",
+          "- [Moderate] second.txt:2 - second issue; Fix: fix the second issue",
+        ].join("\n"),
+        reexecuted: [{
+          command: machineSyntax,
+          cwd: "scratch",
+          exit_code: 1,
+          result: "The command exited with the expected diagnostic.",
+          tests_pass: false,
+          witness: {
+            kind: "negative-control",
+            command: `${machineSyntax} --negative-control`,
+            cwd: "scratch",
+            exit_code: 1,
+            result: "The deliberate control failed.",
+            observed_failure: "The expected failure was observed.",
+          },
+        }],
+      },
+    });
+    fixtures.push(accepted.fixture);
+    const acceptedRun = lane(accepted.fixture, [
+      "review", "review-command-syntax", "--round", "1", "--brief", accepted.brief,
+    ]);
+    assert.equal(acceptedRun.status, 1, acceptedRun.stderr);
+    const head = git(accepted.path, ["rev-parse", "HEAD"]);
+    const publicRecord = readFileSync(join(
+      accepted.path, "docs", "reviews", "review-command-syntax", `${head.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    assert.match(publicRecord, /first\.txt:1 - first issue/);
+    assert.match(publicRecord, /second\.txt:2 - second issue/);
+    const publicExecutions = JSON.parse(publicRecord.match(/## Re-executed\n```json\n(.+)\n```/u)[1]);
+    assert.equal(publicExecutions[0].command, machineSyntax);
+    assert.equal(publicExecutions[0].witness.command, `${machineSyntax} --negative-control`);
+
+    const refused = makeReviewFixture("review-prose-syntax", {
+      verdict: "PASS",
+      payload: {
+        findings: `- [Minor] shared.txt:1 - ${machineSyntax}; Fix: use plain prose`,
+      },
+    });
+    fixtures.push(refused.fixture);
+    const refusedRun = lane(refused.fixture, [
+      "review", "review-prose-syntax", "--round", "1", "--brief", refused.brief,
+    ]);
+    assert.equal(refusedRun.status, 2, refusedRun.stderr);
+    assert.equal(refusedRun.stdout, "");
+    assert.match(refusedRun.stderr, /projected payload contains unsupported markup or encoded text/);
+
+    const reserved = makeReviewFixture("review-command-placeholder", {
+      verdict: "PASS",
+      payload: {
+        reexecuted: [{
+          command: "printf [USER]",
+          cwd: "scratch",
+          exit_code: 0,
+          result: "Command completed.",
+          tests_pass: false,
+          witness: null,
+        }],
+      },
+    });
+    fixtures.push(reserved.fixture);
+    const reservedRun = lane(reserved.fixture, [
+      "review", "review-command-placeholder", "--round", "1", "--brief", reserved.brief,
+    ]);
+    assert.equal(reservedRun.status, 2, reservedRun.stderr);
+    assert.equal(reservedRun.stdout, "");
+    assert.match(reservedRun.stderr, /reserved sanitizer placeholder/);
+
+    const nonAscii = makeReviewFixture("review-command-non-ascii", {
+      verdict: "PASS",
+      payload: {
+        reexecuted: [{
+          command: "printf caf\u00e9",
+          cwd: "scratch",
+          exit_code: 0,
+          result: "Command completed.",
+          tests_pass: false,
+          witness: null,
+        }],
+      },
+    });
+    fixtures.push(nonAscii.fixture);
+    const nonAsciiRun = lane(nonAscii.fixture, [
+      "review", "review-command-non-ascii", "--round", "1", "--brief", nonAscii.brief,
+    ]);
+    assert.equal(nonAsciiRun.status, 2, nonAsciiRun.stderr);
+    assert.equal(nonAsciiRun.stdout, "");
+    assert.match(nonAsciiRun.stderr, /projected payload contains unsupported non-ASCII text/);
+    negativeControl("verbatim command projection and restricted prose");
   } finally {
     for (const fixture of fixtures) fixture.cleanup();
   }
@@ -2244,7 +2348,7 @@ test("review sends malformed completed endings to schema validation without wait
   const cases = [
     ["trailing-space-line", /private review completion marker must be the last nonempty line/],
     ["trailing-tab-line", /private review completion marker must be the last nonempty line/],
-    ["crlf-record", /private review first line must be/],
+    ["crlf-record", /private review must use LF line endings; CRLF is not supported/],
   ];
   const fixtures = [];
   const outcomes = [];
@@ -2396,13 +2500,18 @@ test("review protocol documents normalized boundaries and consecutive findings",
   for (const document of [reference, template, design]) {
     assert.match(document, /leading and trailing (?:blank-line|newline)\s+runs/iu);
   }
-  assert.match(design, /Findings entries[^.]*consecutive lines[^.]*no blank\s+line/iu);
   assert.match(design, /completion probe[^.]*more permissive than schema validation/iu);
   for (const document of [reference, template]) {
     assert.match(
       document,
-      /Findings, Non-claims, and Unverified entries each occupy\s+consecutive lines\s+with no blank\s+line/iu,
+      /Findings, Non-claims, and\s+Unverified entries each occupy\s+consecutive lines\s+with no blank\s+line/iu,
     );
+  }
+  assert.match(design, /Findings, Non-claims, and\s+Unverified entries[^.]*consecutive lines[^.]*no blank\s+line/iu);
+  for (const document of [reference, template]) {
+    assert.match(document, /LF line endings only/iu);
+    assert.match(document, /command strings[^.]*verbatim/iu);
+    assert.match(document, /prose fields[^.]*restricted/iu);
   }
   assert.doesNotMatch(design, /first physical line/iu);
   for (const spec of [currentSpec, deltaSpec]) {

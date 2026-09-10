@@ -566,3 +566,28 @@ Living log for agents maintaining this repository. Newest entry last.
 - No live reviewer/Herdr mutation, alternate host, push, promotion, archive, or
   `docs/reviews/` change was performed. The post-commit lane check remains the final
   conversation-only verification.
+
+## 2026-09-09 — review command-string and round-five follow-up
+
+- Exempted Re-executed command and witness-command strings from only the prose markup
+  and encoded-text checks. Their remaining machine syntax is serialized inside the
+  public JSON fence after the unchanged ASCII, reserved-placeholder, path, alias,
+  residual and idempotence checks; all prose fields retain the stricter refusal.
+- Added a CRLF-specific private-record diagnostic and documented LF-only records plus
+  verbatim command rendering in the template and REFERENCE. Updated the review design
+  to name Findings, Non-claims, and Unverified as consecutive-line lists and synced the
+  command/prose boundary into the change and current specs.
+- Added a negative-controlled production regression covering angle brackets,
+  redirection, backticks, brackets, emphasis-like syntax, a dollar variable and
+  encoded-looking text in both command fields, while the same finding prose refuses.
+  Reserved-placeholder and non-ASCII command controls remain refusals. The 39-case
+  boundary matrix now uses an explicit two-second timeout.
+- Before implementation, focused controls reproduced the command refusal and missing
+  CRLF diagnostic, and the documentation control caught the Findings-only design text.
+  Baseline `npm test` passed 92/92 in 73.462 seconds. Final `npm test` passed 93/93 in
+  81.835 seconds; all 93 deliberate negative controls failed with zero passes in
+  73.878 seconds; strict OpenSpec validation passed 16/16; `git diff --check` passed.
+- Verified with Node.js v20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. Runs were
+  serialized after clear process probes. No live reviewer/Herdr mutation, alternate
+  host, push, promotion, archive, or `docs/reviews/` change was performed. The final
+  post-commit lane check remains conversation-only evidence.

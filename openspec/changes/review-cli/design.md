@@ -105,10 +105,10 @@ New records use a strict v1 Markdown envelope. After leading and trailing blank-
 runs are stripped from the whole record and each section symmetrically, the first
 nonempty line is exactly one of **PASS**, **NEEDS-WORK**, **FAIL** (including the
 Markdown double asterisks, with no prefix or title). These spellings match the existing
-board parser after public projection. Findings entries occupy consecutive lines with
-no blank line between them. No other bold verdict tokens are allowed; historical
-records are not rewritten. Use mandatory, unique header lines followed by the exact
-sections below:
+board parser after public projection. Findings, Non-claims, and Unverified entries
+each occupy consecutive lines with no blank line between them. No other bold verdict
+tokens are allowed; historical records are not rewritten. Use mandatory, unique
+header lines followed by the exact sections below:
 
 The completion probe is deliberately more permissive than schema validation. It trims
 trailing whitespace, including carriage returns, before comparing the final content
@@ -192,7 +192,10 @@ section recording placeholder substitutions by category/count, without the origi
 private values. Keep it within 120 lines and 64 KiB; never silently truncate evidence.
 
 Use this deterministic policy for every projected string, including commands and
-results, after JSON/string decoding and NFC normalization. Alias inputs are exactly:
+results, after JSON/string decoding and NFC normalization. Command strings retain
+their remaining machine syntax verbatim inside the JSON fence after path and alias
+sanitization; the prose markup and encoded-text restrictions apply only to prose
+fields. Alias inputs are exactly:
 
 | Source | Category |
 | --- | --- |
@@ -247,12 +250,14 @@ The following are concrete refusal triggers, before writing any public file:
   that admits multiple file boundaries). Do not silently redact only a prefix.
 - Unsupported payload: projected field strings must be plain single-line text,
   restricted to ASCII U+0020 through U+007E after sanitization. Reject controls,
-  newlines, non-ASCII residue, backticks, angle brackets, square brackets, and the
-  Markdown emphasis sequences double-asterisk/double-underscore in reviewer payload.
-  Also reject percent-encoded octets, HTML entities and literal backslash-x/two-hex
-  or backslash-u/four-hex escape sequences remaining after one JSON decode. These
-  include inline links/images, HTML, fenced code and encoded concealment. Structural
-  schema tags, JSON fences and the CLI's own placeholders are not payload markup.
+  newlines and non-ASCII residue everywhere. In prose fields, also reject backticks,
+  angle brackets, square brackets, Markdown emphasis sequences double-asterisk/
+  double-underscore, percent-encoded octets, HTML entities and literal backslash-x/
+  two-hex or backslash-u/four-hex escape sequences remaining after one JSON decode.
+  Re-executed command and witness-command strings are exempt from only those prose
+  markup and encoded-text checks and remain safely inside the structural JSON fence.
+  Structural schema tags, JSON fences and the CLI's own placeholders are not payload
+  markup.
 - Residual private content: an absolute path or alias still matches on rescan,
   redaction changes on a second pass, or a required finding/fix/evidence field is
   lost. No transliteration, semantic rewrite or silent truncation is allowed.

@@ -67,6 +67,9 @@ the private canonical .lane/reviews/<topic>/<head7>-rN.md and verifying sanitiza
 #### Scenario: Deterministic aliases and placeholders
 - **WHEN** injected OS username, home basename, full/short hostname and declared tokens occur in varied case and inside unrelated words
 - **THEN** only whole path-segment/word-boundary matches are replaced with the design's fixed placeholders and counts; substring collisions, protected locations and unsupported payloads refuse exactly as defined there.
+#### Scenario: Verbatim command syntax and restricted prose
+- **WHEN** Re-executed command or witness-command strings contain shell syntax, markup characters or encoded-looking text
+- **THEN** path, alias, ASCII and reserved-placeholder checks still apply, remaining command characters are rendered verbatim inside the public JSON fence, and the same markup or encoded text in prose fields is refused.
 
 ### Requirement: After-check publication boundary
 The complete review command SHALL require successful sanitized public generation
