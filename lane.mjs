@@ -102,7 +102,10 @@ process.stdout.on("error", (error) => {
 const REPO = (() => {
   try {
     const start = EARLY_BOARD_OPTIONS?.repo ?? CALLER_CWD;
-    return realpathSync(execFileSync("git", ["-C", start, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim());
+    return realpathSync(execFileSync("git", ["-C", start, "rev-parse", "--show-toplevel"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim());
   } catch {
     process.stderr.write(`${IS_REVIEW_COMMAND ? "lane review" : "lane"}: not inside a git repository\n`);
     process.exit(IS_REVIEW_COMMAND ? 2 : 1);

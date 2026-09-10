@@ -71,3 +71,31 @@ and asynchronous bounded multi-repository sampling remain later changes. No cont
 amendment or further approval is needed for this read-only delta. Promotion,
 archival, and any independent review remain operator actions; nothing was pushed or
 published.
+
+## Round 2 review corrections — 2026-09-09
+
+The authoritative Round 1 review of `7bee6e8` returned PASS with three Minor
+findings. This follow-up resolves all three without changing the schema or command
+surface:
+
+- `board/board.mjs` now resolves branch names through one helper and resolves each
+  session's workspace, agent, runtime, Git, report, and branch context through one
+  shared helper consumed by both the plain/UI and JSON projections.
+- `lane.mjs` suppresses Git's raw stderr while probing the board `--repo` target, so
+  an invalid path emits only `lane: not inside a git repository`.
+- `test/lane.test.mjs` protects the shared-resolution structure, exact invalid-repo
+  diagnostic, board usage lines, and README command-table row.
+
+Baseline `npm test` passed 114/114 in 120.026 seconds. Before product edits, the
+focused run passed the already-correct documentation assertion and failed the two
+new product expectations; its deliberate-control companion failed all three selected
+tests with zero passes. After implementation the focused run passed 3/3. Final-tree
+`npm test` passed 115/115 in 112.191 seconds, and
+`LANE_TEST_NEGATIVE_CONTROL=1 npm test` failed all
+115 controls with zero passes in 102.931 seconds. Strict OpenSpec validation passed
+18/18. `git diff --check`, the complete-diff public-safety review, and the unchanged
+`board/app.mjs` blob check passed. Runs were serialized after clear load probes.
+
+Verified with Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No live
+Herdr behavior, alternate host, UI interaction, push, promotion, archive, contract
+amendment, or `docs/reviews/` edit was performed. The original limits remain.

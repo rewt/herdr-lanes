@@ -2426,6 +2426,21 @@ test("board uses inherited canonical registry configuration from a linked worktr
   }
 });
 
+test("plain and JSON board projections share session and branch resolution", () => {
+  const source = readFileSync(resolve(HERE, "..", "board", "board.mjs"), "utf8");
+  assert.match(source, /function branchForSession\(session\)/u);
+  assert.match(source, /function resolveSessionContext\(session, state\)/u);
+  const plainProjection = source.slice(
+    source.indexOf("export function joinBoardRows"),
+    source.indexOf("export function tableLineEntries"),
+  );
+  const jsonProjection = source.slice(source.indexOf("export function boardSnapshotDocument"));
+  assert.match(plainProjection, /resolveSessionContext\(session, \{/u);
+  assert.match(jsonProjection, /resolveSessionContext\(session, \{/u);
+  assert.equal([...source.matchAll(/session\.lane\.startsWith\("lane\/"\)/gu)].length, 1);
+  negativeControl("shared board session context");
+});
+
 test("board JSON snapshots expose schema v1 from canonical --repo config without UI dependencies or writes", async () => {
   const fixture = makeFixture(undefined, { repoParts: ["projects", "repo"] });
   let server;
@@ -2612,6 +2627,12 @@ test("board read modes reject contradictory, duplicate, unknown, extra, and miss
       assert.equal(run.stdout, "");
       assert.match(run.stderr, /^lane: usage: lane board/u);
     }
+    const notRepository = join(fixture.root, "not-a-repository");
+    mkdirSync(notRepository);
+    const invalidRepo = lane(fixture, ["board", "--json", "--repo", notRepository]);
+    assert.equal(invalidRepo.status, 1);
+    assert.equal(invalidRepo.stdout, "");
+    assert.equal(invalidRepo.stderr, "lane: not inside a git repository\n");
     negativeControl("board read option validation");
   } finally {
     fixture.cleanup();
@@ -3673,12 +3694,20 @@ test("usage exits one with no command and with an unknown command", () => {
       missing.stdout,
       /  check \[--cmd <validate command>\]\n                   validate this clean worktree/,
     );
+    assert.match(
+      missing.stdout,
+      /  board \[--once \| --json \| --watch --json\] \[--repo <path>\]\n                   open the interactive board, print one plain\/JSON snapshot,/,
+    );
     assert.match(missing.stdout, /  config           print resolved configuration as key, JSON value, and source/);
     const unknown = lane(fixture, ["not-a-command"]);
     assert.equal(unknown.status, 1);
     assert.match(unknown.stdout, /^usage:/);
     const readme = readFileSync(resolve(HERE, "..", "README.md"), "utf8");
     assert.match(readme, /\| `lane config` \| Print resolved configuration values and sources \|/);
+    assert.match(
+      readme,
+      /\| `lane board \[--once \\\| --json \\\| --watch --json\] \[--repo <path>\]` \| Open the UI, print a snapshot, or stream JSON snapshots \|/,
+    );
     negativeControl("usage exits");
   } finally {
     fixture.cleanup();

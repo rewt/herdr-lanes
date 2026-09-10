@@ -53,6 +53,23 @@ function agentFor(session, workspace, snapshot) {
   return workspace === undefined || agent?.workspace_id === workspace.workspace_id ? agent : undefined;
 }
 
+function branchForSession(session) {
+  return session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`;
+}
+
+function resolveSessionContext(session, state) {
+  const workspace = workspaceFor(session, state.snapshot);
+  const agent = agentFor(session, workspace, state.snapshot);
+  return {
+    workspace,
+    agent,
+    live: state.runtime.get(agent?.pane_id) ?? {},
+    git: state.gitStates.get(session.lane) ?? {},
+    report: state.reportStates.get(session.report) ?? {},
+    branch: branchForSession(session),
+  };
+}
+
 function paneIdFor(session, snapshot) {
   const workspace = workspaceFor(session, snapshot);
   return agentFor(session, workspace, snapshot)?.pane_id;
@@ -126,11 +143,12 @@ export function joinBoardRows({
   now = new Date(),
 }) {
   return registry.map((session) => {
-    const workspace = workspaceFor(session, snapshot);
-    const agent = agentFor(session, workspace, snapshot);
-    const live = runtime.get(agent?.pane_id) ?? {};
-    const git = gitStates.get(session.lane) ?? {};
-    const report = reportStates.get(session.report) ?? {};
+    const { workspace, agent, live, git, report } = resolveSessionContext(session, {
+      snapshot,
+      gitStates,
+      reportStates,
+      runtime,
+    });
     let deadline = "-";
     if (session.done) deadline = "done";
     else if (session.deadline) {
@@ -212,7 +230,7 @@ export function collectGitStates(repoRoot, main, registry, snapshot) {
   const states = new Map();
   const trees = worktrees(repoRoot);
   for (const session of registry) {
-    const branch = session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`;
+    const branch = branchForSession(session);
     const checkout = trees.find((tree) => tree.branch === branch)?.path;
     const counts = gitOutput(repoRoot, ["rev-list", "--left-right", "--count", `${branch}...${main}`]);
     if (counts === undefined) continue;
@@ -238,7 +256,7 @@ export function collectReportStates(repoRoot, registry) {
   const states = new Map();
   const trees = worktrees(repoRoot);
   for (const session of registry) {
-    const branch = session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`;
+    const branch = branchForSession(session);
     const checkout = trees.find((tree) => tree.branch === branch)?.path;
     const candidates = isAbsolute(session.report)
       ? [session.report]
@@ -469,12 +487,12 @@ export function boardSnapshotDocument({
   capturedAt = new Date(),
 }) {
   const rows = state.sessions.map((session) => {
-    const workspace = workspaceFor(session, state.snapshot);
-    const agent = agentFor(session, workspace, state.snapshot);
-    const live = state.runtime.get(agent?.pane_id) ?? {};
-    const git = state.gitStates.get(session.lane) ?? {};
-    const report = state.reportStates.get(session.report) ?? {};
-    const branch = session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`;
+    const { workspace, agent, live, git, report, branch } = resolveSessionContext(session, {
+      snapshot: state.snapshot,
+      gitStates: state.gitStates,
+      reportStates: state.reportStates,
+      runtime: state.runtime,
+    });
     const deadlineTime = session.deadline === null ? null : new Date(session.deadline).valueOf();
     return {
       row_id: session.session_id,

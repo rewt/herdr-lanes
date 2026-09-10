@@ -680,3 +680,18 @@ Living log for agents maintaining this repository. Newest entry last.
   independent review, or `docs/reviews/` change was performed. No contract amendment
   or additional approval is needed; the final clean-commit gate remains
   conversation-only evidence.
+
+## 2026-09-09 — board CLI Round 2 review corrections
+
+- Resolved all three Minor findings from the authoritative PASS review of `7bee6e8`:
+  plain/UI and JSON rows now share session context and branch resolution, invalid
+  board `--repo` paths suppress Git's raw fatal line, and tests pin the board usage
+  text plus README command row. The schema and interactive UI remain unchanged.
+- Two focused product expectations failed before implementation; the documentation
+  assertion already passed, while the focused deliberate control failed all three
+  selected tests. Afterward 3/3 focused tests passed. Final `npm test` passed 115/115;
+  all 115 deliberate controls failed with zero passes; strict OpenSpec passed 18/18.
+- Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0 were exercised after
+  clear serialized load probes. The full diff and unchanged-UI checks were clean.
+  No live Herdr behavior, push, promotion, archive, contract amendment, or
+  `docs/reviews/` edit was performed; the clean-commit gate remains conversation-only.
