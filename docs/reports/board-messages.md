@@ -61,12 +61,14 @@
   retaining its HANDOFF entry first and preserving its CLI-only UI/action boundary.
   On the integrated tree, the model/client/parser focus passed 28/28 in 0.340 seconds
   and the fake-Herdr parity case passed 1/1 with 104 unrelated tests skipped in 1.282
-  seconds. Full `npm test` passed 133/133, zero skips, in 114.802 seconds. A final
-  no-conflict rebase onto facilitator-reviewed tip `8a98b80` inherited its review
-  record unchanged.
+  seconds. The pre-final-rebase `npm test` passed 133/133, zero skips, in 114.802
+  seconds. A final no-conflict rebase onto facilitator-reviewed tip `8a98b80`
+  inherited its review record unchanged. At the reviewed commit, `npm test` passed
+  134/134 and all 134 deliberate controls failed with zero passes in the
+  facilitator's re-execution.
 - The first integrated negative-control run encountered the known sandbox-only Unix
   socket `listen EPERM` in the inherited board-focus case and was not used as control
-  evidence. Repeating with local socket access failed all 133 deliberate controls
+  evidence. The earlier local-socket repeat failed all 133 deliberate controls
   with zero passes or skips in 110.015 seconds. No test or product code was changed
   for the sandbox artifact.
 - Final strict OpenSpec validation passed 20/20 with telemetry disabled and
@@ -88,3 +90,43 @@ non-fixture session, push, promotion, archive, or independent review was exercis
 No contract amendment or further implementation approval is needed for this read-only
 delta. Promotion, archival, and any independent review remain operator actions; the
 final clean-commit gate is conversation-only evidence.
+
+## Round 2 corrections — 2026-09-10
+
+The Round 1 review's nine findings are resolved. The Codex and Claude adapters now
+reject status candidates before accepting a block, stop at shortcut/context/token/
+cost/approval/composer chrome or any implausible continuation, and anchor top-level
+message and prompt markers at column zero so indented quotes and bullets remain part
+of an answer. Tool-like opening verbs require an argument-shaped call or an indented
+result marker before the block is discarded.
+
+Pane reads now have a two-second timeout independent of the 500 ms snapshot budget
+in one-shot and watch clients, with at most four concurrent reads. Timeout,
+unsupported-read, and generic failure limitations remain distinct. The fallback
+occupant tuple is agent/name/pane only, so output revision changes preserve a prior
+preview as stale. Plain output receives localized message errors as notices, and the
+REFERENCE live-only sentence now applies only to tripwire. The historical report and
+HANDOFF counts now identify the reviewed commit's measured 134-test suite.
+
+Eight new test groups plus the extended plain-rendering case cover status-first
+blocks; all named trailing chrome forms across both adapters; ordinary Added,
+Updated, Applied, Opened, Read, Found, Search, Save, and Edit answer openings;
+corroborated tools; nested quotes/lists; nine-pane concurrency; timeout versus
+unsupported limitations; revision-only fallback changes; delayed one-shot/watch
+parity; and plain notices. Before product changes, the focused selection produced
+11 intended failures and zero selected passes. Afterward the module sweep passed
+34/34, and the four socket-backed root cases passed outside the sandbox in 4.294
+seconds. Their sandboxed attempt failed only with `listen EPERM: operation not
+permitted …/board.sock`; no product or test change was made for that restriction.
+
+Final `npm test` passed 142/142 with zero skips in 115.630 seconds. The serialized
+`LANE_TEST_NEGATIVE_CONTROL=1 npm test` run produced zero passes and all 142
+deliberate failures with zero skips in 110.431 seconds. Strict OpenSpec validation
+passed 20/20. Each run followed a clear executable-aware load probe and ran alone.
+
+The adapters remain bounded best-effort readers of visible rendered output. No live
+pane was reread in this correction round, so the larger timeout's effect on the
+reviewed live Claude panes is not claimed. Missing alternate-screen history,
+unrecognized formats, real-TTY behavior, alternate hosts, model APIs, and promotion
+remain unverified. No contract amendment or further implementation approval is
+needed; `board/app.mjs` and the facilitator-owned review record remain unchanged.

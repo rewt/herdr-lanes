@@ -137,12 +137,15 @@ test("plain rendering exposes the same board fields without ANSI", () => {
     load: 1.25,
     freeMemory: "8.0 GiB",
     workers: { vitest: 1, cargo: 0, go: 2, rustc: 0 },
+  }, {
+    messageErrors: ["w1:p2: Herdr request timed out: pane.read"],
   });
   assert.match(output, /NAME\s+ROLE\s+LANE\s+STATUS\s+PANE/);
   assert.match(output, /GATE/);
   assert.match(output, /exit=0 @abcdef0/);
   assert.match(output, /api-agent\s+engineer\s+api\s+working\s+w1:p2/);
   assert.match(output, /load 1\.25.*free 8\.0 GiB.*vitest=1 cargo=0 go=2 rustc=0/);
+  assert.match(output, /message notice: w1:p2: Herdr request timed out: pane\.read/);
   assert.doesNotMatch(output, /\u001b\[/);
   negativeControl("plain board rendering");
 });

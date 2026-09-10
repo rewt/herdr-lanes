@@ -11,6 +11,7 @@ export class HerdrClient extends EventEmitter {
   constructor({
     socketPath = herdrSocketPath(),
     requestTimeoutMs = 2_000,
+    paneReadTimeoutMs = 2_000,
     minBackoffMs = 250,
     maxBackoffMs = 5_000,
     connect = (path) => net.createConnection(path),
@@ -18,6 +19,7 @@ export class HerdrClient extends EventEmitter {
     super();
     this.socketPath = socketPath;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.paneReadTimeoutMs = paneReadTimeoutMs;
     this.minBackoffMs = minBackoffMs;
     this.maxBackoffMs = maxBackoffMs;
     this.connect = connect;
@@ -38,7 +40,7 @@ export class HerdrClient extends EventEmitter {
     return id;
   }
 
-  request(method, params = {}) {
+  request(method, params = {}, { timeoutMs = this.requestTimeoutMs } = {}) {
     if (this.destroyed) return Promise.reject(new Error("Herdr client closed"));
     const id = this.id();
     return new Promise((resolve, reject) => {
@@ -58,7 +60,7 @@ export class HerdrClient extends EventEmitter {
       this.pendingRequests.add(finish);
       timer = setTimeout(
         () => finish(new Error(`Herdr request timed out: ${method}`)),
-        this.requestTimeoutMs,
+        timeoutMs,
       );
       socket.setEncoding("utf8");
       socket.on("connect", () => socket.write(`${JSON.stringify({ id, method, params })}\n`));
@@ -113,7 +115,7 @@ export class HerdrClient extends EventEmitter {
       lines,
       format: "text",
       strip_ansi: true,
-    });
+    }, { timeoutMs: this.paneReadTimeoutMs });
     if (result?.type !== "pane_read" || result.read === undefined) {
       throw new Error("Unexpected Herdr pane read response");
     }

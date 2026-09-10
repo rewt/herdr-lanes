@@ -77,6 +77,97 @@ test("Claude preview ignores echoed prompts and tools and preserves the final re
   negativeControl("Claude substantive preview");
 });
 
+test("status candidates and trailing terminal chrome never become assistant messages", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  const cases = [
+    ["codex", [
+      "• The earlier answer remains visible.",
+      "  Its second line remains attached.",
+      "",
+      "• Working (1m 23s • esc to interrupt)",
+    ].join("\n"), "The earlier answer remains visible.\nIts second line remains attached."],
+    ["codex", "• Useful answer.\n  ? for shortcuts", "Useful answer."],
+    ["claude", "⏺ Useful answer.\n  12% context left", "Useful answer."],
+    ["claude", "⏺ Useful answer.\n  1,024 tokens · $0.01", "Useful answer."],
+    ["codex", [
+      "• Useful answer.",
+      "Would you like to run the following command?",
+      "  1. Yes, proceed",
+      "  2. No, and tell Codex what to do differently",
+    ].join("\n"), "Useful answer."],
+    ["claude", [
+      "⏺ Useful answer.",
+      "╭────────────────────────────╮",
+      "│ ❯ Type another request     │",
+      "╰────────────────────────────╯",
+    ].join("\n"), "Useful answer."],
+  ];
+  for (const [kind, text, expected] of cases) {
+    const preview = extractAssistantPreview({ kind, text });
+    assert.equal(preview.text, expected, `${kind}: ${JSON.stringify(text)}`);
+    assert.equal(preview.source, "assistant-preview");
+  }
+  for (const [kind, text] of [
+    ["codex", "• Working (2m 04s • esc to interrupt)"],
+    ["claude", "⏺ ✻ Working… esc to interrupt"],
+  ]) {
+    assert.equal(extractAssistantPreview({ kind, text }).available, false);
+  }
+  negativeControl("status and trailing chrome rejection");
+});
+
+test("ordinary answer verbs need corroborating evidence before they count as tool calls", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  for (const word of ["Added", "Updated", "Applied", "Opened", "Read", "Found"]) {
+    const preview = extractAssistantPreview({
+      kind: "codex",
+      text: `• Previous response.\n\n• ${word} safeguards around the public boundary.`,
+    });
+    assert.equal(preview.text, `${word} safeguards around the public boundary.`);
+  }
+  for (const word of ["Read", "Search", "Save", "Edit"]) {
+    const preview = extractAssistantPreview({
+      kind: "claude",
+      text: `⏺ Previous response.\n\n⏺ ${word} results are now summarized clearly.`,
+    });
+    assert.equal(preview.text, `${word} results are now summarized clearly.`);
+  }
+  assert.equal(extractAssistantPreview({
+    kind: "codex",
+    text: "• Earlier response.\n\n• Ran npm test\n  └ All tests passed",
+  }).text, "Earlier response.");
+  assert.equal(extractAssistantPreview({
+    kind: "claude",
+    text: "⏺ Earlier response.\n\n⏺ Read(src/example.mjs)\n  ⎿ 42 lines",
+  }).text, "Earlier response.");
+  negativeControl("corroborated tool classification");
+});
+
+test("indented quotes and bullets remain inside the assistant response", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  assert.equal(extractAssistantPreview({
+    kind: "codex",
+    text: [
+      "• The answer includes a nested list:",
+      "  • first item",
+      "  • second item",
+      "",
+      "› Ask Codex to do anything",
+    ].join("\n"),
+  }).text, "The answer includes a nested list:\n• first item\n• second item");
+  assert.equal(extractAssistantPreview({
+    kind: "claude",
+    text: [
+      "⏺ The answer quotes the important line:",
+      "  > preserve this quoted text",
+      "  and this explanation.",
+      "",
+      "❯ ",
+    ].join("\n"),
+  }).text, "The answer quotes the important line:\n> preserve this quoted text\nand this explanation.");
+  negativeControl("indented response markers");
+});
+
 test("tool-only, footer-only, and unknown formats stay unavailable with labeled raw output", async () => {
   const { extractAssistantPreview, refreshMessagePreviews } = await previewApi();
   for (const [kind, text] of [
@@ -185,6 +276,116 @@ test("bounded reads expose truncation and keep stale previews on read errors", a
   assert.equal(runtime.get("pane-1").messageText, "Earlier useful answer");
   assert.equal(runtime.get("pane-1").messageStale, true);
   negativeControl("truncated and stale read metadata");
+});
+
+test("pane reads are concurrency bounded and limitations distinguish timeout from unsupported reads", async () => {
+  const { refreshMessagePreviews } = await previewApi();
+  const registry = [];
+  const agents = [];
+  for (let index = 0; index < 9; index += 1) {
+    registry.push({ name: `preview-agent-${index}`, workspace: "workspace-1" });
+    agents.push({
+      agent: "codex",
+      agent_session: {
+        agent: "codex", kind: "id", source: "herdr:codex", value: `session-${index}`,
+      },
+      name: `preview-agent-${index}`,
+      pane_id: `pane-${index}`,
+      workspace_id: "workspace-1",
+    });
+  }
+  const snapshot = {
+    agents,
+    workspaces: [{ workspace_id: "workspace-1", label: "workspace-1" }],
+  };
+  const runtime = new Map();
+  let active = 0;
+  let maximumActive = 0;
+  await refreshMessagePreviews({
+    registry,
+    snapshot,
+    runtime,
+    client: {
+      async readPane(paneId) {
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        await new Promise((resolve) => setImmediate(resolve));
+        active -= 1;
+        return {
+          pane_id: paneId,
+          source: "recent_unwrapped",
+          format: "text",
+          text: "• A bounded concurrent answer.",
+          revision: 1,
+          truncated: false,
+        };
+      },
+    },
+  });
+  assert.equal(maximumActive, 4);
+  assert.equal(runtime.size, 9);
+
+  const failureRuntime = new Map();
+  await refreshMessagePreviews({
+    registry: registry.slice(0, 2),
+    snapshot,
+    runtime: failureRuntime,
+    client: {
+      async readPane(paneId) {
+        if (paneId === "pane-0") throw new Error("Herdr request timed out: pane.read");
+        throw new Error("Herdr method_not_found: pane.read is unsupported");
+      },
+    },
+  });
+  assert.match(failureRuntime.get("pane-0").messageLimitation, /timed out/iu);
+  assert.match(failureRuntime.get("pane-1").messageLimitation, /unsupported/iu);
+  assert.notEqual(
+    failureRuntime.get("pane-0").messageLimitation,
+    failureRuntime.get("pane-1").messageLimitation,
+  );
+  negativeControl("bounded pane read concurrency and limitations");
+});
+
+test("fallback occupant identity survives output revisions for stale retention", async () => {
+  const { refreshMessagePreviews } = await previewApi();
+  const session = { name: "preview-agent", workspace: "workspace-1" };
+  const agent = {
+    agent: "codex",
+    name: "preview-agent",
+    pane_id: "pane-1",
+    revision: 1,
+    workspace_id: "workspace-1",
+  };
+  const snapshot = {
+    agents: [agent],
+    workspaces: [{ workspace_id: "workspace-1", label: "workspace-1" }],
+  };
+  const runtime = new Map();
+  await refreshMessagePreviews({
+    registry: [session],
+    snapshot,
+    runtime,
+    client: { async readPane() {
+      return {
+        pane_id: "pane-1",
+        source: "recent_unwrapped",
+        format: "text",
+        text: "• Earlier useful answer.",
+        revision: 1,
+        truncated: false,
+      };
+    } },
+  });
+  agent.revision = 2;
+  await refreshMessagePreviews({
+    registry: [session],
+    snapshot,
+    runtime,
+    client: { async readPane() { throw new Error("read unavailable"); } },
+  });
+  assert.equal(runtime.get("pane-1").messageText, "Earlier useful answer.");
+  assert.equal(runtime.get("pane-1").messageStale, true);
+  negativeControl("revision-independent fallback occupant identity");
 });
 
 test("a late pane read is discarded after the agent occupant changes", async () => {

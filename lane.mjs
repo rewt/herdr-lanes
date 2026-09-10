@@ -2340,7 +2340,7 @@ function writeBoardJson(state) {
 }
 
 async function watchBoard() {
-  const client = new HerdrClient({ requestTimeoutMs: 500 });
+  const client = new HerdrClient({ requestTimeoutMs: 500, paneReadTimeoutMs: 2_000 });
   const runtime = new Map();
   const previewTimers = new Map();
   const previewLastRead = new Map();
@@ -2510,7 +2510,7 @@ async function board(options) {
     return;
   }
   if (options.mode === "plain" || options.mode === "json") {
-    const client = new HerdrClient({ requestTimeoutMs: 500 });
+    const client = new HerdrClient({ requestTimeoutMs: 500, paneReadTimeoutMs: 2_000 });
     try {
       const state = await collectBoardState({ repoRoot: REPO_ROOT, config: CONFIG, client });
       if (options.mode === "json") writeBoardJson(state);
@@ -2519,6 +2519,7 @@ async function board(options) {
           connection: state.connection,
           missingRegistry: state.exists ? undefined : state.path,
           registryErrors: state.errors,
+          messageErrors: state.messageErrors,
         }));
       }
     } catch (error) {

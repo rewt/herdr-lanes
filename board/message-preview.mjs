@@ -1,11 +1,17 @@
 const MAX_PANE_LINES = 200;
 const MAX_PANE_BYTES = 16 * 1024;
 const MAX_RAW_EXCERPT_CODE_POINTS = 500;
+const MAX_CONCURRENT_PANE_READS = 4;
 const SUPPORTED_AGENT_KINDS = new Set(["codex", "claude"]);
 
 const ANSI_SEQUENCE = /\u001b(?:\][^\u0007]*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])/gu;
 const CONTROL_CHARACTER = /[\u0000-\u0008\u000b\u000c\u000e-\u001a\u001c-\u001f\u007f]/gu;
-const DIVIDER = /^\s*[─━═╌╍┄┅┈┉-]{6,}\s*$/u;
+const DIVIDER = /^\s*(?:[─━═╌╍┄┅┈┉-]{6,}|[╭╮╰╯┌┐└┘│┃].*)\s*$/u;
+const SHORTCUT_BAR = /^\s*(?:\?|esc\b|ctrl-[a-z]\b).*(?:shortcut|interrupt|toggle|submit|edit)/iu;
+const CONTEXT_BAR = /^\s*(?:[\d,.]+%?\s+)?context left(?:\s|$)/iu;
+const TOKEN_OR_COST_BAR = /^\s*(?:[\d,.]+[km]?\s+)?tokens?\b.*(?:\$|cost|used)/iu;
+const STATUS_CHROME = /^\s*(?:[✻✽✶✳·]\s+)?(?:Working|Worked|Thinking|Running)\b.*(?:esc to interrupt|\([^)]*\))/iu;
+const APPROVAL_PROMPT = /^(?:Would you like to run|Do you want to (?:run|allow|approve)|Allow Codex to)\b/iu;
 
 function cleanPaneText(text) {
   return `${text ?? ""}`
@@ -26,10 +32,14 @@ function continuation(line) {
 }
 
 function codexBoundary(line) {
-  return /^\s*•\s+/u.test(line)
-    || /^\s*›(?:\s|$)/u.test(line)
+  return /^•\s+/u.test(line)
+    || /^›(?:\s|$)/u.test(line)
     || DIVIDER.test(line)
-    || /^\s*(?:Working|Worked)\s+\([^)]*\)/u.test(line)
+    || STATUS_CHROME.test(line)
+    || SHORTCUT_BAR.test(line)
+    || CONTEXT_BAR.test(line)
+    || TOKEN_OR_COST_BAR.test(line)
+    || APPROVAL_PROMPT.test(line)
     || /^\s*[^\s]+(?:\s+[^·\n]+)?\s+·\s+.*(?:context left|\/[^\n]*)$/u.test(line);
 }
 
@@ -38,24 +48,40 @@ function codexToolLabel(text) {
 }
 
 function claudeBoundary(line) {
-  return /^\s*(?:⏺|●)\s+/u.test(line)
-    || /^\s*(?:❯|›|>)\s*/u.test(line)
+  return /^(?:⏺|●)\s+/u.test(line)
+    || /^(?:❯|›|>)\s*/u.test(line)
     || DIVIDER.test(line)
     || /^\s*(?:\?|⏵⏵)\s+/u.test(line)
-    || /^\s*[✻✽✶✳·]\s+/u.test(line);
+    || /^\s*[✻✽✶✳·]\s+/u.test(line)
+    || STATUS_CHROME.test(line)
+    || SHORTCUT_BAR.test(line)
+    || CONTEXT_BAR.test(line)
+    || TOKEN_OR_COST_BAR.test(line);
 }
 
 function claudeToolLabel(text) {
   return /^(?:Read|Write|Edit|Update|Bash|Glob|Grep|Search|Task|WebFetch|WebSearch|Skill|TodoWrite|AskUserQuestion|NotebookEdit|EnterPlanMode|ExitPlanMode|Save|Fetch|mcp__[^\s(]+)\b/iu.test(text);
 }
 
-function extractBlocks(lines, { start, isTool, boundary }) {
+function hasToolEvidence(lines, index, text, toolLabel) {
+  if (!toolLabel(text)) return false;
+  if (/^[^\s(\n]+\([^\n)]*\)\s*$/u.test(text)) return true;
+  return /^\s{2,}(?:└|⎿|├)\s*/u.test(lines[index + 1] ?? "");
+}
+
+function plausibleContinuation(line) {
+  return line.trim() === "" || /^\s{2,}\S/u.test(line);
+}
+
+function extractBlocks(lines, { start, toolLabel, boundary }) {
   const blocks = [];
   for (let index = 0; index < lines.length; index += 1) {
     const match = lines[index].match(start);
-    if (match === null || isTool(match[1])) continue;
+    if (match === null || boundary(match[1]) || hasToolEvidence(lines, index, match[1], toolLabel)) continue;
     const block = [match[1].trimEnd()];
-    for (index += 1; index < lines.length && !boundary(lines[index]); index += 1) {
+    for (index += 1;
+      index < lines.length && !boundary(lines[index]) && plausibleContinuation(lines[index]);
+      index += 1) {
       block.push(continuation(lines[index]).trimEnd());
     }
     index -= 1;
@@ -81,14 +107,14 @@ export function extractAssistantPreview({ kind, text }) {
   let blocks = [];
   if (kind === "codex") {
     blocks = extractBlocks(lines, {
-      start: /^\s*•\s+(.+)$/u,
-      isTool: codexToolLabel,
+      start: /^•\s+(.+)$/u,
+      toolLabel: codexToolLabel,
       boundary: codexBoundary,
     });
   } else if (kind === "claude") {
     blocks = extractBlocks(lines, {
-      start: /^\s*(?:⏺|●)\s+(.+)$/u,
-      isTool: claudeToolLabel,
+      start: /^(?:⏺|●)\s+(.+)$/u,
+      toolLabel: claudeToolLabel,
       boundary: claudeBoundary,
     });
   }
@@ -140,7 +166,7 @@ export function messageOccupantId(agent) {
     return JSON.stringify([session.agent, session.kind, session.source, session.value]);
   }
   if (typeof agent?.name === "string" && typeof agent?.agent === "string") {
-    return JSON.stringify([agent.agent, agent.name, agent.pane_id, agent.revision ?? null]);
+    return JSON.stringify([agent.agent, agent.name, agent.pane_id]);
   }
   return null;
 }
@@ -165,6 +191,16 @@ function unavailableRuntime({ kind, occupant, limitation }) {
   };
 }
 
+function readFailureLimitation(error, retained) {
+  const message = `${error?.message ?? error}`;
+  let limitation = "pane output read failed";
+  if (/timed out/iu.test(message)) limitation = "pane output read timed out";
+  else if (/(?:unsupported|method[_ -]?not[_ -]?found|unknown method|not implemented)/iu.test(message)) {
+    limitation = "pane output read is unsupported";
+  }
+  return retained ? `${limitation}; retaining the previous preview` : limitation;
+}
+
 export async function refreshMessagePreviews({
   registry,
   snapshot,
@@ -187,58 +223,69 @@ export async function refreshMessagePreviews({
 
   const errors = [];
   let updated = 0;
-  await Promise.all([...targets].map(async ([paneId, target]) => {
-    const previous = runtime.get(paneId);
-    try {
-      const read = await client.readPane(paneId, {
-        lines: MAX_PANE_LINES,
-        source: "recent_unwrapped",
-      });
-      if (read?.pane_id !== paneId || read.source !== "recent_unwrapped" || read.format !== "text") {
-        throw new Error("unexpected Herdr pane read response");
-      }
-      const currentAgent = currentAgentForPane(currentSnapshot(), paneId);
-      if (messageOccupantId(currentAgent) !== target.occupant) return;
-      const bounded = boundedUtf8Suffix(cleanPaneText(read.text));
-      const preview = extractAssistantPreview({ kind: target.kind, text: bounded.text });
-      const truncated = read.truncated === true || bounded.truncated;
-      runtime.set(paneId, {
-        ...(previous ?? {}),
-        occupantId: target.occupant,
-        messageText: preview.text,
-        messageSource: preview.source,
-        messageKind: target.kind,
-        messageObservedAt: now.toISOString(),
-        messageRevision: Number.isInteger(read.revision) ? read.revision : null,
-        messageTruncated: truncated,
-        messageStale: false,
-        messageAvailable: preview.available,
-        messageRawExcerpt: preview.rawExcerpt,
-        messageLimitation: truncated && !preview.available
-          ? "pane output was truncated and contained no confidently bounded assistant message"
-          : null,
-      });
-      updated += 1;
-    } catch (error) {
-      errors.push(`${paneId}: ${error.message}`);
-      const currentAgent = currentAgentForPane(currentSnapshot(), paneId);
-      if (messageOccupantId(currentAgent) !== target.occupant) return;
-      if (previous?.occupantId === target.occupant) {
-        runtime.set(paneId, {
-          ...previous,
-          messageStale: true,
-          messageLimitation: "pane output read failed; retaining the previous preview",
+  const entries = [...targets];
+  let nextEntry = 0;
+  const refreshNext = async () => {
+    while (nextEntry < entries.length) {
+      const entry = entries[nextEntry];
+      nextEntry += 1;
+      const [paneId, target] = entry;
+      const previous = runtime.get(paneId);
+      try {
+        const read = await client.readPane(paneId, {
+          lines: MAX_PANE_LINES,
+          source: "recent_unwrapped",
         });
-      } else {
-        runtime.set(paneId, unavailableRuntime({
-          kind: target.kind,
-          occupant: target.occupant,
-          limitation: "pane output read failed",
-        }));
+        if (read?.pane_id !== paneId || read.source !== "recent_unwrapped" || read.format !== "text") {
+          throw new Error("unexpected Herdr pane read response");
+        }
+        const currentAgent = currentAgentForPane(currentSnapshot(), paneId);
+        if (messageOccupantId(currentAgent) !== target.occupant) continue;
+        const bounded = boundedUtf8Suffix(cleanPaneText(read.text));
+        const preview = extractAssistantPreview({ kind: target.kind, text: bounded.text });
+        const truncated = read.truncated === true || bounded.truncated;
+        runtime.set(paneId, {
+          ...(previous ?? {}),
+          occupantId: target.occupant,
+          messageText: preview.text,
+          messageSource: preview.source,
+          messageKind: target.kind,
+          messageObservedAt: now.toISOString(),
+          messageRevision: Number.isInteger(read.revision) ? read.revision : null,
+          messageTruncated: truncated,
+          messageStale: false,
+          messageAvailable: preview.available,
+          messageRawExcerpt: preview.rawExcerpt,
+          messageLimitation: truncated && !preview.available
+            ? "pane output was truncated and contained no confidently bounded assistant message"
+            : null,
+        });
+        updated += 1;
+      } catch (error) {
+        errors.push(`${paneId}: ${error.message}`);
+        const currentAgent = currentAgentForPane(currentSnapshot(), paneId);
+        if (messageOccupantId(currentAgent) !== target.occupant) continue;
+        if (previous?.occupantId === target.occupant) {
+          runtime.set(paneId, {
+            ...previous,
+            messageStale: true,
+            messageLimitation: readFailureLimitation(error, true),
+          });
+        } else {
+          runtime.set(paneId, unavailableRuntime({
+            kind: target.kind,
+            occupant: target.occupant,
+            limitation: readFailureLimitation(error, false),
+          }));
+        }
+        updated += 1;
       }
-      updated += 1;
     }
-  }));
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(MAX_CONCURRENT_PANE_READS, entries.length) },
+    () => refreshNext(),
+  ));
   return { errors, updated };
 }
 
@@ -246,4 +293,5 @@ export const MESSAGE_PREVIEW_LIMITS = {
   lines: MAX_PANE_LINES,
   bytes: MAX_PANE_BYTES,
   rawExcerptCodePoints: MAX_RAW_EXCERPT_CODE_POINTS,
+  concurrentReads: MAX_CONCURRENT_PANE_READS,
 };

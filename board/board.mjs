@@ -497,13 +497,14 @@ export function boardSnapshotDocument({
 }
 
 export async function runOnce({ repoRoot, config = {} }) {
-  const client = new HerdrClient({ requestTimeoutMs: 500 });
+  const client = new HerdrClient({ requestTimeoutMs: 500, paneReadTimeoutMs: 2_000 });
   try {
     const state = await collectBoardState({ repoRoot, config, client });
     process.stdout.write(renderPlainBoard(state.rows, state.stats, {
       connection: state.connection,
       missingRegistry: state.exists ? undefined : state.path,
       registryErrors: state.errors,
+      messageErrors: state.messageErrors,
     }));
   } finally {
     client.close();

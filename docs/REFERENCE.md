@@ -272,8 +272,8 @@ Repository records contain canonical `repo_id`, development `root_id`, canonical
   UTC `observed_at`, pane `revision`, `truncated`, `stale`, `available`, separately
   labeled `raw_excerpt`, and a nullable `limitation`).
 
-`last_message` and `tripwire` are unavailable outside `lane board --watch --json`;
-only that live subscription populates them.
+`tripwire` is unavailable outside `lane board --watch --json`; only that live
+subscription populates it.
 
 Unknown scalar values are `null` and carry `available: false` where defined; they are
 never reported as clean or passing. Consumers must accept absent optional v1 fields
@@ -286,20 +286,23 @@ are localized with source `message` and do not discard Git/report state.
 For registered Codex and Claude agents, the board reads `recent_unwrapped` text with
 an explicit 200-line request and retains at most the final 16 KiB. Small
 kind-specific adapters strip ANSI/control sequences and recognize only documented
-assistant, prompt, tool, status, and footer boundaries. The detail value preserves
-the last confidently bounded multiline assistant block; the table summarizes its
-first substantive line. Tool-only, footer-only, unsupported, or otherwise ambiguous
-text yields `source: "unavailable"`, never a guessed message. A bounded
+assistant, prompt, corroborated tool, status, approval, composer-frame, and footer
+boundaries. Indented quotes and bullets remain message content. The detail value
+preserves the last confidently bounded multiline assistant block; the table
+summarizes its first substantive line. Tool-only, footer-only, unsupported, or
+otherwise ambiguous text yields `source: "unavailable"`, never a guessed message. A bounded
 `raw_excerpt` may still be present with `source: "pane-output"` so consumers cannot
 confuse terminal text with an assistant response. Truncation is reported whether it
 came from Herdr or the local byte bound; when truncated text contains no confident
 answer, `limitation` says so without promising recoverable alternate-screen history.
 
 Preview state is memory-only and keyed to the pane occupant's Herdr agent-session
-identity, with a conservative agent/name/pane/revision fallback. A late response is
-discarded when that identity changes. Read errors retain a matching previous preview
-only with `stale: true`; no output is copied into tracked reports. One-shot modes read
-each supported pane once. A watch reads on its five-second refresh and after status or
+identity, with a conservative agent/name/pane fallback. A late response is discarded
+when that identity changes. Read errors retain a matching previous preview only with
+`stale: true`; timeout and unsupported-read limitations remain distinct. No output is
+copied into tracked reports. Snapshot requests use a 500 ms budget; pane reads have a
+separate two-second budget and run at most four at once. One-shot modes read each
+supported pane once. A watch reads on its five-second refresh and after status or
 output changes, coalescing events to no more than one read per pane per second.
 
 One watch invocation owns one observation client. SIGINT, SIGTERM, downstream pipe

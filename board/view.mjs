@@ -151,12 +151,18 @@ export function footerLine(stats) {
   return `load ${load} | free ${stats.freeMemory} | workers vitest=${workers.vitest ?? 0} cargo=${workers.cargo ?? 0} go=${workers.go ?? 0} rustc=${workers.rustc ?? 0}`;
 }
 
-export function renderPlainBoard(rows, stats, { connection = "offline", missingRegistry, registryErrors = [] } = {}) {
+export function renderPlainBoard(rows, stats, {
+  connection = "offline",
+  missingRegistry,
+  registryErrors = [],
+  messageErrors = [],
+} = {}) {
   const registryNotice = missingRegistry === undefined ? [] : [`registry not found: ${missingRegistry}`];
   return [
     `lane board (${connection})`,
     ...registryNotice,
     ...registryErrors.map((error) => `registry error: ${error}`),
+    ...messageErrors.map((error) => `message notice: ${error}`),
     ...tableLines(rows),
     footerLine(stats),
   ].join("\n") + "\n";

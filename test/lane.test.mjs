@@ -2800,9 +2800,13 @@ test("board JSON snapshots expose schema v1 from canonical --repo config without
     assert.equal(secondResult.status, 0, secondResult.stderr);
     assert.equal(JSON.parse(secondResult.stdout).rows[0].row_id, row.row_id);
     const reference = readFileSync(join(HERE, "..", "docs", "REFERENCE.md"), "utf8");
-    assert.match(
+    assert.doesNotMatch(
       reference,
       /`last_message` and `tripwire` are unavailable outside `lane board --watch --json`/u,
+    );
+    assert.match(
+      reference,
+      /`tripwire` is unavailable outside `lane board --watch --json`/u,
     );
     negativeControl("board JSON schema, canonical repo, and observation-only behavior");
   } finally {
@@ -2864,7 +2868,7 @@ test("board one-shot and watch reads share bounded substantive message previews"
         } })}\n`);
       } else if (request.method === "pane.read") {
         readCount += 1;
-        socket.write(`${JSON.stringify({ id: request.id, result: {
+        const response = `${JSON.stringify({ id: request.id, result: {
           type: "pane_read",
           read: {
             pane_id: "pane-1",
@@ -2876,7 +2880,8 @@ test("board one-shot and watch reads share bounded substantive message previews"
             revision: 40 + readCount,
             truncated: false,
           },
-        } })}\n`);
+        } })}\n`;
+        setTimeout(() => socket.write(response), 650);
       } else if (request.method === "events.subscribe") {
         socket.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
         setTimeout(() => {
@@ -2919,7 +2924,7 @@ test("board one-shot and watch reads share bounded substantive message previews"
     await waitForCondition(
       () => watch.stdout().trim().split("\n").filter(Boolean).length >= 2,
       "updated substantive preview frame",
-      2_500,
+      4_000,
     );
     watch.child.kill("SIGTERM");
     const watched = await watch.completed;
@@ -2950,6 +2955,70 @@ test("board one-shot and watch reads share bounded substantive message previews"
     if (server !== undefined) await server.close();
     fixture.cleanup();
   }
+});
+
+test("plain board output reports localized message read notices", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  let server;
+  try {
+    mkdirSync(join(fixture.repo, ".lane"));
+    writeFileSync(join(fixture.repo, ".lane", "sessions.json"), `${JSON.stringify([{
+      name: "board-agent",
+      workspace: "workspace-1",
+      lane: "board-message-error",
+      role: "engineer",
+      report: "docs/reports/board-message-error.md",
+      deadline: null,
+      done: false,
+    }])}\n`);
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      if (request.method === "session.snapshot") {
+        socket.write(`${JSON.stringify({ id: request.id, result: {
+          type: "session_snapshot",
+          snapshot: {
+            protocol: 20,
+            version: "test",
+            agents: [{
+              agent: "codex",
+              name: "board-agent",
+              pane_id: "pane-1",
+              workspace_id: "workspace-1",
+              agent_status: "working",
+            }],
+            panes: [],
+            workspaces: [{ workspace_id: "workspace-1", label: "workspace-1" }],
+          },
+        } })}\n`);
+      } else if (request.method === "pane.read") {
+        socket.write(`${JSON.stringify({
+          id: request.id,
+          error: { code: "unsupported", message: "pane.read unavailable" },
+        })}\n`);
+      }
+    });
+    const env = { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath };
+    const plain = await laneProcess(fixture, ["board", "--once"], { env }).completed;
+    assert.equal(plain.status, 0, plain.stderr);
+    assert.match(plain.stdout, /message notice: pane-1: Herdr unsupported: pane\.read unavailable/);
+    const json = await laneProcess(fixture, ["board", "--json"], { env }).completed;
+    assert.equal(json.status, 0, json.stderr);
+    assert.deepEqual(JSON.parse(json.stdout).errors, [{
+      source: "message",
+      message: "pane-1: Herdr unsupported: pane.read unavailable",
+    }]);
+    negativeControl("plain message error notices");
+  } finally {
+    if (server !== undefined) await server.close();
+    fixture.cleanup();
+  }
+});
+
+test("message report and handoff record measurements at the reviewed commit", () => {
+  const report = readFileSync(join(HERE, "..", "docs", "reports", "board-messages.md"), "utf8");
+  const handoff = readFileSync(join(HERE, "..", "HANDOFF.md"), "utf8");
+  assert.match(report, /reviewed commit[^.]*134\/134[^.]*134 deliberate/isu);
+  assert.match(handoff, /reviewed commit[^.]*134\/134[^.]*134 deliberate/isu);
+  negativeControl("reviewed-commit message counts");
 });
 
 test("plain and JSON board reads run from an isolated built-ins-only tool copy", () => {

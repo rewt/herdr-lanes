@@ -1136,11 +1136,12 @@ Living log for agents maintaining this repository. Newest entry last.
   the integrated one-shot/watch parity case passed 1/1 with 104 unrelated skips.
 - Rebased onto board-actions implementation `3ef8230` and its facilitator-reviewed
   tip `8a98b80`, preserving the earlier HANDOFF entry, CLI-only UI/action boundary,
-  and inherited review record. The integrated `npm test` passed 133/133 with zero
-  skips in 114.802 seconds. A sandboxed negative run again hit `listen EPERM` only in
-  the inherited socket case; the socket-enabled repeat failed all 133 deliberate
-  controls with zero passes or skips in 110.015 seconds. Strict OpenSpec validation
-  passed 20/20.
+  and inherited review record. The pre-final-rebase `npm test` passed 133/133 with
+  zero skips in 114.802 seconds. At the reviewed commit, `npm test` passed 134/134
+  and all 134 deliberate controls failed with zero passes in the facilitator's
+  re-execution. The earlier sandboxed negative run hit `listen EPERM` only in the
+  inherited socket case; its socket-enabled repeat failed all 133 controls with zero
+  passes or skips in 110.015 seconds. Strict OpenSpec validation passed 20/20.
 - README, REFERENCE, `docs/reports/board-messages.md`, the completed change task, and
   current message-preview spec are synchronized. Verified Node.js 20.19.4, npm
   10.8.2, Git 2.54.0, and OpenSpec 1.6.0 after clear serialized load probes.
@@ -1149,6 +1150,22 @@ Living log for agents maintaining this repository. Newest entry last.
   archive, independent review, or contract amendment was exercised. Missing
   alternate-screen history and unrecognized rendered formats remain explicitly
   unavailable; the final clean-commit gate remains conversation-only evidence.
+
+## 2026-09-10 — message previews Round 2 corrections
+
+- Resolved all nine Round 1 findings: status-first and expanded trailing chrome are
+  rejected; tool calls require corroboration; top-level markers are column-zero;
+  pane reads use a separate two-second timeout and four-reader pool; timeout and
+  unsupported limitations differ; revision changes preserve fallback occupants; and
+  plain reads show message notices. REFERENCE and reviewed-commit counts are fixed.
+- The pre-fix focus failed all 11 selected expectations. Post-fix module tests passed
+  34/34 and the socket-enabled root subset passed 4/4; its sandbox attempt hit only
+  `listen EPERM: operation not permitted …/board.sock`. Final `npm test` passed
+  142/142 in 115.630 seconds, all 142 deliberate controls failed in 110.431 seconds,
+  and strict OpenSpec passed 20/20 after clear serialized load probes.
+- No live-pane repeat, real-TTY or alternate-host check, model API, push, promotion,
+  archive, contract amendment, `board/app.mjs` change, or `docs/reviews/` change was
+  performed. The final clean-commit gate remains conversation-only evidence.
 
 ## 2026-09-11 — review CLI precise paths Round 10 corrections
 

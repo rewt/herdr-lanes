@@ -131,6 +131,39 @@ test("pane reads use the bounded recent-unwrapped protocol shape", async () => {
   }
 });
 
+test("pane reads use a larger timeout than snapshot requests", async () => {
+  const connect = fakeServer((socket, request) => {
+    setTimeout(() => socket.receive({
+      id: request.id,
+      result: {
+        type: "pane_read",
+        read: {
+          pane_id: "w1:p1",
+          workspace_id: "w1",
+          tab_id: "w1:t1",
+          source: "recent_unwrapped",
+          format: "text",
+          text: "delayed visible output",
+          revision: 12,
+          truncated: false,
+        },
+      },
+    }), 30);
+  });
+  const client = new HerdrClient({
+    socketPath: "fake.sock",
+    requestTimeoutMs: 10,
+    paneReadTimeoutMs: 100,
+    connect,
+  });
+  try {
+    assert.equal((await client.readPane("w1:p1")).text, "delayed visible output");
+    negativeControl("dedicated pane read timeout");
+  } finally {
+    client.close();
+  }
+});
+
 test("subscriptions emit events and reconnect with bounded backoff", async () => {
   const requests = [];
   let connection = 0;
