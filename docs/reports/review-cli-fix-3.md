@@ -200,3 +200,28 @@ read. The final clean-commit gate remains conversation-only evidence.
   system, push, promotion, archive, board-code edit, or `docs/reviews/` change was
   performed. The final commit and single post-commit gate remain conversation-only
   evidence.
+
+## Round 7 corrections
+
+- Broadened only the short-flag boundary: the flag branch now rejects a preceding
+  letter, mark, number, underscore, dot, hyphen, or path separator, while permitting
+  punctuation delimiters. Backtick-quoted prose and an assigned command therefore
+  retain the flag and redact the attached path; a double-quoted protected location
+  refuses. The asymmetric no-syntax-exemption rule and every other matcher branch are
+  unchanged.
+- REFERENCE now includes ambiguous spaced paths and parenthesized path residue in its
+  prose-refusal enumeration. The asymmetric path-redaction documentation test pins
+  that enumeration in both REFERENCE and the reviewer template.
+- Before the behavior change, the four-test focus failed all four expectations in
+  8.287 seconds. After the correction, all four passed in 8.107 seconds. Each of the
+  three behavior fixtures has its own deliberate `negativeControl`.
+- The ordinary inherited baseline produced 141 passes and four failures in 266.199
+  seconds because a user-level Git excludes file contains `.lane/`, as the Round 6
+  review record warned. With global Git and XDG configuration isolated for the
+  command, final `npm test` passed 148/148 with zero skips in 275.329 seconds, and all
+  148 deliberate controls failed with zero passes in 269.666 seconds. Strict OpenSpec
+  validation passed 19/19.
+- Runs were serialized after clear process probes. Verification used Node.js 20.19.4,
+  npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No Unix-socket `listen EPERM` occurred.
+  The five additional base-commit matcher candidates remain untouched and out of
+  scope. No push, board-code edit, or `docs/reviews/` change was performed.

@@ -3961,6 +3961,65 @@ for (const [field, topic, payload, verify] of [
   });
 }
 
+for (const [field, topic, payload, verify] of [
+  [
+    "backtick-quoted finding prose",
+    "review-delimited-flag-prose-path",
+    { findings: "- [Moderate] shared.txt:1 - Flag `-I/var/tmp/private.h` was observed; Fix: use a public-safe path" },
+    (publicRecord) => {
+      assert.ok(publicRecord.includes("Flag \\`-I[ABS_PATH]\\` was observed"));
+      assert.doesNotMatch(publicRecord, /var\/tmp\/private/);
+    },
+  ],
+  [
+    "assigned command string",
+    "review-delimited-flag-command-path",
+    { reexecuted: [{
+      command: "CFLAGS=-I/var/tmp/private.h compile",
+      cwd: "scratch",
+      exit_code: 0,
+      result: "The command was inspected without execution.",
+      tests_pass: false,
+      witness: null,
+    }] },
+    (publicRecord) => {
+      const executions = JSON.parse(publicRecord.match(/## Re-executed\n```json\n(.+)\n```/u)[1]);
+      assert.equal(executions[0].command, "CFLAGS=-I[ABS_PATH] compile");
+    },
+  ],
+  [
+    "double-quoted finding location",
+    "review-delimited-flag-location-path",
+    { findings: "- [Moderate] \"-I/var/tmp/private.h\":1 - issue; Fix: use a repository-relative location" },
+    null,
+  ],
+]) {
+  test("review sanitizes a delimiter-prefixed flag-attached absolute path in " + field, () => {
+    const review = makeReviewFixture(topic, { verdict: "PASS", payload });
+    try {
+      const run = lane(review.fixture, ["review", topic, "--round", "1", "--brief", review.brief]);
+      const head = git(review.path, ["rev-parse", "HEAD"]);
+      const publicPath = join(review.path, "docs", "reviews", topic, head.slice(0, 7) + "-r1.md");
+      if (field === "double-quoted finding location") {
+        assert.equal(run.status, 2, run.stderr);
+        assert.equal(run.stdout, "");
+        assert.match(
+          run.stderr,
+          /finding location contains a private alias or absolute path and cannot be rewritten safely/u,
+        );
+        assert.ok(!existsSync(publicPath));
+      } else {
+        assert.equal(run.status, 0, run.stderr);
+        assert.ok(existsSync(publicPath));
+        verify(readFileSync(publicPath, "utf8"));
+      }
+      negativeControl("delimiter-prefixed flag-attached absolute path in " + field);
+    } finally {
+      review.fixture.cleanup();
+    }
+  });
+}
+
 for (const [description, topic, command, projected] of [
   [
     "forward-separator UNC path",
@@ -4890,10 +4949,12 @@ test("review protocol documents asymmetric path redaction and spaced-path refusa
     assert.match(spec, /regex literals and\s+slash-delimited phrases[^.]*may be replaced[^.]*absolute-path\s+placeholder/iu);
     assert.match(spec, /opening parenthesis[^.]*refus/iu);
   }
-  assert.match(
-    template,
-    /publication refuses prose only[^.]*ambiguous spaced paths[^.]*parenthesized path residue/iu,
-  );
+  for (const document of [reference, template]) {
+    assert.match(
+      document,
+      /publication refuses prose only[^.]*ambiguous\s+spaced paths[^.]*parenthesized path residue/iu,
+    );
+  }
   assert.match(template, /opening parenthesis immediately after an absolute path/iu);
   assert.match(template, /ambiguous spaced path[^.]*public-safe words[^.]*separate fields/iu);
   negativeControl("asymmetric path-redaction documentation");

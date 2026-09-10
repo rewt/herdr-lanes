@@ -1037,3 +1037,28 @@ Living log for agents maintaining this repository. Newest entry last.
   archive, board-code edit, or `docs/reviews/` change was performed. The
   facilitator-owned Round 5 record remains unchanged; the final commit and single
   post-commit gate remain conversation-only evidence.
+
+## 2026-09-10 — review CLI precise paths Round 7 corrections
+
+- Broadened only the short-flag boundary so punctuation-delimited flags redact their
+  attached POSIX paths in prose and commands while protected locations refuse. The
+  lookbehind still rejects letters, marks, numbers, underscore, dot, hyphen, and path
+  separators; no syntax exemption or other matcher change was added.
+- Added separately negative-controlled fixtures for backtick-quoted prose, an
+  assigned command flag, and a double-quoted location. Extended the existing public
+  documentation assertion and REFERENCE's prose-refusal enumeration to include
+  ambiguous spaced paths and parenthesized residue.
+- The four-test failure-first focus failed all four expectations in 8.287 seconds and
+  passed all four after correction in 8.107 seconds. The ordinary inherited baseline
+  produced 141 passes and four failures in 266.199 seconds because a user-level Git
+  excludes file contains `.lane/`, matching the facilitator's Round 6 warning.
+- With global Git and XDG configuration isolated for each command, final `npm test`
+  passed 148/148 with zero skips in 275.329 seconds; all 148 deliberate controls
+  failed with zero passes in 269.666 seconds. Strict OpenSpec validation passed
+  19/19. Runs were serialized after clear process probes.
+- Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No
+  Unix-socket `listen EPERM` occurred. The five additional base-commit matcher
+  candidates remain untouched and out of scope. No live reviewer/Herdr mutation,
+  alternate host, push, promotion, archive, board-code edit, or `docs/reviews/`
+  change was performed. The facilitator-owned Round 6 record remains unchanged; the
+  final commit and single post-commit gate remain conversation-only evidence.

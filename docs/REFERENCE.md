@@ -583,10 +583,11 @@ immediately after a generated placeholder. Markdown and HTML therefore display t
 characters literally. Commands stay verbatim because the JSON fence already makes
 them literal. Prose punctuation and encoded-looking quoted text are not refusal
 categories. Publication refuses prose only for non-ASCII or control characters,
-unresolved private identifiers, reviewer-written reserved placeholders, and residual
-paths or aliases after sanitization. Schema tags, JSON fences and CLI placeholders are
-structural. The mechanical policy cannot prove that arbitrary prose contains no
-undeclared human name or secret, so the operator still inspects before committing.
+unresolved private identifiers, reviewer-written reserved placeholders, ambiguous
+spaced paths, parenthesized path residue, and residual paths or aliases after
+sanitization. Schema tags, JSON fences and CLI placeholders are structural. The
+mechanical policy cannot prove that arbitrary prose contains no undeclared human name
+or secret, so the operator still inspects before committing.
 
 The CLI creates the public file only after sanitization and the pre-publication clean
 check, without replacement, staging, or committing. It then requires the same HEAD and
