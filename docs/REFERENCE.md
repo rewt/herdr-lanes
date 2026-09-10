@@ -508,11 +508,14 @@ with Markdown or HTML punctuation; public rendering escapes that punctuation as
 described below. A finding file-and-line value is structural rather than prose and
 keeps the stricter markup and encoding restriction.
 
-After completion, the command validates that schema and rechecks the exact HEAD,
-branch, and a completely clean lane before accepting the verdict. It polls only the
-selected private path with foreground timers. It does not infer completion from chat
-or an agent footer, send follow-up actions, kill the reviewer, delete partial/late
-evidence, or leave a watcher behind.
+After the completion marker appears, the record's size and modification time must
+remain unchanged for two continuous seconds; any change restarts that settle
+interval. The interval counts against `--timeout`, and the command re-reads the
+record bytes immediately before validation. It then validates that final read and
+rechecks the exact HEAD, branch, and a completely clean lane before accepting the
+verdict. It polls only the selected private path with foreground timers. It does not
+infer completion from chat or an agent footer, send follow-up actions, kill the
+reviewer, delete partial/late evidence, or leave a watcher behind.
 
 Only after that unchanged-lane check, the CLI constructs a public envelope from the
 validated metadata, Findings, Re-executed, Non-claims, and Unverified sections. It
@@ -525,8 +528,12 @@ docs/reviews/<topic>/<head7>-r<N>.md
 ```
 
 Every projected string is NFC-normalized. Proven paths inside the reviewed repository
-become repository-relative first. Other absolute POSIX, drive-letter, UNC, and
-file-URL paths become `[ABS_PATH]`. Case-insensitive whole path-segment or Unicode
+become repository-relative first. Other contiguous absolute POSIX tokens, drive-letter
+paths, UNC paths, and file URLs matched by the concrete path pattern become
+`[ABS_PATH]`. The checker does not scan from one slash across whitespace to another:
+JavaScript regex literals with flags, slash-delimited prose, and non-file URL-like
+tokens remain literal unless a contiguous token independently matches the concrete
+pattern. Case-insensitive whole path-segment or Unicode
 word-boundary matches for the current OS username/home basename, hostname/full first
 label, and declared private identifiers become `[USER]`, `[HOST]`, and `[PRIVATE]`.
 Matches run longest-first; equal aliases use user, then host, then private precedence.
@@ -540,7 +547,7 @@ repository-relative conversions, including zero, plus modified execution fields 
 array index/name without original values. Generated placeholders are reserved;
 reviewer-supplied reserved placeholders are refused in every projected field,
 including protected finding locations. The checker also refuses aliases in protected
-file:line or captured metadata, ambiguous paths, controls/newlines, non-ASCII residue,
+file:line or captured metadata, controls/newlines, non-ASCII residue,
 residual paths/aliases, and any non-idempotent second pass. A finding description that
 contains a declared private identifier is unresolved and refuses publication. After
 sanitization, the idempotence rescan operates on the unescaped payload. It decodes

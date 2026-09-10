@@ -888,3 +888,28 @@ Living log for agents maintaining this repository. Newest entry last.
   --no-interactive --concurrency 1` passed 19/19; `git diff --check` and a changed-
   text host-path/user-name scan were clean. No product code, board code, package,
   current OpenSpec capability, or product test changed.
+
+## 2026-09-10 — review CLI precise paths and record settle
+
+- Removed the whitespace-spanning slash ambiguity heuristic. Public review
+  sanitization now relies on the concrete contiguous absolute-path matcher, preserving
+  a JavaScript regex literal with flags, slash-delimited prose, and an HTTPS-like token
+  while still replacing a real external absolute path and refusing a declared alias
+  in finding prose.
+- Added a two-continuous-second settle check after the private completion marker.
+  Size or modification-time changes restart the interval; the CLI re-reads guarded
+  bytes immediately before validation and projects only that final read. REFERENCE,
+  shared OpenSpec guidance, design, delta, and current spec are synchronized.
+- Before product changes, the two focused tests failed as intended: slash prose was
+  refused with `projected payload contains an ambiguous absolute path`, and a
+  twice-writing fake reviewer returned the first PASS instead of the final NEEDS-WORK.
+  Both carry deliberate negative controls and passed after implementation.
+- Baseline `npm test` passed 127/127 in 110.784 seconds. Final `npm test` passed
+  129/129 in 309.921 seconds; all 129 deliberate controls failed with zero passes in
+  295.665 seconds. Strict OpenSpec validation passed 19/19, and `git diff --check`
+  passed. Runs were serialized after clear process probes.
+- Verified with Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. Main did
+  not move from `3367cd5`, so no rebase was required. No live reviewer/Herdr mutation,
+  alternate host, same-size/same-mtime adversarial rewrite, push, promotion, archive,
+  Unix-socket `listen EPERM`, board-code edit, or `docs/reviews/` change occurred. The
+  final post-commit `lane check` remains conversation-only evidence.

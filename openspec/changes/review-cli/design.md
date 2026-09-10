@@ -181,6 +181,11 @@ NEEDS-WORK means concrete revisions are needed; FAIL means the result is unsuita
 or a fundamental requirement fails. The reviewer decides from the evidence; there
 is no automatic severity-to-verdict formula.
 
+After the completion marker first appears, require the private record's size and
+modification time to remain unchanged for two continuous seconds. Any change resets
+the interval, which remains part of the end-to-end deadline. Re-read the record bytes
+immediately before validation and validate/project only that final read.
+
 ## Public projection and verified sanitization
 
 The CLI parses the private record and constructs a new public envelope from its
@@ -211,8 +216,12 @@ declared set. Do not read git author data, environment dumps or credential store
 Tests inject these exact OS values so host fixtures remain deterministic.
 
 First convert paths proven inside the reviewed repository to repository-relative
-paths. Replace other absolute POSIX, drive-letter, UNC and file-URL paths as whole
-paths, including their private segments. Then redact aliases, matching case-
+paths. Replace other contiguous absolute POSIX tokens, drive-letter paths, UNC paths,
+and file URLs matched by the concrete absolute-path pattern, including their private
+segments. Do not infer a path by scanning from one slash across whitespace to another;
+JavaScript regex literals with flags, slash-delimited prose, and non-file URL-like
+tokens remain literal unless a contiguous token independently matches the concrete
+pattern. Then redact aliases, matching case-
 insensitively at whole path segments (delimited by slash/backslash or string ends)
 or Unicode word boundaries (adjacent characters must not be letters, combining
 marks or numbers; underscore is therefore a boundary). Never substring-replace a username inside an
@@ -245,9 +254,6 @@ The following are concrete refusal triggers, before writing any public file:
 - Ambiguous location: after safe repository-path conversion, any alias match would
   replace text in a finding's file:line or a captured identity/base metadata field.
   Refuse instead of changing the location or the commit/branch being asserted.
-- Ambiguous path: a candidate absolute path cannot be delimited or proven to be
-  repository-relative without guessing (for example an unquoted path with spaces
-  that admits multiple file boundaries). Do not silently redact only a prefix.
 - Unsupported payload: projected field strings must be plain single-line text,
   restricted to ASCII U+0020 through U+007E after sanitization. Reject controls,
   newlines and non-ASCII residue everywhere. Prose punctuation and encoded-looking

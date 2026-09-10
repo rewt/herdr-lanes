@@ -114,7 +114,9 @@ commands/results with a negative-control or mutation witness behind every tests-
 claim, Non-claims and Unverified. The exact schema is maintained in the change/spec.
 
 lane review enforces unchanged HEAD and a clean tree before/after the reviewer,
-validates the private record and sanitizes a public projection. Unverifiable
+waits for the completed private record's size and modification time to settle for
+two continuous seconds, re-reads its bytes, then validates that final read and
+sanitizes a public projection. Unverifiable
 sanitization refuses publication. The CLI writes the public record only after
 those checks; it never stages or commits it. The operator inspects public safety
 and authorizes any subsequent commit/check/fix. A record's original SHA never

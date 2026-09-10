@@ -355,7 +355,7 @@ function writeFakeHerdr(fixture, options = {}) {
   const log = join(fixture.root, "herdr.jsonl");
   const state = join(fixture.root, "herdr-state.json");
 const source = `#!${process.execPath}
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 const args = process.argv.slice(2);
@@ -569,6 +569,21 @@ if (args[0] === "workspace" && args[1] === "list") {
     if (process.env.FAKE_REVIEW_MODE === "crlf-record") record = record.replace(/\\n/gu, "\\r\\n");
     mkdirSync(dirname(privatePath), { recursive: true });
     writeFileSync(privatePath, process.env.FAKE_REVIEW_MODE === "oversized" ? "x".repeat(1024 * 1024 + 1) : record);
+    if (process.env.FAKE_REVIEW_MODE === "rewrite-complete") {
+      const rewritten = record
+        .replace(/^\\*\\*PASS\\*\\*$/mu, "**NEEDS-WORK**")
+        .replace(
+          "- Live reviewer behavior was not exercised.",
+          "- Rewritten reviewer behavior was not exercised.",
+        );
+      spawn(process.execPath, [
+        "--input-type=module",
+        "--eval",
+        "import { writeFileSync } from 'node:fs'; setTimeout(() => writeFileSync(process.argv[1], process.argv[2]), 500);",
+        privatePath,
+        rewritten,
+      ], { detached: true, stdio: "ignore" }).unref();
+    }
     if (process.env.FAKE_REVIEW_MODE === "dirty-public") {
       mkdirSync(dirname(publicPath), { recursive: true });
       writeFileSync(publicPath, "reviewer wrote this\\n");
@@ -3618,6 +3633,28 @@ test("review dispatches once and publishes all canonical verdicts after private 
   }
 });
 
+test("review settles a completed private record before validating its final bytes", () => {
+  const review = makeReviewFixture("review-settle", { verdict: "PASS", mode: "rewrite-complete" });
+  try {
+    const started = Date.now();
+    const run = lane(review.fixture, [
+      "review", "review-settle", "--round", "1", "--brief", review.brief, "--timeout", "5",
+    ]);
+    assert.equal(run.status, 1, run.stderr);
+    assert.equal(run.stdout, "NEEDS-WORK\n");
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    const publicRecord = readFileSync(join(
+      review.path, "docs", "reviews", "review-settle", `${head.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    assert.equal(parseVerdict(publicRecord), "NEEDS-WORK");
+    assert.match(publicRecord, /Rewritten reviewer behavior was not exercised/);
+    assert.ok(Date.now() - started >= 2_300, "review returned before the rewritten record settled");
+    negativeControl("completed private record settle window");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
 test("review preserves a final finding immediately before the next section heading", () => {
   const findings = [
     "- [Major] first.txt:1 - first issue; Fix: fix the first issue",
@@ -3666,7 +3703,7 @@ test("review completion admits every validator-accepted record and section bound
         });
         fixtures.push(review.fixture);
         const run = lane(review.fixture, [
-          "review", topic, "--round", "1", "--brief", review.brief, "--timeout", "2",
+          "review", topic, "--round", "1", "--brief", review.brief, "--timeout", "4",
         ]);
         const head = git(review.path, ["rev-parse", "HEAD"]);
         const publicPath = join(review.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`);
@@ -3782,6 +3819,48 @@ test("review sanitizes deterministic aliases and path forms in a bounded public 
   }
 });
 
+test("review path detection preserves slash prose while retaining concrete path and alias safeguards", () => {
+  const fixtures = [];
+  try {
+    const accepted = makeReviewFixture("review-slash-prose", {
+      verdict: "PASS",
+      payload: {
+        findings: "- [Minor] shared.txt:1 - Regex /( )/giu, phrase / alpha beta /, and URL https://example.invalid/a/b stay literal; Fix: preserve all three tokens",
+        nonclaims: "- The external fixture at /opt/review/input.js was not re-executed.",
+      },
+    });
+    fixtures.push(accepted.fixture);
+    const acceptedRun = lane(accepted.fixture, [
+      "review", "review-slash-prose", "--round", "1", "--brief", accepted.brief,
+    ]);
+    assert.equal(acceptedRun.status, 0, acceptedRun.stderr);
+    const acceptedHead = git(accepted.path, ["rev-parse", "HEAD"]);
+    const publicRecord = readFileSync(join(
+      accepted.path, "docs", "reviews", "review-slash-prose", `${acceptedHead.slice(0, 7)}-r1.md`,
+    ), "utf8");
+    assert.match(publicRecord, /Regex \/\( \)\/giu, phrase \/ alpha beta \/, and URL https:\/\/example\.invalid\/a\/b stay literal/);
+    assert.match(publicRecord, /The external fixture at \[ABS_PATH\] was not re-executed\./);
+
+    const refused = makeReviewFixture("review-slash-alias", {
+      verdict: "PASS",
+      payload: {
+        findings: "- [Minor] shared.txt:1 - Private ReviewerAlias found an issue; Fix: remove the alias",
+        identifiers: ["ReviewerAlias"],
+      },
+    });
+    fixtures.push(refused.fixture);
+    const refusedRun = lane(refused.fixture, [
+      "review", "review-slash-alias", "--round", "1", "--brief", refused.brief,
+    ]);
+    assert.equal(refusedRun.status, 2, refusedRun.stderr);
+    assert.equal(refusedRun.stdout, "");
+    assert.match(refusedRun.stderr, /finding description contains a declared private identifier/);
+    negativeControl("concrete review path detection");
+  } finally {
+    for (const fixture of fixtures) fixture.cleanup();
+  }
+});
+
 test("review sanitization preserves unrelated words and fails closed on ambiguous or unsafe payloads", () => {
   const fixtures = [];
   try {
@@ -3817,7 +3896,6 @@ test("review sanitization preserves unrelated words and fails closed on ambiguou
       ["numeric-reference-alias", { nonclaims: "- A&#110;n was not independently authenticated.", identifiers: ["Ann"] }],
       ["non-ascii", { findings: "- [Minor] shared.txt:1 - caf\u00e9 issue; Fix: use ASCII" }],
       ["placeholder", { nonclaims: "- Existing [USER] marker." }],
-      ["ambiguous-path", { unverified: "- Inspect /tmp/path with spaces/file." }],
     ];
     for (const [suffix, payload] of cases) {
       const topic = `review-${suffix}`;
@@ -4281,8 +4359,9 @@ test("review refuses malformed private evidence, incomplete output, timeout, and
       const review = makeReviewFixture(topic, { verdict, mode });
       fixtures.push(review.fixture);
       const capturedHead = git(review.path, ["rev-parse", "HEAD"]);
+      const timeout = ["incomplete", "missing"].includes(mode) ? "1" : "4";
       const run = lane(review.fixture, [
-        "review", topic, "--round", "1", "--brief", review.brief, "--timeout", "1",
+        "review", topic, "--round", "1", "--brief", review.brief, "--timeout", timeout,
       ]);
       assert.equal(run.status, exit, `${mode}\n${run.stderr}`);
       assert.equal(run.stdout, "");
@@ -4314,7 +4393,7 @@ test("review sends malformed completed endings to schema validation without wait
       fixtures.push(review.fixture);
       const started = Date.now();
       const run = lane(review.fixture, [
-        "review", topic, "--round", "1", "--brief", review.brief, "--timeout", "2",
+        "review", topic, "--round", "1", "--brief", review.brief, "--timeout", "4",
       ]);
       outcomes.push({
         mode,
@@ -4330,7 +4409,7 @@ test("review sends malformed completed endings to schema validation without wait
       assert.equal(outcome.emptyStdout, true, JSON.stringify(outcome));
       assert.equal(outcome.schemaDiagnostic, true, JSON.stringify(outcome));
       assert.equal(outcome.timedOut, false, JSON.stringify(outcome));
-      assert.ok(outcome.elapsedMs < 1500, JSON.stringify(outcome));
+      assert.ok(outcome.elapsedMs >= 2_000 && outcome.elapsedMs < 3_800, JSON.stringify(outcome));
     }
     negativeControl("malformed completed record fast schema refusal");
   } finally {
@@ -4442,7 +4521,7 @@ test("review reference describes the shipped public path and protected-location 
   negativeControl("review reference publication and location wording");
 });
 
-test("review protocol documents normalized boundaries and consecutive findings", () => {
+test("review protocol documents settled records, normalized boundaries, and consecutive findings", () => {
   const reference = readFileSync(join(HERE, "..", "docs", "REFERENCE.md"), "utf8");
   const template = readFileSync(join(HERE, "..", "docs", "REVIEW_TEMPLATE.md"), "utf8");
   const design = readFileSync(join(HERE, "..", "openspec", "changes", "review-cli", "design.md"), "utf8");
@@ -4456,6 +4535,10 @@ test("review protocol documents normalized boundaries and consecutive findings",
     assert.match(document, /leading and trailing (?:blank-line|newline)\s+runs/iu);
   }
   assert.match(design, /completion probe[^.]*more permissive than schema validation/iu);
+  for (const document of [reference, design]) {
+    assert.match(document, /size and\s+modification time[^.]*two continuous seconds/iu);
+    assert.match(document, /re-reads?\s+(?:the\s+)?(?:record\s+)?bytes[^.]*immediately before validation/iu);
+  }
   for (const document of [reference, template]) {
     assert.match(
       document,
@@ -4482,6 +4565,7 @@ test("review protocol documents normalized boundaries and consecutive findings",
     assert.match(spec, /boundary blank lines/iu);
     assert.match(spec, /first nonempty line/iu);
     assert.match(spec, /malformed completed record/iu);
+    assert.match(spec, /record settle/iu);
   }
   negativeControl("review boundary protocol documentation");
 });

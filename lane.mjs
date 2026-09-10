@@ -1255,6 +1255,7 @@ function dispatch(topic, promptText, options = {}) {
 
 const REVIEW_MAX_PRIVATE_BYTES = 1024 * 1024;
 const REVIEW_COMPLETE_MARKER = "<!-- lane-review-complete -->";
+const REVIEW_SETTLE_MS = 2_000;
 const REVIEW_SECTIONS = [
   "Findings", "Re-executed", "Non-claims", "Unverified", "Private identifiers", "Analysis",
 ];
@@ -1641,7 +1642,7 @@ function containsAlias(value, aliases) {
 }
 
 function absolutePathPattern() {
-  return /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]+/giu;
+  return /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\)\]}])\/(?!\/)[^\s"'<>`\[\],;:()]+/giu;
 }
 
 function decodeReviewRescanText(input) {
@@ -1679,9 +1680,6 @@ function sanitizePublicString(input, context, { allowGenerated = false } = {}) {
   if (!allowGenerated && REVIEW_PLACEHOLDER_PATTERN.test(value)) fail("projected payload contains a reserved sanitizer placeholder");
   REVIEW_PLACEHOLDER_PATTERN.lastIndex = 0;
   if (/[\u0000-\u001f\u007f\n\r]/u.test(value)) fail("projected payload must be single-line text");
-  if (/(?:file:\/\/\/|\b[A-Za-z]:[\\/]|\\\\|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/))[^,;\n]*\s+[^,;\n]*[\\/]/iu.test(value)) {
-    fail("projected payload contains an ambiguous absolute path");
-  }
 
   const roots = [...new Set([context.path, REPO_ROOT].map((root) => realpathSync(root)))].sort((a, b) => b.length - a.length);
   for (const root of roots) {
@@ -1862,6 +1860,8 @@ function sanitizeReviewProjection(parsed, expected) {
 }
 
 async function waitForPrivateReview(path, deadline, interrupted, session) {
+  let completedSignature;
+  let unchangedSince;
   while (Date.now() <= deadline) {
     if (interrupted.value) {
       fail(
@@ -1882,7 +1882,34 @@ async function waitForPrivateReview(path, deadline, interrupted, session) {
       // Completion is deliberately more permissive than schema validation: once a
       // writer has emitted the marker, malformed trailing whitespace must fail fast
       // in validateReviewRecord instead of being mistaken for an incomplete write.
-      if (privateReviewIsComplete(text)) return text;
+      if (privateReviewIsComplete(text)) {
+        const signature = `${entry.size}:${entry.mtimeMs}`;
+        if (signature !== completedSignature) {
+          completedSignature = signature;
+          unchangedSince = Date.now();
+        } else if (Date.now() - unchangedSince >= REVIEW_SETTLE_MS) {
+          const beforeRead = lstatSync(path);
+          if (beforeRead.isSymbolicLink() || !beforeRead.isFile()) fail("private review output must be a regular file");
+          if (beforeRead.size > REVIEW_MAX_PRIVATE_BYTES) fail("private review output exceeds 1 MiB");
+          const beforeSignature = `${beforeRead.size}:${beforeRead.mtimeMs}`;
+          const bytes = readFileSync(path);
+          const afterRead = lstatSync(path);
+          const afterSignature = `${afterRead.size}:${afterRead.mtimeMs}`;
+          if (beforeSignature === completedSignature && afterSignature === completedSignature && bytes.length === afterRead.size) {
+            try {
+              const settledText = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+              if (privateReviewIsComplete(settledText)) return settledText;
+            } catch {
+              fail("private review output is not valid UTF-8");
+            }
+          }
+          completedSignature = undefined;
+          unchangedSince = undefined;
+        }
+      } else {
+        completedSignature = undefined;
+        unchangedSince = undefined;
+      }
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, Math.min(250, Math.max(1, deadline - Date.now()))));
   }

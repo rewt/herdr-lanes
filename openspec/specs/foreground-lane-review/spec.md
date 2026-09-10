@@ -45,6 +45,9 @@ findings and mandatory Re-executed, Non-claims and Unverified sections.
 #### Scenario: Malformed completed record
 - **WHEN** a completion marker is followed by a whitespace-only or tab-only line, or a completed record uses CRLF line endings
 - **THEN** the permissive completion probe detects the finished write and schema validation refuses it with exit 2 before the deadline instead of reporting a timeout.
+#### Scenario: Record settle
+- **WHEN** a reviewer writes a completion marker and then rewrites the private record
+- **THEN** size and modification time must remain unchanged for two continuous seconds, after which the CLI re-reads the bytes immediately before validating and projecting that final read.
 #### Scenario: Mismatched reviewed SHA
 - **WHEN** Reviewed commit differs from captured or current HEAD, even with the same abbreviation
 - **THEN** the review is refused, private evidence is retained and no public record is created.
@@ -72,6 +75,9 @@ the private canonical .lane/reviews/<topic>/<head7>-rN.md and verifying sanitiza
 #### Scenario: Verbatim command syntax and escaped prose
 - **WHEN** Re-executed command or witness-command strings contain shell syntax, markup characters or encoded-looking text
 - **THEN** path, alias, ASCII and reserved-placeholder checks still apply, encoded scratch rescans cannot hide an alias or path, remaining command characters are rendered verbatim inside the public JSON fence, and quoted punctuation and backslashes in prose are backslash-escaped only after sanitization and idempotence checks on the unescaped payload.
+#### Scenario: Concrete absolute paths and slash prose
+- **WHEN** a projected description contains a JavaScript regex literal with flags, a slash-delimited phrase, a non-file URL-like token and a real absolute path
+- **THEN** only the concrete contiguous absolute path is replaced, the other slash forms remain literal, and declared aliases retain their existing refusal rules.
 
 ### Requirement: After-check publication boundary
 The complete review command SHALL require successful sanitized public generation
