@@ -64,3 +64,32 @@ was performed. Permission and persistence failures use controlled offline filesy
 fixtures rather than an operating-system fault injector. The registry remains
 gitignored display metadata and cannot authorize scheduling, retries, validation,
 promotion, pushing, deletion, or any background coordination.
+
+## Round 2 review corrections
+
+The authoritative Round 1 review of `10103cd99582f1b9ff6e14c00a01bd334694c8a0`
+reported two Moderate and five Minor findings. All seven are addressed in measured
+correction commit `1c7129a3caaed5af1f6a573254ab8738e291c96e`:
+
+- tracked-registry detection now reads the canonical checkout's index even when the
+  command is invoked from a lane worktree;
+- close warns about localized unrelated read errors while continuing healthy matching
+  done markers, and an actual done-marker write failure remains a nonzero post-close
+  metadata failure;
+- registry containment runs before symlink inspection, symlink and unwritable errors
+  name corrective configuration actions, and the post-delivery pass uses a throwing
+  realpath helper so every failure reaches the live-agent partial-success report;
+- inline ATX headings receive the same outside-fence extraction and syntax removal as
+  file briefs, and the unused board-model import was removed.
+
+The 102-test baseline passed in 95.625 seconds. Before product edits, the focused run
+produced seven intended failures and one preservation pass with 76 filtered skips in
+22.415 seconds. Afterward all eight selected tests passed in 20.965 seconds. Final
+`npm test` passed 106/106 with no skips in 99.146 seconds; the deliberate-control run
+failed all 106 with zero passes in 95.005 seconds; and the no-Herdr run passed 105 with
+one explicit skip in 142.780 seconds. Strict OpenSpec validation passed 17/17.
+
+No live Herdr mutation, alternate host, push, promotion, archive, or review-record
+change was performed. The Round 1 public projection failure was outside this change;
+the private record supplied by the facilitator was read in full and used as the
+correction authority.

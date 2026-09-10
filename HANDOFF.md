@@ -619,3 +619,20 @@ Living log for agents maintaining this repository. Newest entry last.
   serialized after clear process probes. No live reviewer/Herdr mutation, alternate
   host, push, promotion, archive, or `docs/reviews/` change was performed. The final
   post-commit lane check remains conversation-only evidence.
+
+## 2026-09-09 — session registry Round 2 review corrections
+
+- Addressed both Moderate and all five Minor findings from the authoritative private
+  review of `10103cd`: canonical-index tracked checks, warning-only unrelated close
+  read errors, fatal done-marker write preservation, containment-before-symlink
+  ordering, actionable path guidance, throwing post-delivery resolution, inline ATX
+  goals, and the unused board import. Measured correction commit is
+  `1c7129a3caaed5af1f6a573254ab8738e291c96e`.
+- Seven focused expectations failed before product edits while one preservation case
+  passed; all eight passed afterward. Final `npm test` passed 106/106 in 99.146
+  seconds, all 106 deliberate controls failed in 95.005 seconds, the no-Herdr run
+  passed 105 with one explicit skip in 142.780 seconds, and strict OpenSpec validation
+  passed 17/17. Every run followed a clear machine-load probe and ran alone.
+- Updated README, REFERENCE, and the implementation report addendum. No live Herdr
+  mutation, alternate host, push, promotion, archive, or `docs/reviews/` change was
+  performed; the final clean-commit gate remains conversation-only evidence.
