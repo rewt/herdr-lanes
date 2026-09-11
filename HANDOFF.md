@@ -801,3 +801,30 @@ Living log for agents maintaining this repository. Newest entry last.
 - No live action, installed real-TTY UI, alternate host, push, promotion, archive,
   or `docs/reviews/` change was performed. The facilitator-owned Round 1 record is
   unchanged; the final clean-commit gate remains conversation-only evidence.
+
+## 2026-09-10 — hermetic Git test environment
+
+- Isolated shared fixture Git and lane invocations from operator state with temporary
+  `HOME` and `XDG_CONFIG_HOME` directories, an isolated global config containing the
+  test identity, disabled system config, and removal of inherited Git config-count,
+  author, committer, and email variables. Deliberate fixture-home overrides remain
+  supported without admitting the operator's home or XDG configuration.
+- Added a permanent fake-operator global excludes fixture containing `.lane/` and its
+  own deliberate negative control. README and REFERENCE now state that production
+  ignored-path policy may be satisfied by repository `.gitignore` rules or the
+  operator's global excludes file, while the suite is hermetic to global and system
+  Git configuration. No product, board, or OpenSpec specification text changed.
+- Baseline `npm test` passed 123/127 in 111.480 seconds and failed exactly the four
+  reported registry/review policy tests. With the fixture added before helper changes,
+  the focused run failed those same four selected tests with 102 filtered skips; after
+  isolation, the fixture plus four regressions passed 5/5. A first full run exposed
+  three overwritten fixture-home expectations at 125/128; preserving already-
+  hermetic test homes corrected all three in a focused 4/4 run.
+- Final `npm test` passed 128/128 with zero skips in 108.182 seconds. The full
+  `LANE_TEST_NEGATIVE_CONTROL=1 npm test` run failed all 128 deliberate controls with
+  zero passes in 102.720 seconds. `git diff --check` passed. Strict OpenSpec validation
+  was not run because no specification text changed.
+- Verified Node.js v20.19.4, npm 10.8.2, and Git 2.54.0. Every test run followed a
+  clear executable-aware load probe and ran alone. Minimum-version and alternate-host
+  behavior remain unverified; no live Herdr mutation, push, promotion, archive, or
+  `docs/reviews/` change was performed.

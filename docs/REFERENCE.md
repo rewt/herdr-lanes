@@ -163,10 +163,11 @@ is recorded verbatim. Before validation, `check` runs the configured `prepare`
 steps in the current worktree just as `promote` does.
 
 The command refuses with exit 1 before validation when `git status --porcelain`
-is non-empty. `lane check` writes `.lane/gate.json`; `.lane/` must be in the target
-repository's `.gitignore`, or the gate makes the worktree dirty and blocks the next
-`lane check` and `lane promote`. After validation, `check` atomically writes the
-gate file even when validation fails:
+is non-empty. `lane check` writes `.lane/gate.json`; Git must ignore `.lane/`, either
+through the target repository's `.gitignore` or the operator's global excludes file,
+or the gate makes the worktree dirty and blocks the next `lane check` and
+`lane promote`. After validation, `check` atomically writes the gate file even when
+validation fails:
 
 ```json
 {
@@ -292,8 +293,9 @@ The configured registry may be a legacy JSON array. Every legacy entry has strin
 `lane/<topic>` branch), `role`, and `report` (absolute or repository-relative
 path), plus `deadline` (an ISO-8601 timestamp or `null`) and `done` (boolean).
 Optional `tripwires` is an array of literal output substrings. The default registry
-path is `.lane/sessions.json`. The configured registry path must be covered by the
-target repository's `.gitignore`.
+path is `.lane/sessions.json`. The configured registry path must be covered by Git's
+ignore rules, which may come from the target repository's `.gitignore` or the
+operator's global excludes file.
 
 Automated dispatch does not rewrite that shared array. It writes one immutable JSON
 record per successful session at `<registry>.d/<session-id>.json`; completion is an
@@ -414,9 +416,10 @@ Git author name, email, signing, or other identity configuration.
 
 Before any Herdr call, dispatch also requires the configured registry and its sidecar
 directory to resolve inside the canonical checkout without symlinks, remain untracked,
-be covered by `.gitignore`, and have a writable sidecar directory. Existing external
-registries remain readable by the board but cannot receive automated records. File
-briefs retain their resolved absolute source path. File goals use the first ATX
+be covered by Git's repository or global ignore rules, and have a writable sidecar
+directory. Existing external registries remain readable by the board but cannot
+receive automated records. File briefs retain their resolved absolute source path.
+File goals use the first ATX
 Markdown heading outside fenced code with its heading syntax removed, falling back
 to the first nonempty prose line. Inline goals use the first nonempty content line
 outside fenced code; ATX syntax is removed only when that line is itself a heading,
@@ -668,7 +671,7 @@ lane open resumed-task archive/lane/old-task
 | `worktree path already exists` | Choose another root/topic, or move the occupant yourself only after verifying ownership |
 | `unsafe worktree path` | Move the configured base outside checkouts and remove symlink escapes; no fallback path is selected |
 | `worktree path belongs to another repository` | Give the repositories distinct worktree bases |
-| `session registry must be gitignored before dispatch` | Ignore both the configured path and `<registry>.d/`, or configure another repository-local ignored path |
+| `session registry must be gitignored before dispatch` | Ignore both the configured path and `<registry>.d/` in the repository's `.gitignore` or the operator's global excludes file, or configure another repository-local ignored path |
 | `partial success: ... brief was already sent` | Inspect and continue the named live agent; do not replay dispatch |
 | `lane closed; metadata update failed` | Git close already succeeded; repair the local registry without recreating the lane |
 | `registered worktree ... is missing` | Run `git worktree prune`, then reopen or recover the lane as appropriate |
@@ -683,5 +686,9 @@ lane open resumed-task archive/lane/old-task
 
 ## Development
 
-`npm test` runs offline behavioral tests in temporary git repositories. Herdr-only
-coverage skips when Herdr is absent.
+`npm test` runs offline behavioral tests in temporary git repositories. The shared
+helpers use a fresh temporary `HOME` and `XDG_CONFIG_HOME`, an isolated global Git
+config containing only the test identity, no system Git config, and no inherited
+environment-level Git config entries. Operator global excludes and system settings
+therefore cannot change fixture behavior. Herdr-only coverage skips when Herdr is
+absent.

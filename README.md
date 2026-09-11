@@ -22,8 +22,9 @@ cp /path/to/herdr-lanes/.lane.json.example .lane.json
 Edit `.lane.json` so `worktree_root`, `validate`, `prepare`, `dispatch.kind`, and the
 named `routes` match the project. Put the project's instructions in `AGENTS.md` before
 opening lanes. A relative `worktree_root` is resolved from the file that defines it.
-Add `.lane/` to the target repository's `.gitignore`; `lane check` and `lane board`
-write runtime state there, and that state must not make a worktree dirty.
+Ensure Git ignores `.lane/` through the target repository's `.gitignore` or the
+operator's global excludes file; `lane check` and `lane board` write runtime state
+there, and that state must not make a worktree dirty.
 
 Start Herdr in that repository:
 
@@ -179,7 +180,9 @@ See [the technical reference](docs/REFERENCE.md) for configuration, dispatch opt
 board fields, status fields, recovery, archived lanes, and unattended promotion. Use the
 [brief template](docs/BRIEF_TEMPLATE.md) when dispatching work.
 
-Run this repository's offline tests with `npm test`. License: MIT.
+Run this repository's offline tests with `npm test`. The suite isolates its home,
+global Git configuration, and system Git configuration, so operator settings do not
+affect fixture behavior. License: MIT.
 
 The [specification workflow](openspec/README.md) describes planned changes and how
 to take an independently promotable engineering brief.

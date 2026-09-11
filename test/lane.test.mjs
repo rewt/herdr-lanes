@@ -37,27 +37,83 @@ const GIT = execFileSync("/bin/sh", ["-c", "command -v git"], { encoding: "utf8"
 const HEAD = execFileSync("/bin/sh", ["-c", "command -v head"], { encoding: "utf8" }).trim();
 const HAS_HERDR = spawnSync("/bin/sh", ["-c", "command -v herdr"], { stdio: "ignore" }).status === 0;
 const NEGATIVE_CONTROL = process.env.LANE_TEST_NEGATIVE_CONTROL === "1";
+const HERMETIC_GIT_ENV = "HERDR_LANES_TEST_HERMETIC_GIT_ENV";
+const OPERATOR_GIT_ENV_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "herdr-lanes-operator-git-env-test-")));
+const OPERATOR_HOME = join(OPERATOR_GIT_ENV_ROOT, "home");
+const OPERATOR_XDG_CONFIG_HOME = join(OPERATOR_GIT_ENV_ROOT, "xdg");
+mkdirSync(join(OPERATOR_XDG_CONFIG_HOME, "git"), { recursive: true });
+writeFileSync(join(OPERATOR_XDG_CONFIG_HOME, "git", "ignore"), ".lane/\n");
+const OPERATOR_GIT_ENV = {
+  ...process.env,
+  HOME: OPERATOR_HOME,
+  XDG_CONFIG_HOME: OPERATOR_XDG_CONFIG_HOME,
+};
+for (const key of Object.keys(OPERATOR_GIT_ENV)) {
+  if (key === "GIT_CONFIG" || key.startsWith("GIT_CONFIG_")) delete OPERATOR_GIT_ENV[key];
+}
+delete OPERATOR_GIT_ENV[HERMETIC_GIT_ENV];
+OPERATOR_GIT_ENV.GIT_CONFIG_NOSYSTEM = "1";
 const GIT_ENV_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "herdr-lanes-git-env-test-")));
+const GIT_HOME = join(GIT_ENV_ROOT, "home");
+const GIT_XDG_CONFIG_HOME = join(GIT_ENV_ROOT, "xdg");
 const GIT_GLOBAL_CONFIG = join(GIT_ENV_ROOT, "global.gitconfig");
-writeFileSync(GIT_GLOBAL_CONFIG, "");
-test.after(() => rmSync(GIT_ENV_ROOT, { recursive: true, force: true }));
+mkdirSync(GIT_HOME);
+mkdirSync(GIT_XDG_CONFIG_HOME);
+writeFileSync(GIT_GLOBAL_CONFIG, "[user]\n\tname = Lane Tests\n\temail = lane-tests@example.invalid\n");
+test.after(() => {
+  rmSync(OPERATOR_GIT_ENV_ROOT, { recursive: true, force: true });
+  rmSync(GIT_ENV_ROOT, { recursive: true, force: true });
+});
 
 function negativeControl(name) {
   if (NEGATIVE_CONTROL) assert.fail(`deliberately broken expectation: ${name}`);
 }
 
-function hermeticGitEnvironment(source = process.env) {
+function hermeticGitEnvironment(source = OPERATOR_GIT_ENV) {
   const env = { ...source };
+  const preserveTestHome = env[HERMETIC_GIT_ENV] === "1";
   for (const key of Object.keys(env)) {
     if (key === "GIT_CONFIG" || key.startsWith("GIT_CONFIG_") ||
         key.startsWith("GIT_AUTHOR_") || key.startsWith("GIT_COMMITTER_") || key === "EMAIL") {
       delete env[key];
     }
   }
+  if (!preserveTestHome) {
+    env.HOME = GIT_HOME;
+    env.XDG_CONFIG_HOME = GIT_XDG_CONFIG_HOME;
+  }
   env.GIT_CONFIG_GLOBAL = GIT_GLOBAL_CONFIG;
   env.GIT_CONFIG_NOSYSTEM = "1";
+  env[HERMETIC_GIT_ENV] = "1";
   return env;
 }
+
+const TEST_PROCESS_ENV = hermeticGitEnvironment();
+for (const key of Object.keys(process.env)) {
+  if (!(key in TEST_PROCESS_ENV)) delete process.env[key];
+}
+Object.assign(process.env, TEST_PROCESS_ENV);
+
+test("git helpers isolate the operator's global excludes file", () => {
+  const fixture = makeFixture();
+  try {
+    mkdirSync(join(fixture.repo, ".lane"));
+    writeFileSync(join(fixture.repo, ".lane", "state.json"), "{}\n");
+    const operatorIgnored = spawnSync(GIT, ["-C", fixture.repo, "check-ignore", ".lane/state.json"], {
+      env: OPERATOR_GIT_ENV,
+      encoding: "utf8",
+    });
+    assert.equal(operatorIgnored.status, 0, operatorIgnored.stderr);
+    const ignored = spawnSync(GIT, ["-C", fixture.repo, "check-ignore", ".lane/state.json"], {
+      env: hermeticGitEnvironment(),
+      encoding: "utf8",
+    });
+    assert.equal(ignored.status, 1, ignored.stderr);
+    negativeControl("operator global excludes isolation");
+  } finally {
+    fixture.cleanup();
+  }
+});
 
 function gitExec(args, options = {}) {
   const { env = process.env, ...rest } = options;
@@ -83,8 +139,6 @@ function makeFixture(config = { main: "main", validate: "true" }, { repoParts = 
   symlinkSync(GIT, join(bin, "git"));
   symlinkSync(HEAD, join(bin, "head"));
   gitExec(["init", "-b", "main", repo], { stdio: "ignore" });
-  git(repo, ["config", "user.name", "Lane Tests"]);
-  git(repo, ["config", "user.email", "lane-tests@example.invalid"]);
   writeFileSync(join(repo, "shared.txt"), "base\n");
   git(repo, ["add", "shared.txt"]);
   git(repo, ["commit", "-m", "initial"], { stdio: "ignore" });
@@ -2287,8 +2341,6 @@ test("a repository with a separate git directory retains its canonical checkout 
   symlinkSync(GIT, join(bin, "git"));
   symlinkSync(HEAD, join(bin, "head"));
   gitExec(["init", "-b", "main", "--separate-git-dir", gitDirectory, repo], { stdio: "ignore" });
-  git(repo, ["config", "user.name", "Lane Tests"]);
-  git(repo, ["config", "user.email", "lane-tests@example.invalid"]);
   writeFileSync(join(repo, "shared.txt"), "base\n");
   git(repo, ["add", "shared.txt"]);
   git(repo, ["commit", "-m", "initial"], { stdio: "ignore" });
@@ -2377,8 +2429,6 @@ test("open refuses ordinary and foreign-worktree destinations without creating b
     const foreignRepo = join(fixture.root, "foreign-repo");
     const foreignPath = join(fixture.root, "shared-base", "repo", "lane-foreign-worktree");
     gitExec(["init", "-b", "main", foreignRepo], { stdio: "ignore" });
-    git(foreignRepo, ["config", "user.name", "Lane Tests"]);
-    git(foreignRepo, ["config", "user.email", "lane-tests@example.invalid"]);
     writeFileSync(join(foreignRepo, "foreign.txt"), "foreign\n");
     git(foreignRepo, ["add", "foreign.txt"]);
     git(foreignRepo, ["commit", "-m", "foreign initial"], { stdio: "ignore" });
