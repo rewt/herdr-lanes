@@ -1331,13 +1331,14 @@ Living log for agents maintaining this repository. Newest entry last.
   forms are chrome in candidate, continuation, and lone placements. Its parenthesized,
   bracketed, and ellipsis bodies accept only elapsed and bounded status fields, keeping
   duration-bearing prose and time ranges as messages.
-- Kept the 16-entry Codex and 17-entry Claude tables and their 33 mechanically generated
-  literal example pairs. Generated prose twins now embed the complete example rather
-  than a glyph-stripped body. Eight keyed rules have explicit glyph-preserving indented
-  near misses; the reviewer's temporary question-shortcut widening failed the focused
-  suite 37/38. Status fixtures pair all 16 forms with same-opening prose twins in all
-  three placements and both Claude marker forms. Every new group has a deliberate
-  negative control.
+- Kept the 16-entry Codex and 17-entry Claude tables. At that commit, generated prose
+  twins placed fixed explanatory words before each complete example, so their literal
+  containment assertion was tautological and a tail-widening mutation escaped for 20
+  rules. Eight keyed rules had explicit glyph-preserving indented near misses; the
+  reviewer's temporary question-shortcut widening failed the focused suite 37/38.
+  Status fixtures paired all 16 forms with same-opening prose twins in all three
+  placements and both Claude marker forms. Every new group had a deliberate negative
+  control.
 - Documented that approval chrome requires its trailing question mark on the same
   rendered row, retained the Codex-any-indentation/Claude-indented asymmetry, and pinned
   two wrapped approval openings as prose. Corrected the Round 8 report and handoff text
@@ -1381,3 +1382,41 @@ Living log for agents maintaining this repository. Newest entry last.
   promotion, archive, board-code edit, or `docs/reviews/` change was performed. The
   facilitator-owned Round 9 record remains unchanged; the final commit and single
   post-commit gate remain conversation-only evidence.
+
+## 2026-09-11 — message previews Round 10 corrections
+
+- Restored mechanical power to the table-derived corpus. Each of the 27 end-bounded
+  rules now generates a same-row twin beginning with its complete rendered example
+  and ending in ordinary words, exercised in candidate and indented-continuation
+  placements. The group constructs a tail-widened mutant for every bounded rule and
+  proves that it matches the witness while the committed rule rejects it. The six
+  arbitrary-tail rules retain keyed near-miss coverage; every added group has a
+  deliberate `negativeControl`.
+- Expanded only the rendered Claude rows requested by review. Fast-mode chrome accepts
+  indented `accept edits on` and `bypass permissions on`, with an optional exact
+  shift+tab hint. Spinner chrome accepts one or more words plus an ellipsis and an
+  optional parenthesized elapsed field with rendered token counts. Continuation and
+  inner-row fixtures reject six chrome forms while preserving four prose near-misses.
+  REFERENCE and the Round 9 report/HANDOFF claims now describe those actual bounds and
+  the previous prefix-first test gap.
+- The untouched Round 10 baseline passed 171/171 in 124.877 seconds. The fixture-first
+  focused run passed 38/40: the expanded Claude group failed on `accept edits on`
+  before the parser edit, while the second failure exposed and prompted correction of
+  a stale helper name in the refactored fixture. The corrected focus passed 40/40 in
+  0.096 seconds. Before rebasing, the full suite passed 173/173 in 124.751 seconds and
+  the negative run produced zero passes and 173 deliberate failures in 118.369 seconds.
+- `main` advanced to `a9cd127` with the review sanitizer correction, so this lane
+  rebased only onto that tip and retained HANDOFF entries in chronological order.
+  Post-rebase `npm test` passed 206/206 with zero skips in 317.998 seconds; the exact
+  full negative-control run produced zero passes, 206 deliberate failures, and zero
+  skips in 305.020 seconds, without a socket failure. Repository-wide strict OpenSpec
+  validation passed 20/20. Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0,
+  and OpenSpec 1.6.0 after clear serialized load probes.
+- The Round 9 review exists only as a private record because the canonical sanitizer
+  refused projection of relative paths inside the reviewer's command strings; the
+  promoted review-cli-fix-3 work addresses that defect. No live pane, interactive UI,
+  alternate host, model API, push, promotion, archive, contract amendment,
+  `board/app.mjs` change, or `docs/reviews/` edit occurred in this round. Read bounds,
+  reader pool, pane timeout, occupant replacement, stale retention, the live-only
+  tripwire rule, and the action boundary are unchanged. The single post-commit lane
+  gate remains to be run once and quoted verbatim.

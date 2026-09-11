@@ -16,6 +16,7 @@ const STATUS_FIELD = String.raw`(?:${ELAPSED_FIELD}|${COUNT_FIELD}|${WORD_FIELD}
 const STATUS_SEPARATOR = String.raw`\s*[·•|]\s*`;
 const SEPARATED_STATUS_FIELDS = String.raw`(?=[^\n]*${ELAPSED_TIME})${STATUS_FIELD}(?:${STATUS_SEPARATOR}${STATUS_FIELD})+`;
 const BOUNDED_STATUS_FIELDS = String.raw`(?:${ELAPSED_FIELD}(?:\s+${WORD_FIELD})*|${SEPARATED_STATUS_FIELDS})`;
+const SPINNER_STATUS_FIELDS = String.raw`${ELAPSED_FIELD}(?:${STATUS_SEPARATOR}${COUNT_FIELD})*`;
 const PROGRESS_PREFIX = String.raw`(?:[✻✽✶✳·]\s+)?(?:Working|Worked|Thinking|Running)\b`;
 const TIMED_STATUS_GROUP = String.raw`(?:\(${BOUNDED_STATUS_FIELDS}\)|\[${BOUNDED_STATUS_FIELDS}\])(?:\s+(?:${COUNT_FIELD}|${WORD_FIELD}))?`;
 const TIMED_STATUS_ELLIPSIS = String.raw`(?:…|\.{3})\s*${BOUNDED_STATUS_FIELDS}`;
@@ -55,9 +56,9 @@ export const CLAUDE_CHROME_RULES = Object.freeze({
   "interrupt-status": chromeRule(/^(?:(?:⏺|●)\s+|\s{2,})?[^\n]*\besc(?:ape)? to interrupt\b(?:\s*[)\]])?\s*$/iu, true, "⏺ Compacting context (1s • esc to interrupt)"),
   "timed-status": chromeRule(new RegExp(`^(?:(?:⏺|●)\\s+|\\s{2,})?${TIMED_STATUS}$`, "iu"), true, "⏺ Working (1s)"),
   "question-shortcut-bar": chromeRule(/^\s{2,}\?[^\n]*(?:shortcut|submit|edit)[^\n]*$/iu, false, "  ? for shortcuts"),
-  "fast-mode-bar": chromeRule(/^\s{2,}⏵⏵\s+accept edits\s*$/iu, false, "  ⏵⏵ accept edits"),
+  "fast-mode-bar": chromeRule(/^\s{2,}⏵⏵\s+(?:accept edits|bypass permissions)\s+on(?:\s+\(shift\+tab to cycle\))?\s*$/iu, false, "  ⏵⏵ accept edits on"),
   "escape-toggle-bar": chromeRule(/^\s{2,}(?:esc\b|ctrl-[a-z]\b)\s+to\s+(?:interrupt|toggle|submit|edit)\s*$/iu, false, "  esc to toggle"),
-  "spinner-row": chromeRule(/^\s*[✻✽✶✳·]\s+\p{L}+(?:…|\.{3})\s*$/u, false, "✻ Thinking…"),
+  "spinner-row": chromeRule(new RegExp(`^\\s{2,}[✻✽✶✳·]\\s+\\p{L}+(?:\\s+\\p{L}+)*(?:…|\\.{3})(?:\\s+\\(${SPINNER_STATUS_FIELDS}\\))?\\s*$`, "u"), false, "  ✻ Thinking…"),
   "context-bar": chromeRule(/^\s{2,}context left(?:\s+[\d,.]+%?)?\s*$/iu, false, "  Context left 12%"),
   "percentage-context-bar": chromeRule(/^\s{2,}[\d,.]+%?\s+context left\s*$/iu, false, "  12% context left"),
   "token-usage-bar": chromeRule(/^\s{2,}tokens?\s+(?:are\s+)?used(?::\s*|\s+)[\d,.]+[km]?\s*$/iu, false, "  Tokens are used: 1,024"),

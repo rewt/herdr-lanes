@@ -130,6 +130,27 @@ const KEYED_NEAR_MISS_TWINS = Object.freeze({
   }),
 });
 
+const ARBITRARY_TAIL_RULES = Object.freeze({
+  codex: Object.freeze(["prompt-row", "result-marker", "question-shortcut-bar"]),
+  claude: Object.freeze(["prompt-row", "result-marker", "question-shortcut-bar"]),
+});
+
+const CLAUDE_EXPANDED_CHROME_ROWS = [
+  ["accept-edits mode", "⏵⏵ accept edits on"],
+  ["accept-edits hint", "⏵⏵ accept edits on (shift+tab to cycle)"],
+  ["bypass-permissions hint", "⏵⏵ bypass permissions on (shift+tab to cycle)"],
+  ["two-word spinner", "✻ Compacting conversation…"],
+  ["spinner timer", "✻ Thinking deeply… (30s)"],
+  ["spinner timer and tokens", "✻ Working carefully... (2m 04s · 1,024 tokens)"],
+];
+
+const CLAUDE_EXPANDED_PROSE_NEAR_MISSES = [
+  "⏵⏵ accept edits off remains ordinary prose.",
+  "⏵⏵ bypass permissions are described here.",
+  "✻ Compacting conversation… while the summary is written.",
+  "✻ Thinking deeply… (the 30s timeout remains prose).",
+];
+
 function answerFixture(kind, lines) {
   const marker = kind === "codex" ? "•" : "⏺";
   return [
@@ -140,8 +161,35 @@ function answerFixture(kind, lines) {
   ].join("\n");
 }
 
-function ordinaryTwin(example) {
-  return `This ordinary explanation quotes ${example} before continuing.`;
+function tailTwin(example) {
+  return `${example} followed by ordinary words.`;
+}
+
+function tailWidenedPattern(pattern) {
+  return new RegExp(
+    `${pattern.source.slice(0, -1)}(?:\\s+.*)?$`,
+    pattern.flags.replaceAll("g", "").replaceAll("y", ""),
+  );
+}
+
+function candidateTailFixture(kind, twin) {
+  const marker = kind === "codex" ? "•" : "⏺";
+  const renderedTwin = /^(?:•|⏺|●)\s+/u.test(twin) ? twin : `${marker} ${twin}`;
+  return `${marker} Superseded response.\n\n${renderedTwin}`;
+}
+
+function candidateTailText(twin) {
+  return twin.replace(/^(?:•|⏺|●)\s+/u, "").trimStart();
+}
+
+function continuationTailFixture(kind, twin) {
+  const marker = kind === "codex" ? "•" : "⏺";
+  const renderedTwin = twin.startsWith("  ") ? twin : `  ${twin}`;
+  return `${marker} Current response.\n\n${renderedTwin}`;
+}
+
+function continuationTailText(twin) {
+  return twin.startsWith("  ") ? twin.slice(2) : twin;
 }
 
 function statusTwin(status) {
@@ -183,7 +231,7 @@ test("review prose corpus preserves every prior paired answer", async () => {
   negativeControl("review prose corpus");
 });
 
-test("adapter chrome tables mechanically pair every rule and scope both status forms to candidate text", async () => {
+test("adapter chrome tables define every rule and scope both status forms to candidate text", async () => {
   const {
     CODEX_CHROME_RULES,
     CLAUDE_CHROME_RULES,
@@ -220,25 +268,41 @@ test("adapter chrome tables mechanically pair every rule and scope both status f
         ? "Earlier response."
         : "Current response.";
       assert.equal(chrome.text, expectedChrome, `${kind}: ${name} chrome`);
+    }
+  }
+  negativeControl("adapter chrome table shape and scope");
+});
 
-      const answer = ordinaryTwin(rule.example);
-      assert.ok(answer.includes(rule.example), `${kind}: ${name} literal example body`);
+test("bounded chrome rules mechanically generate body-first tail twins and mutation witnesses", async () => {
+  const { CODEX_CHROME_RULES, CLAUDE_CHROME_RULES, extractAssistantPreview } = await previewApi();
+  for (const [kind, rules] of [
+    ["codex", CODEX_CHROME_RULES],
+    ["claude", CLAUDE_CHROME_RULES],
+  ]) {
+    const arbitraryTailRules = new Set(ARBITRARY_TAIL_RULES[kind]);
+    for (const [name, rule] of Object.entries(rules)) {
+      if (arbitraryTailRules.has(name)) continue;
+      const twin = tailTwin(rule.example);
+      assert.ok(twin.startsWith(rule.example), `${kind}: ${name} body-first twin`);
+      assert.equal(rule.pattern.test(twin), false, `${kind}: ${name} bounded tail`);
       assert.equal(
-        extractAssistantPreview({ kind, text: answerFixture(kind, [answer]) }).text,
-        answer,
-        `${kind}: ${name} candidate twin`,
+        tailWidenedPattern(rule.pattern).test(twin),
+        true,
+        `${kind}: ${name} tail mutation witness`,
       );
       assert.equal(
-        extractAssistantPreview({
-          kind,
-          text: `${kind === "codex" ? "•" : "⏺"} Current response.\n\n  ${answer}`,
-        }).text,
-        `Current response.\n\n${answer}`,
-        `${kind}: ${name} continuation twin`,
+        extractAssistantPreview({ kind, text: candidateTailFixture(kind, twin) }).text,
+        candidateTailText(twin),
+        `${kind}: ${name} candidate tail twin`,
+      );
+      assert.equal(
+        extractAssistantPreview({ kind, text: continuationTailFixture(kind, twin) }).text,
+        `Current response.\n\n${continuationTailText(twin)}`,
+        `${kind}: ${name} continuation tail twin`,
       );
     }
   }
-  negativeControl("mechanically paired adapter chrome tables");
+  negativeControl("bounded chrome tail twins and mutations");
 });
 
 test("keyed chrome rules pair their leading glyphs with indented near misses", async () => {
@@ -256,6 +320,14 @@ test("keyed chrome rules pair their leading glyphs with indented near misses", a
         : ["prompt-row", "result-marker", "question-shortcut-bar", "fast-mode-bar", "spinner-row"],
       `${kind}: keyed near-miss coverage`,
     );
+    for (const name of ARBITRARY_TAIL_RULES[kind]) {
+      assert.ok(Object.hasOwn(twins, name), `${kind}: ${name} arbitrary-tail near miss`);
+      assert.equal(
+        rules[name].pattern.test(`${rules[name].example} arbitrary tail`),
+        true,
+        `${kind}: ${name} accepts an arbitrary tail`,
+      );
+    }
     for (const [name, twin] of Object.entries(twins)) {
       assert.ok(Object.hasOwn(rules, name), `${kind}: ${name} exists`);
       assert.equal(
@@ -269,6 +341,31 @@ test("keyed chrome rules pair their leading glyphs with indented near misses", a
     }
   }
   negativeControl("keyed chrome near-miss twins");
+});
+
+test("Claude expanded fast-mode and spinner rows stay chrome without consuming prose near misses", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  for (const [name, row] of CLAUDE_EXPANDED_CHROME_ROWS) {
+    assert.equal(extractAssistantPreview({
+      kind: "claude",
+      text: `⏺ Current response.\n\n  ${row}`,
+    }).text, "Current response.", `${name}: continuation`);
+    assert.equal(extractAssistantPreview({
+      kind: "claude",
+      text: `⏺ Current response.\n  Detail remains.\n  ${row}`,
+    }).text, "Current response.\nDetail remains.", `${name}: inner row`);
+  }
+  for (const row of CLAUDE_EXPANDED_PROSE_NEAR_MISSES) {
+    assert.equal(extractAssistantPreview({
+      kind: "claude",
+      text: `⏺ Current response.\n\n  ${row}`,
+    }).text, `Current response.\n\n${row}`, `prose continuation: ${row}`);
+    assert.equal(extractAssistantPreview({
+      kind: "claude",
+      text: `⏺ Current response.\n  Detail remains.\n  ${row}`,
+    }).text, `Current response.\nDetail remains.\n${row}`, `prose inner row: ${row}`);
+  }
+  negativeControl("Claude expanded fast-mode and spinner rows");
 });
 
 test("chrome matcher skips flag-false rules for candidate first lines", async () => {
@@ -383,7 +480,7 @@ test("trailing status fields stay paired with ordinary progress prose", async ()
         kind,
         text: `${marker} Current response.\n\n  ${status}`,
       }).text, "Current response.", `${kind}: ${status} continuation`);
-      const answer = ordinaryTwin(status);
+      const answer = statusTwin(status);
       assert.equal(
         extractAssistantPreview({ kind, text: answerFixture(kind, [answer]) }).text,
         answer,

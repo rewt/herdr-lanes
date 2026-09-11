@@ -404,13 +404,15 @@ and ellipsis forms contain only elapsed fields and bounded count/status fields, 
 rendered `·`, `•`, or `|` separators where present; arbitrary prose between the progress
 verb, ellipsis or delimiter and the duration no longer matches.
 
-The tables still contain 16 Codex and 17 Claude entries, so their examples mechanically
-generate 33 literal chrome/prose pairs. Each ordinary twin now embeds the complete
-literal example, including its row-leading glyph. Eight rules whose classification keys
-on such a glyph also have per-rule near-miss twins that keep the glyph, change a later
-keyed group, and run as indented continuations. A temporary widening of both
+The tables still contain 16 Codex and 17 Claude entries. At this commit, each ordinary
+twin placed fixed explanatory words before the complete literal example, so the
+containment assertion was tautological and most examples did not begin the rendered
+row. Eight rules whose classification keys on a leading glyph had per-rule near-miss
+twins that kept the glyph, changed a later keyed group, and ran as indented
+continuations. A temporary widening of both
 question-shortcut patterns to every indented question-mark row failed that group 37/38,
-proving the reviewer mutation is observed. Sixteen status forms and matching
+but a tail-widening mutation still escaped for 20 of the 33 rules. Sixteen status forms
+and matching
 same-opening prose twins run in candidate, continuation, and lone placements for Codex
 and both Claude markers. The corpus also pins the five overbroad elapsed-time prose
 shapes in candidate and continuation positions.
@@ -437,3 +439,42 @@ was exercised. `board/app.mjs`, the read bounds, reader pool, pane timeout, occu
 replacement, stale retention, tripwire live-only rule, and every file under
 `docs/reviews/` remain unchanged. The single post-commit lane gate remains to be run and
 quoted verbatim.
+
+## Round 10 corrections — 2026-09-11
+
+The 16-entry Codex and 17-entry Claude tables remain the source of the chrome corpus.
+For each of the 27 end-bounded rules, the suite now forms a body-first twin from the
+complete minimal example followed immediately by ordinary words on the same row. It
+exercises that exact shape in both marked-candidate and indented-continuation
+placements. The group also constructs a tail-widened version of every bounded pattern
+and proves that the mutant matches its witness while the committed rule rejects it;
+adding an optional ordinary tail to any bounded table rule therefore fails the suite.
+The six rules designed to accept arbitrary tails retain keyed glyph near-misses, and
+the existing eight-rule glyph-bearing corpus continues to cover the bounded fast-mode
+and spinner rows as well.
+
+Claude fast-mode rows now require an indented double-triangle glyph, either the
+rendered `accept edits` or `bypass permissions` mode, `on`, and an optional exact
+`(shift+tab to cycle)` hint. Claude spinner rows require indentation, a spinner, one or
+more words, an ellipsis, and optionally a parenthesized elapsed field plus rendered
+token counts. Six continuation and inner-row chrome fixtures cover the expanded forms;
+four corresponding prose near-misses preserve changed mode state, descriptive mode
+text, post-ellipsis prose, and a non-status parenthetical group.
+
+The fixture-first focused run passed 38/40 groups. The expanded Claude group failed on
+the first `accept edits on` continuation before the parser changed; the other failure
+identified a stale test-helper name introduced while replacing the Round 9 generator.
+After correcting both, the focused file passed 40/40 in 0.096 seconds. Before the
+required rebase, `npm test` passed 173/173 in 124.751 seconds and the exact negative
+run produced zero passes and 173 deliberate failures in 118.369 seconds. After `main`
+advanced with the review sanitizer correction, the lane rebased onto `a9cd127`; final
+`npm test` passed 206/206 with zero skips in 317.998 seconds, and the exact negative
+run produced zero passes, 206 deliberate failures, and zero skips in 305.020 seconds.
+Repository-wide strict OpenSpec validation passed 20/20.
+
+Every build, test, and validation followed a clear load probe and ran alone.
+Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No live
+pane, interactive render, alternate host, model API, push, promotion, archive, action-
+boundary change, or contract amendment was exercised. `board/app.mjs`, the read
+bounds, reader pool, pane timeout, occupant replacement, stale retention, live-only
+tripwire rule, and every file under `docs/reviews/` remain unchanged by this round.

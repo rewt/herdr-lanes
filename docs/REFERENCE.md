@@ -302,7 +302,12 @@ form contains only optional whitespace followed by those same bounded fields. Co
 prompt rows remain column-zero, and
 context bars use colon-free rendered wording. An indented result marker is both tool
 evidence and a block boundary unless it belongs to a same-indent run of hand-drawn tree
-lines. A tool-label opening
+lines. Claude fast-mode chrome is an indented double-triangle row containing the
+rendered `accept edits` or `bypass permissions` mode, followed by `on` and an optional
+`(shift+tab to cycle)` hint. A Claude spinner row is indented and contains a spinner,
+one or more words, an ellipsis, and optionally a parenthesized elapsed field followed
+by rendered token-count fields. Extra prose on either row remains message content. A
+tool-label opening
 remains unavailable only when its first line is bare or its remainder has a
 command-invocation shape; prose, colon-introduced lists, short sentences, and paths
 within prose remain messages. A single rendered approval row is chrome only when its
