@@ -1421,6 +1421,42 @@ Living log for agents maintaining this repository. Newest entry last.
   tripwire rule, and the action boundary are unchanged. The single post-commit lane
   gate remains to be run once and quoted verbatim.
 
+## 2026-09-11 — board inventory (2c-i)
+
+- Activated the pre-agreed board-discovery split before implementation. The original
+  change remains superseded and unchecked; board-inventory owns machine default/repo
+  filtering, complete live-agent visibility, and history semantics, while the future
+  board-sampling change alone owns responsive bounded observation. Synced only the
+  inventory delta into the current machine-session-discovery spec.
+- Added dependency-free local Herdr endpoint enumeration and real-path deduplication,
+  per-endpoint coverage/errors, canonical Git-common-directory repository discovery,
+  verified repository-scoped worktree mapping, isolated per-repository configuration
+  and registries, unregistered/unnamed/non-Git/facilitator rows, stable display
+  disambiguators, group ordering, `--repo`, `--all`, and independent metadata/Herdr
+  completion handling. All document changes are additive; existing field meanings and
+  action boundaries remain intact.
+- The untouched baseline passed 206/206 with zero skips in 315.780 seconds. Before
+  implementation the new inventory file passed 0/4; missing service imports caused
+  three failures and rejected `--all` caused the fourth. Corrected inventory coverage
+  passed 4/4 in 1.134 seconds, and the existing board focus passed 20/20 with 122
+  name-filter skips in 8.986 seconds. The deliberate-control run produced zero passes
+  and four named failures in 1.195 seconds.
+- The first full post-change suite reached 209/210 in 317.460 seconds; only its stale
+  README/usage assertion failed. After correction, the focused assertion passed 1/1
+  and final `npm test` passed 210/210 with zero skips in 317.701 seconds. Strict
+  OpenSpec validation passed 23/23. Syntax and whitespace checks passed. Runs were
+  serialized after clear process probes and used Node.js 20.19.4, npm 10.8.2, Git
+  2.54.0, and OpenSpec 1.6.0.
+- A sanitized live read found two local endpoint records, one accessible endpoint,
+  seven repositories, and nineteen rows, correctly reporting partial discovery and
+  one endpoint error. No raw local identity was recorded. Multiple accessible servers,
+  malformed/foreign registries, and offline startup were fixture-verified; alternate
+  hosts were not checked.
+- `board/app.mjs`, `board/ui/`, responsive/freshness behavior, lifecycle scheduling,
+  Git identity, remote discovery, push, promotion, close, and `docs/reviews/` were
+  untouched. Main remained the lane merge base at `de11d4b`, so no rebase was needed.
+  The single post-commit lane gate remains to be run and quoted verbatim.
+
 ## 2026-09-12 — pinned core configuration release 2026.09.12.1
 
 - Added `config/releases/2026.09.12.1/` with a portable two-route profile, a

@@ -201,9 +201,9 @@ interactive view. `lane board` starts that package as a child process, while the
 following read interfaces use only Node.js built-ins:
 
 ```sh
-lane board --once [--repo <path>]
-lane board --json [--repo <path>]
-lane board --watch --json [--repo <path>]
+lane board --once [--repo <path>] [--all]
+lane board --json [--repo <path>] [--all]
+lane board --watch --json [--repo <path>] [--all]
 lane board focus <row-id> [--repo <path>]
 lane board done <row-id> [--repo <path>]
 ```
@@ -215,13 +215,25 @@ changes. Diagnostics use stderr and never interrupt JSON framing. The watch crea
 no daemon, job, or persistent observation cache. Duplicate options, unknown flags or
 actions, extra operands, missing action row IDs, missing `--repo` values, `--once`
 combined with a JSON mode, and `--watch` without `--json` are rejected before
-observation or action.
+observation or action. `--all` is valid only for read modes.
 
-Without `--repo`, all modes use the current repository. `--repo` resolves from the
-invoking directory, identifies the selected repository by its canonical Git common
-directory, retargets its canonical checkout, and loads that repository's normal
-layered configuration. Repository paths are passed as arguments rather than shell
-text.
+Without `--repo`, the plain, JSON, and JSON-watch interfaces have machine scope and
+may start outside Git. They enumerate the current Herdr socket plus local endpoints
+from `herdr session list --json`, canonicalize and deduplicate socket paths, and try
+each endpoint independently. They do not crawl the filesystem, inspect OS processes,
+contact remote servers, start Herdr, or persist a machine registry. A failed endpoint
+or failed enumeration is a localized discovery error with partial or unavailable
+coverage; it never turns missing data into a current row.
+
+`--repo` resolves from the invoking directory and filters the machine inventory by
+the selected repository's canonical Git common directory. It works outside Git and
+loads that repository's normal layered configuration. When an invocation is already
+anchored in a repository, an explicit `LANE_CONFIG` applies only to that anchor;
+discovered repositories load their own parent and repository configuration. Because
+an explicit config has no safe implicit owner outside Git, such an invocation must
+also provide `--repo`. Repository paths are passed as arguments rather than shell
+text. The current interactive entrypoint remains repository-anchored pending its
+separate frame delivery; its foreground CLI document is already machine-capable.
 
 From a linked worktree, every board mode retargets the canonical checkout. The
 interactive child receives the canonical repository path, then acquires every
@@ -248,22 +260,32 @@ gate, validation, promotion, scheduling, or lifecycle state.
 
 ### JSON schema v1
 
-Every document contains `schema_version` 1, UTC `captured_at`, repository `scope`,
-`coverage`, `repositories`, `rows`, `host`, and `errors`. Scope is explicitly
-repository-only in this phase; machine discovery is not implied. Coverage reports
-repository, registry, Herdr, and message-source availability. Errors are localized
-objects with `source` and `message`. A missing or failed Herdr snapshot is represented
-as unavailable coverage and an error while Git, report, deadline, and host sampling
-remain useful. A registry service failure that prevents a coherent snapshot exits
-nonzero with no partial JSON document.
+Every document contains `schema_version` 1, UTC `captured_at`, `scope`, `coverage`,
+`repositories`, `rows`, `host`, and `errors`. Existing fields retain their meaning;
+the inventory additions below are additive. `scope.kind` is `machine` by default or
+`repository` with `--repo`, `scope.repo_id` is the selected canonical identity or
+null, and `scope.include_history` records whether `--all` was selected. Coverage
+continues to report repository, registry, Herdr, and message-source availability and
+also contains `discovery` plus `servers`. Each server record has a stable public-safe
+`server_id`, local labels, `current`, nullable `running`, and `available`; it does not
+publish its socket path. Errors remain separate from rows and include `source` and
+`message`, with `server_id` or `repo_id` when applicable. One inaccessible endpoint,
+malformed registry, foreign registry record, or repository-mapping failure is
+localized while other servers, repositories, agents, Git state, and reports remain
+visible.
 
 Repository records contain canonical `repo_id`, development `root_id`, canonical
-`path`, `root_label`, `repository_label`, and resolved `lane_base`. Each row contains:
+`path`, `root_label`, `repository_label`, and resolved `lane_base`. They additionally
+contain nullable `display_suffix` and `display_label`; repositories with equal readable
+root/repository labels receive distinct stable eight-hex suffixes without using those
+labels as identity. Rows are ordered by development root, canonical repository, then
+facilitator before lane groups. Each row contains:
 
 - stable opaque `row_id`; `repo_id`, `root_id`, and `server_id`;
 - nullable name plus pane, tab, and workspace IDs; `registered`, `topic`, `branch`,
-  `role`, `goal`, and `brief` (`path`, bounded goal `excerpt`);
-- `status`, `done`, `deadline`, `overdue`, `tripwire`, and observation `stale`;
+  `role`, `goal`, `goal_source`, and `brief` (`path`, bounded goal `excerpt`);
+- `status`, metadata `done`, `active_after_done`, `group` (`kind`, `key`), `deadline`,
+  `overdue`, `tripwire`, and observation `stale`;
 - `git` (`head`, `ahead`, `behind`, `dirty`, `available`);
 - `gate` (`state`, `head`, `exit_code`, `signal`), where state is `pass`, `fail`,
   `stale`, or `missing`;
@@ -276,12 +298,29 @@ Repository records contain canonical `repo_id`, development `root_id`, canonical
 subscription populates it.
 
 Unknown scalar values are `null` and carry `available: false` where defined; they are
-never reported as clean or passing. Consumers must accept absent optional v1 fields
-and ignore unknown fields. Row IDs come from immutable session identity and remain
-stable across sorting and refresh. Gate-head mismatch and observation staleness are
-independent. Report freshness is unknown when `reviewed_head` is absent. Message
-coverage is `assistant-preview`, `partial`, or `unavailable`; individual read errors
-are localized with source `message` and do not discard Git/report state.
+never reported as clean or passing. Every live snapshot agent remains a row even when
+it has no registration, name, Git repository, or lane branch. Such rows have
+`registered: false`; their stable opaque row ID derives from the local endpoint and
+Herdr occupant identity, and terminal title supplies `goal` only when labeled by
+`goal_source: "terminal-title"`. A registry row is joined to a live agent only when
+both resolve to the same canonical Git common directory. Workspace labels, repository
+basenames, remotes, author names, and agent names never establish repository identity.
+Malformed entries and records naming another repository are isolated and cannot
+contribute Git, gate, dirty, or report state.
+
+Consumers must accept absent optional v1 fields and ignore unknown fields. Row IDs
+come from immutable session or occupant identity and remain stable across sorting and
+refresh. Gate-head mismatch and observation staleness are independent. Report
+freshness is unknown when `reviewed_head` is absent. Message coverage is
+`assistant-preview`, `partial`, or `unavailable`; individual read errors are localized
+with source `message` and do not discard Git/report state.
+
+The default view hides only registry records whose metadata completion marker is
+done and whose live Herdr status is offline, idle, or done. `--all` includes those
+records. A metadata-done row that becomes working, blocked, or unknown remains visible
+with `active_after_done: true`; a live Herdr `done` status does not hide a registry
+record whose metadata is not done. This display filtering never performs or schedules
+a lifecycle action.
 
 For registered Codex and Claude agents, the board reads `recent_unwrapped` text with
 an explicit 200-line request and retains at most the final 16 KiB. Small
@@ -355,7 +394,8 @@ Automated dispatch does not rewrite that shared array. It writes one immutable J
 record per successful session at `<registry>.d/<session-id>.json`; completion is an
 atomic `<registry>.d/<session-id>.done.json` marker. The board merges both formats,
 derives deterministic IDs for legacy entries, overlays completion markers, and
-reports malformed entries locally while retaining healthy sessions. Concurrent
+reports malformed entries locally while retaining healthy sessions and other
+repositories. Concurrent
 record and marker writes therefore do not lose unrelated sessions. This is local
 display metadata only: it does not authorize, schedule, retry, lease, validate,
 promote, push, or delete work.
@@ -368,7 +408,10 @@ false `done`, and UTC `created_at`. The conventional report is
 `docs/reports/<topic>.md`; the board looks in the lane checkout first and the
 canonical checkout after promotion or close. A missing report has no implied verdict.
 
-The board joins each entry with the Herdr snapshot, the lane worktree, and its report.
+For each accessible endpoint/repository pair represented by a live agent, the board
+uses one repository-scoped Herdr worktree inventory and verifies its returned source
+identity before accepting branch mappings. The board then joins each valid entry with
+the Herdr snapshot, lane worktree, and report.
 It shows agent status and pane ID, commits ahead of the configured main branch, dirty
 state, gate state, report mtime and verdict, overdue state, the latest tripwire match,
 and the last substantive message summary. The footer samples one-minute load, free
@@ -391,8 +434,9 @@ or tied to its earlier head.
 
 Interactive keys are arrow keys or `j`/`k` to select, Enter or `a` to run verified
 focus, `d` to run verified completion, `r` to restart only the foreground observation
-child, and `q` to quit. The CLI watch redraws the table for subscribed events and on
-a five-second host/git/report tick; there is no busy loop. Split or batched JSON lines
+child, and `q` to quit. The CLI watch retains its existing five-second refresh,
+subscription behavior, and message-preview coalescing; this inventory change makes no
+responsiveness or freshness guarantee. Split or batched JSON lines
 are framed before rendering. Child diagnostics and action refusals appear in the
 table status line. Quit, EOF, signals, render failure, or unmount permanently stop the
 observer, reconnect timer, and pending action children; late output cannot restart an

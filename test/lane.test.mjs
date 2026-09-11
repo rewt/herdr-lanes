@@ -5483,7 +5483,7 @@ test("usage exits one with no command and with an unknown command", () => {
     );
     assert.match(
       missing.stdout,
-      /  board \[--once \| --json \| --watch --json \| focus <row-id> \| done <row-id>\]\n        \[--repo <path>\]\n                   open the UI, observe sessions, focus a verified live row,/,
+      /  board \[--once \| --json \| --watch --json \| focus <row-id> \| done <row-id>\]\n        \[--repo <path>\] \[--all\]\n                   open the UI, observe sessions, focus a verified live row,/,
     );
     assert.match(missing.stdout, /  config           print resolved configuration as key, JSON value, and source/);
     const unknown = lane(fixture, ["not-a-command"]);
@@ -5493,7 +5493,7 @@ test("usage exits one with no command and with an unknown command", () => {
     assert.match(readme, /\| `lane config` \| Print resolved configuration values and sources \|/);
     assert.match(
       readme,
-      /\| `lane board \[--once \\\| --json \\\| --watch --json \\\| focus <row-id> \\\| done <row-id>\] \[--repo <path>\]` \| Open the UI, observe sessions, focus one, or mark one done \|/,
+      /\| `lane board \[--once \\\| --json \\\| --watch --json \\\| focus <row-id> \\\| done <row-id>\] \[--repo <path>\] \[--all\]` \| Open the UI, inventory local sessions, focus one, or mark one done \|/,
     );
     negativeControl("usage exits");
   } finally {

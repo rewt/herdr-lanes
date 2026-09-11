@@ -127,7 +127,7 @@ rebases automatically when clean and refuses with a file list when conflicts exi
 | `lane check [--cmd <validate command>]` | Record validation against this worktree's HEAD |
 | `lane promote <topic>` | Rebase, validate, and fast-forward local main |
 | `lane close <topic>` | Remove and delete or archive a lane |
-| `lane board [--once \| --json \| --watch --json \| focus <row-id> \| done <row-id>] [--repo <path>]` | Open the UI, observe sessions, focus one, or mark one done |
+| `lane board [--once \| --json \| --watch --json \| focus <row-id> \| done <row-id>] [--repo <path>] [--all]` | Open the UI, inventory local sessions, focus one, or mark one done |
 | `lane seams [pattern]` | List work that can be resumed |
 | `lane prepare <topic>` | Run missing setup steps |
 | `lane rebase-check <topic>` | Check whether promotion will conflict |
@@ -157,6 +157,7 @@ path is configured, it must also be gitignored.
 lane board
 lane board --once
 lane board --json
+lane board --json --all
 lane board --watch --json --repo /path/to/your-repository
 lane board focus <row-id> --repo /path/to/your-repository
 lane board done <row-id> --repo /path/to/your-repository
@@ -164,10 +165,14 @@ lane board done <row-id> --repo /path/to/your-repository
 
 Run the interactive view in a Herdr pane; use `--once` for a plain snapshot,
 `--json` for one schema-v1 document, or `--watch --json` for foreground
-newline-delimited snapshots. `--repo` selects a repository by path and uses its
-canonical configuration; without it, board reads use the current repository. Plain
-and JSON reads use only Node.js built-ins and do not require the optional board
-package installation. When Herdr can read a registered Codex or Claude pane, every
+newline-delimited snapshots. Read modes inventory accessible local Herdr servers by
+default, including unregistered, unnamed, facilitator, and non-Git agents. `--repo`
+filters by canonical repository identity and works from outside Git; `--all` also
+includes metadata-completed history. Coverage and discovery errors say which local
+endpoints were actually observed. The interactive entrypoint remains repository-
+anchored until its separate frame update consumes the machine document. Plain and
+JSON reads use only Node.js built-ins and do not require the optional board package
+installation. When Herdr can read a registered Codex or Claude pane, every
 mode uses the same conservative visible-text adapter to show the last confidently
 bounded assistant response. Recognized terminal footer and tool chrome are excluded;
 unsupported or incomplete output is labeled unavailable. JSON keeps any bounded raw

@@ -30,7 +30,7 @@ field meanings remain stable.
 
 ## 1. Lane-sized task
 
-- [ ] 1.1 Deliver the three inventory-owned requirements and all scenarios; add and
+- [x] 1.1 Deliver the three inventory-owned requirements and all scenarios; add and
   observe offline failing regressions with a deliberate `negativeControl` in each new
   group; document fields and semantics; sync only the inventory delta into the current
   capability; write the report and HANDOFF entry; commit; then obtain a passing GATE
