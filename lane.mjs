@@ -1668,7 +1668,8 @@ function containsAmbiguousAbsolutePath(value) {
   replaceOutsidePlaceholders(value, (part) => {
     for (const match of part.matchAll(absolutePathPattern())) {
       let cursor = match.index + match[0].length;
-      if (part[cursor] === "(") {
+      if (part[cursor] === "(" ||
+          (part[cursor] === ")" && part[cursor + 1] !== undefined && !/\s/u.test(part[cursor + 1]))) {
         found = true;
         break;
       }

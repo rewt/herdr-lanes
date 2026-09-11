@@ -1062,3 +1062,30 @@ Living log for agents maintaining this repository. Newest entry last.
   alternate host, push, promotion, archive, board-code edit, or `docs/reviews/`
   change was performed. The facilitator-owned Round 6 record remains unchanged; the
   final commit and single post-commit gate remain conversation-only evidence.
+
+## 2026-09-10 — review CLI precise paths Round 8 corrections
+
+- Refused a concrete absolute-path match followed by a closing parenthesis and an
+  immediate non-whitespace suffix. A standalone closing delimiter remains
+  publishable, including the command-substitution form, and the asymmetric
+  no-syntax-exemption rule is unchanged.
+- Added a differential fixture that executes an isolated `3367cd5` tool copy and
+  proves the base matcher redacted the whole file URL before checking that the current
+  CLI refuses the ambiguous residue. Added a separately controlled standalone-
+  delimiter fixture and synchronized REFERENCE, design, delta, and current spec.
+- One preliminary historical-tool run stopped on missing temporary board imports and
+  was not behavior evidence. After the fixture included those base modules, the valid
+  pre-change differential failed because the current CLI returned 0 instead of 2 in
+  3.469 seconds; the corrected three-test focus passed in 6.151 seconds. Both new
+  behavior fixtures retain their own deliberate `negativeControl`.
+- The ordinary inherited baseline produced 144 passes and four failures in 285.989
+  seconds from the previously documented user-level Git excludes issue. With global
+  Git and XDG configuration isolated, final `npm test` passed 150/150 in 280.990
+  seconds; all 150 deliberate controls failed with zero passes in 277.117 seconds;
+  strict OpenSpec validation passed 19/19. Runs were serialized after clear probes.
+- Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No
+  Unix-socket `listen EPERM` occurred. The five other base-commit matcher candidates
+  remain untouched and out of scope. No live reviewer/Herdr mutation, alternate host,
+  push, promotion, archive, board-code edit, or `docs/reviews/` change was performed.
+  The facilitator-owned Round 7 record remains unchanged; the final commit and single
+  post-commit gate remain conversation-only evidence.

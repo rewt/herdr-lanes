@@ -265,8 +265,10 @@ The following are concrete refusal triggers, before writing any public file:
 - Ambiguous spaced path: after repository-path conversion, a concrete absolute-path
   match followed by spaces reaches a non-absolute separator-bearing token before the
   end or another independently sanitizable absolute path.
-- Parenthesized path residue: an opening parenthesis immediately follows a concrete
-  absolute-path match, so publication refuses rather than expose the unmatched suffix.
+- Parenthesized path residue: an opening parenthesis immediately after a concrete
+  absolute-path match refuses publication, and a closing parenthesis followed by a
+  non-whitespace character also refuses rather than expose an unmatched suffix; a
+  standalone closing delimiter remains publishable.
 - Ambiguous aliases: after deduplication, one remaining declared token is a proper
   case-insensitive substring of another declared token. Do not guess which identity
   was intended. Known nested automatic hostname aliases use the longest-first rule.

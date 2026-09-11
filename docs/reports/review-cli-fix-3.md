@@ -225,3 +225,31 @@ read. The final clean-commit gate remains conversation-only evidence.
   npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No Unix-socket `listen EPERM` occurred.
   The five additional base-commit matcher candidates remain untouched and out of
   scope. No push, board-code edit, or `docs/reviews/` change was performed.
+
+## Round 8 corrections
+
+- Added a fail-closed parenthesized-residue case: after a concrete absolute-path
+  match, a closing parenthesis followed immediately by a non-whitespace character
+  refuses publication. A closing delimiter followed by whitespace or the end of the
+  string remains publishable, preserving command substitution. The asymmetric
+  no-syntax-exemption rule is unchanged.
+- Added a differential fixture that runs an isolated copy of base commit `3367cd5`:
+  the base publishes `inspect [ABS_PATH]` for the complete file URL, while the
+  corrected CLI refuses the same input. A separate controlled fixture preserves a
+  standalone closing delimiter. REFERENCE, design, delta, and current spec now name
+  both opening- and closing-parenthesis residue behavior.
+- The first historical-tool attempt stopped on missing temporary board-module imports
+  and was not counted as behavior evidence. With those base modules included, the
+  pre-change differential reached the intended assertion: base redaction succeeded,
+  but the current CLI returned 0 instead of refusing, in 3.469 seconds. The post-fix
+  three-test focus passed in 6.151 seconds; both new behavior fixtures retain their
+  own `negativeControl`.
+- The ordinary inherited baseline produced 144 passes and four failures in 285.989
+  seconds because of the previously documented user-level Git excludes issue. With
+  global Git and XDG configuration isolated for the commands, final `npm test` passed
+  150/150 with zero skips in 280.990 seconds, and all 150 deliberate controls failed
+  with zero passes in 277.117 seconds. Strict OpenSpec validation passed 19/19.
+- Runs were serialized after clear process probes. Verification used Node.js 20.19.4,
+  npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No Unix-socket `listen EPERM` occurred.
+  The five additional base-commit matcher candidates remain untouched and out of
+  scope. No push, board-code edit, or `docs/reviews/` change was performed.
