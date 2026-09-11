@@ -35,7 +35,12 @@ Use the route's configured agent/model; do not change routing defaults.
 
 ## Acceptance checks
 
-Fail first on repository/route changes and use-note display, invalid form fields, input key ownership, literal argument arrays, duplicate-submit suppression, partial failures, successful row selection/focus, and editor suspend/return/cancel. Run the offline cross-root idea-to-close scenario and separately record a real-TTY smoke if available.
+Fail first on multiline task Enter, explicit topic/review launch, repository/route
+changes including same-name route invalidation, scope-independent drafts,
+identity-root refusal, invalid form fields, input key ownership, literal argument
+arrays, duplicate-submit suppression, each distinct partial outcome, filtered
+successful row selection/focus, and editor suspend/return/cancel. Run the offline
+cross-root idea-to-close scenario and separately record a real-TTY smoke if available.
 
 Each requirement in the adjacent delta spec is part of acceptance. Add and observe
 failing regression tests before product changes; retain deliberate negative controls.

@@ -33,6 +33,9 @@ See [design](design.md) for compatibility changes and risk controls and
 [tasks](tasks.md) for the complete dispatchable brief. Shared amendments and
 workflow are in [the OpenSpec guide](../../README.md).
 
-Pre-agreed split: 3a-i board-frame delivers layout/focus/terminal restoration;
-3a-ii board-details delivers complete details, selectors and status semantics.
+Pre-agreed split: 3a-i board-frame delivers responsive 140x40/100x24/80x24
+geometry, filtering-stable selection, evidence navigation, focus and terminal
+restoration; it may begin before board-messages promotes while unavailable messages
+remain explicit. 3a-ii board-details delivers complete scrollable details,
+selectors and status semantics.
 The exact acceptance partition is in [design](design.md#pre-agreed-split-point).

@@ -35,7 +35,13 @@ Use the route's configured agent/model; do not change routing defaults.
 
 ## Acceptance checks
 
-Fail first on outside-git and linked --repo, bad/empty/missing flags and route, duplicate branch/brief/path, ignored-path refusal, literal shell-looking/multiline text, template sections, editor success/cancel/failure, exact open-before-dispatch order, one registry record, and each partial-failure boundary with no replay. Fake Herdr and fake editor run offline; no real agent starts.
+Fail first on identity-root refusal and no implicit destination/bootstrap, outside-git
+and linked --repo, bad/empty/missing flags and route, duplicate branch/brief/path,
+ignored-path refusal, literal shell-looking/multiline text, template sections,
+editor success/cancel/failure, exact open-before-dispatch order, structured
+success/partial-result identity, route effort projection without route-name
+inference, one registry record, and each partial-failure boundary with no replay.
+Fake Herdr and fake editor run offline; no real agent starts.
 
 Each requirement in the adjacent delta spec is part of acceptance. Add and observe
 failing regression tests before product changes; retain deliberate negative controls.

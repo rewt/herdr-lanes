@@ -14,6 +14,9 @@ documented v1 schema and correct unknown/error states.
 #### Scenario: Stream framing and errors
 - **WHEN** observations change while a JSON watch is running
 - **THEN** each stdout line is a complete snapshot, diagnostics do not corrupt JSON, and contradictory flags fail clearly.
+#### Scenario: Complete gate evidence when available
+- **WHEN** a recorded gate has command, observation time, or duration metadata
+- **THEN** JSON exposes each as nullable read-only gate evidence alongside state, head, exit code, and signal; unavailable values remain explicit rather than inferred by a consumer.
 
 ### Requirement: Compatible read-service boundary
 The new read commands SHALL be owned by lane.mjs and SHALL preserve the service

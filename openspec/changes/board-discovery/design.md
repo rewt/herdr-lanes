@@ -30,6 +30,12 @@ as such, else unknown. Brief/role/report/gate are unknown unless independently
 verifiable. Facilitators remain attached to canonical checkout rows, outside the
 lane subgroup. Non-git agents remain visible under unknown identity/repository.
 
+Schema audit: repository records already retain canonical path, root_id and repo_id,
+which are authoritative for destination selection; labels remain presentation only.
+**Needs field (board-discovery):** a stable public-safe display identity suffix when
+duplicate root/repository labels collide, so the composer can disambiguate choices
+without treating a label as canonical identity or inspecting the filesystem itself.
+
 No recursive filesystem inventory and no OS-process promise. Offline historic
 metadata is read only for repositories found in this run or explicitly selected.
 A repository absent from all accessible Herdr inventories is not silently scanned.

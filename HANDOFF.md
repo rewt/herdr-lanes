@@ -862,3 +862,29 @@ Living log for agents maintaining this repository. Newest entry last.
   session focus/discovery, message extraction and launch/partial-result CLI
   schemas remain unverified. The prototype executes no commands and adds no
   sessions. No push, promotion, archive or live Herdr mutation was performed.
+
+## 2026-09-10 — console UX review applied to proposed OpenSpec changes
+
+- Applied the operator-approved replacement text to board UX and idea composer
+  designs; synchronized responsive 140x40/100x24/80x24 budgets, stable filtering,
+  attention/no-color/evidence/Escape acceptance, composer launch/draft/partial
+  outcomes, and updated board-frame/details briefs without completing any task.
+- Recorded the identity-root bootstrap refusal in idea-cli design/spec and added its
+  dispatch-brief acceptance. There is no implicit default, scratch repository,
+  git init, or facilitator start; a future visible default needs a separate proposal
+  and still submits explicit `--repo`.
+- Schema audit outcome: board-cli already specifies brief excerpt and canonical
+  repository/destination-base reads, but needs bounded full-gate metadata; discovery
+  needs a public-safe duplicate-label suffix; idea-cli needs recognized effort
+  projection and structured lane-new success/partial identities. UI artifacts do
+  not assume or invent those fields.
+- Changed `docs/SPEC-20260908.md`, board-ux proposal/design/tasks/delta, composer
+  design/tasks/delta, idea-cli design/tasks/delta, and the bounded board-cli and
+  board-discovery design/delta owners. 3a-i may start before board-messages promotes
+  only with honest unavailable message evidence; full UX/composer prerequisites stay
+  unchanged.
+- Baseline `npm test` passed before documentation edits. After its test process
+  cleared, serialized `OPENSPEC_TELEMETRY=0 openspec validate --all --strict
+  --no-interactive --concurrency 1` passed 19/19; `git diff --check` and a changed-
+  text host-path/user-name scan were clean. No product code, board code, package,
+  current OpenSpec capability, or product test changed.

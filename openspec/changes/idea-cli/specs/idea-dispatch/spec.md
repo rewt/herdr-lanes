@@ -14,6 +14,9 @@ task, resolving them before any brief/worktree/agent mutation.
 #### Scenario: Invalid input
 - **WHEN** the topic/route/repo/task, ignored storage, or parent workspace is invalid
 - **THEN** new exits nonzero without writing a brief, opening a lane, or starting an agent.
+#### Scenario: Identity root is not a destination
+- **WHEN** a caller at an identity root supplies that root as --repo or has no explicit repository destination
+- **THEN** new refuses with guidance to select an existing canonical repository; it does not choose an implicit root default, create a scratch repository, run git init, or start a facilitator.
 
 ### Requirement: Ignored template brief and literal task text
 The command SHALL create one ignored `.lane/briefs/<topic>.md` from the installed
@@ -31,6 +34,9 @@ actual lane/agent identity or honest partial failure. It SHALL not promote or pu
 #### Scenario: Full success
 - **WHEN** open, cwd verification, prompt delivery, and registry write all succeed
 - **THEN** one branch, one worktree, one child workspace, one prompted agent, and one registry record exist.
+#### Scenario: Structured result identity
+- **WHEN** new succeeds or reaches a recoverable partial outcome
+- **THEN** its machine-readable result identifies the canonical repository, known destination, lane/worktree, agent/session or registered row, brief path, and delivery/registration stage without requiring a UI to guess by topic.
 #### Scenario: Failure after open or prompt
 - **WHEN** startup, cwd verification, prompt delivery, or registration fails
 - **THEN** recoverable work remains, the output distinguishes known/ambiguous delivery, and no lifecycle action is automatically retried.
@@ -48,3 +54,6 @@ without starting work or exposing configured environment values.
 #### Scenario: Root routes overridden by repository
 - **WHEN** the picker queries a repo that overrides an inherited engineer route
 - **THEN** the JSON matches dispatch's resolution and displays that route's effective use note.
+#### Scenario: Route effort projection
+- **WHEN** a resolved route has an explicit recognized effort argument, an omitted known default, or an unsupported effort setting
+- **THEN** JSON exposes the documented resolved effort projection, agent default, or unknown state without inferring it from the route name or exposing environment values.

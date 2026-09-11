@@ -17,6 +17,9 @@ filter, and state which local servers/repositories were actually inspected.
 #### Scenario: Per-repository override isolation
 - **WHEN** the anchor repository uses LANE_CONFIG and discovery also finds another root
 - **THEN** that override affects only the anchor; the other repository uses its own config and registry.
+#### Scenario: Duplicate display labels retain identity
+- **WHEN** two discovered repositories have the same readable root/repository labels
+- **THEN** their canonical identities remain distinct and the read model provides a stable public-safe display suffix for picker disambiguation without treating labels as repository identity.
 #### Scenario: Outside git or offline
 - **WHEN** the board starts outside git
 - **THEN** machine discovery still works; with no server it shows an explicit unavailable state and --repo can still supply offline repository observations.

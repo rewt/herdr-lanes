@@ -34,6 +34,12 @@ board-messages replaces it. Do not claim the footer is a real assistant message.
 A done marker never changes git or gate data. A report can have a verdict and full
 reviewed_head (when supplied); absence of reviewed_head means freshness unknown.
 
+Schema audit: v1 already provides `brief {path, excerpt}` and each repository's
+canonical path plus resolved lane destination base. **Needs field (board-cli):**
+recorded gate command, observation timestamp, and duration, bounded to nullable
+read-only evidence metadata, before consumers claim a full gate record. Do not
+derive these values through UI file, git, or process reads.
+
 Move read-command parsing, canonical config resolution, and service orchestration
 into lane.mjs, reusing the built-ins-only board services as modules/children.
 Keep modules import-safe and preserve exports used by the current UI; do not copy

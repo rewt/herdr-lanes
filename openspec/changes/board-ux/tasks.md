@@ -30,9 +30,13 @@ Suggested route: `engineer`. Suggested effort: High; one focused engineering ses
 Use the route's configured agent/model; do not change routing defaults.
 
 At dispatch, use this combined lane or activate the pre-agreed board-frame (3a-i) /
-board-details (3a-ii) split in design.md. Select the boundary before implementation;
-each resulting brief owns the named requirements, tests and handoff. Dependent
-composer/mouse work waits for the complete UX, not just the frame.
+board-details (3a-ii) split in design.md. 3a-i owns the 140x40, 100x24 and 80x24
+geometry, stable selection through filtering, attention/no-color/evidence-key
+behavior, Enter focus and terminal cleanup; it may start before board-messages
+promotes if unavailable message evidence stays honest. 3a-ii owns complete
+scrollable evidence content and final selectors/status details. Select the boundary
+before implementation; each resulting brief owns the named requirements, tests and
+handoff. Dependent composer/mouse work waits for the complete UX, not just the frame.
 
 ## 1. Lane-sized task
 
@@ -40,7 +44,12 @@ composer/mouse work waits for the complete UX, not just the frame.
 
 ## Acceptance checks
 
-Fail first on layout/width/resize/selection states, command routing for keys, text+color badge combinations, no-color behavior, and teardown with pending child output. After npm test, serialize an optional isolated UI install and real-TTY startup/focus/return/history/quit/interrupt smoke. Record exact observed vs skipped checks and footprint.
+Fail first on 140x40, 100x24, 80x24 and 40x12 layout/width/resize/selection states,
+stable filtering, command routing for every listed key, attention counting,
+text+color badge combinations, no-color behavior, evidence scrolling/Escape return,
+and teardown with pending child output. After npm test, serialize an optional isolated
+UI install and real-TTY startup/focus/return/history/quit/interrupt smoke. Record
+exact observed vs skipped checks and footprint.
 
 Each requirement in the adjacent delta spec is part of acceptance. Add and observe
 failing regression tests before product changes; retain deliberate negative controls.

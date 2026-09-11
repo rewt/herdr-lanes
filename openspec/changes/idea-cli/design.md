@@ -20,6 +20,11 @@ unknown/missing route, missing/invalid repo, conflicting options, and extra inpu
 A path may name a subdirectory or linked checkout; normalize to its canonical repo.
 This command works outside git and never acts on whichever pane happens to be
 focused. The explicit repository determines config and parent workspace.
+An identity root supplies neither a canonical repository nor a lane destination:
+refuse with guidance to choose an existing repository or pass its explicit `--repo`.
+Do not choose an implicit default, create a scratch repository, run git init, or
+start a facilitator. A visible root-default preselection requires a separate
+proposal and must still submit an explicit `--repo`.
 
 Use the installed tool's docs/BRIEF_TEMPLATE.md, filling every section with the task
 and generic repository instructions rather than leaving instructional placeholders.
@@ -62,3 +67,12 @@ No rollback deletes user work. No queue, job record, retry loop, or promotion.
 lane routes --repo --json exposes schema_version=1 and sorted route records with
 name, resolved kind/model/args and use note; do not expose env secret values to the
 picker. It uses exactly the dispatch resolver and never starts an agent.
+
+Schema audit: `lane routes --repo --json` already provides name, resolved kind,
+model, args and use, but **needs field (idea-cli)** for a documented effort
+projection from recognized arguments or an explicit resolved effort field. **Needs
+field (idea-cli):** a machine-readable lane-new result for success and partial
+outcomes, containing the canonical repository, resolved destination when known,
+lane/worktree identity, agent/session or registry row identity, brief path, and
+delivery/registration stage. Human prose alone cannot support exact composer
+selection or distinguish partial outcomes.
