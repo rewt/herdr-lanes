@@ -1663,6 +1663,15 @@ function containsConcreteAbsolutePath(value) {
   return found;
 }
 
+function hasOnlyIndependentlySanitizablePathSeparators(value) {
+  let matched = false;
+  const residue = replaceConcreteAbsolutePaths(value, () => {
+    matched = true;
+    return "";
+  });
+  return matched && !/[\\/]/u.test(residue);
+}
+
 function containsAmbiguousAbsolutePath(value) {
   let found = false;
   replaceOutsidePlaceholders(value, (part) => {
@@ -1673,6 +1682,7 @@ function containsAmbiguousAbsolutePath(value) {
         found = true;
         break;
       }
+      while ([")", "'", '"', "`", "]"].includes(part[cursor])) cursor += 1;
       while (part[cursor] === " ") {
         while (part[cursor] === " ") cursor += 1;
         let end = cursor;
@@ -1680,7 +1690,7 @@ function containsAmbiguousAbsolutePath(value) {
         if (end === cursor) break;
         const token = part.slice(cursor, end);
         if (/[\\/]/u.test(token)) {
-          if (!containsConcreteAbsolutePath(token)) found = true;
+          if (!hasOnlyIndependentlySanitizablePathSeparators(token)) found = true;
           break;
         }
         cursor = end;

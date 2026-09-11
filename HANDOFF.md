@@ -1089,3 +1089,32 @@ Living log for agents maintaining this repository. Newest entry last.
   push, promotion, archive, board-code edit, or `docs/reviews/` change was performed.
   The facilitator-owned Round 7 record remains unchanged; the final commit and single
   post-commit gate remain conversation-only evidence.
+
+## 2026-09-10 — review CLI precise paths Round 9 corrections
+
+- Extended the spaced-path scanner across closing parenthesis, quote, backtick, and
+  square-bracket delimiters before a space while preserving standalone closing
+  delimiters. Continuation tokens are independently sanitizable only when concrete
+  path replacements leave no unmatched separator-bearing prefix or suffix.
+- Added differential refusal fixtures for parenthesis, quote, and bracket terminators
+  plus an embedded absolute match with a relative path prefix. Replaced the Round 8
+  historical tool checkout with retained `3367cd5` matcher and ambiguity-pattern
+  fixture data, so the suite no longer requires a source-history object in shallow
+  clones. Synchronized REFERENCE, design, delta spec, and current spec.
+- Before the production change, the four-test focus failed all four exit expectations
+  because the CLI published with exit 0 instead of refusing with exit 2 in 11.095
+  seconds. The post-fix six-test focus passed in 16.144 seconds. The documentation
+  assertion also failed before the synchronized wording and passed afterward. Every
+  new behavior fixture retains its own deliberate `negativeControl`.
+- Baseline `npm test` passed 151/151 in 280.962 seconds. Final `npm test` passed
+  155/155 with zero skips in 301.755 seconds. The full negative-control run reported
+  zero passes and 155 failures in 292.609 seconds; four Unix-socket fixtures emitted
+  `listen EPERM: operation not permitted` at a system-temp `board.sock` path instead
+  of reaching their deliberate controls. The tests were not changed for this known
+  Codex sandbox limitation. Strict OpenSpec validation passed 19/19.
+- Runs were serialized after explicit process and load probes. Verification used
+  Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. The five previously
+  recorded matcher candidates remain out of scope. No live reviewer/Herdr mutation,
+  alternate host, push, promotion, archive, board-code edit, or `docs/reviews/`
+  change was performed. The facilitator-owned Round 8 record remains unchanged; the
+  final commit and single post-commit gate remain conversation-only evidence.

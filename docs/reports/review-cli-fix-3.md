@@ -253,3 +253,30 @@ read. The final clean-commit gate remains conversation-only evidence.
   npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. No Unix-socket `listen EPERM` occurred.
   The five additional base-commit matcher candidates remain untouched and out of
   scope. No push, board-code edit, or `docs/reviews/` change was performed.
+
+## Round 9 corrections
+
+- Extended spaced-path ambiguity scanning past closing prose delimiters before a
+  space, so a parenthesis, quote, or square bracket cannot expose a later
+  separator-bearing suffix. Standalone closing delimiters remain publishable.
+- An independently sanitizable continuation token must now have every slash and
+  backslash covered by concrete absolute-path matches. A relative separator-bearing
+  prefix or suffix therefore refuses instead of surviving beside a redacted match.
+- Replaced the Round 8 source-history checkout with retained `3367cd5` matcher data.
+  The historical comparison is now self-contained in a depth-one clone, while the
+  current CLI refusal remains a separate end-to-end assertion. No test reads a
+  historical source object.
+- The four-test failure-first focus observed all four current CLI invocations return
+  0 instead of the required 2 in 11.095 seconds. The post-fix six-test focus passed
+  6/6 in 16.144 seconds; the documentation control also failed before its updates
+  and passed afterward. Every new behavior fixture has its own `negativeControl`.
+- Baseline `npm test` passed 151/151 in 280.962 seconds. Final `npm test` passed
+  155/155 with zero skips in 301.755 seconds. The full negative-control run reported
+  zero passes and 155 failures in 292.609 seconds; four Unix-socket cases emitted
+  `listen EPERM: operation not permitted` at their system-temp `board.sock` path
+  instead of reaching their deliberate control. No test was changed for that known
+  Codex sandbox limitation. Strict OpenSpec validation passed 19/19.
+- Runs were serialized after clear process probes. Verification used Node.js
+  20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. The facilitator-owned Round 8
+  record remains unchanged. No push, board-code edit, or `docs/reviews/` change was
+  performed.

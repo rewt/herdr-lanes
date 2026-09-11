@@ -231,10 +231,13 @@ delimiters remain literal, but neither their bodies nor trailing path text are e
 from path sanitization. Non-file URL-like tokens remain literal when the concrete
 matcher does not match them. After
 repository-path conversion, if a concrete absolute-path match is immediately followed
-by a space, scan subsequent whitespace-delimited tokens while they remain
-separator-free. Stop at the end or at another concrete absolute-path token, which will
-be sanitized independently; refuse if a non-absolute token containing a slash or
-backslash is reached first rather than publish a partially redacted suffix. Then
+by a space, or by one or more closing prose delimiters (`)`, quote marks, backticks, or
+`]`) and then a space, start the ambiguity scan across subsequent whitespace-delimited
+tokens while they remain separator-free. Stop at the end or at another token whose
+path separators are all covered by concrete matches, which will be sanitized
+independently. Refuse if a non-absolute token containing a slash or backslash is
+reached first, or if concrete matches leave an unmatched separator-bearing prefix or
+suffix, rather than publish a partially redacted suffix. Then
 redact aliases, matching case-
 insensitively at whole path segments (delimited by slash/backslash or string ends)
 or Unicode word boundaries (adjacent characters must not be letters, combining
@@ -263,8 +266,10 @@ payload text to hide a value.
 The following are concrete refusal triggers, before writing any public file:
 
 - Ambiguous spaced path: after repository-path conversion, a concrete absolute-path
-  match followed by spaces reaches a non-absolute separator-bearing token before the
-  end or another independently sanitizable absolute path.
+  match followed by optional closing prose delimiters and spaces reaches a
+  non-absolute separator-bearing token before the end or another independently
+  sanitizable absolute path. A token is independently sanitizable only when its
+  concrete matches leave no unmatched separator-bearing prefix or suffix.
 - Parenthesized path residue: an opening parenthesis immediately after a concrete
   absolute-path match refuses publication, and a closing parenthesis followed by a
   non-whitespace character also refuses rather than expose an unmatched suffix; a

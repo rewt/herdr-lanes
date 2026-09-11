@@ -4182,10 +4182,18 @@ test("review preserves a command-substitution delimiter after file URL redaction
   }
 });
 
+// Retain the 3367cd5 matcher and ambiguity heuristic as fixture data so the
+// differential checks remain self-contained in shallow clones.
+const HISTORICAL_REVIEW_ABSOLUTE_PATH_PATTERN =
+  /file:\/\/\/[A-Za-z0-9._~!$&'()+=@%\/-]+|\\\\[^\\/\s]+[\\/][^\s"'<>`\[\],;:)]+|\b[A-Za-z]:[\\/][^\s"'<>`\[\],;:)]+|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/)[^\s"'<>`\[\],;:()]+/giu;
+const HISTORICAL_REVIEW_AMBIGUOUS_PATH_PATTERN =
+  /(?:file:\/\/\/|\b[A-Za-z]:[\\/]|\\\\|(?<![-\p{L}\p{M}\p{N}_.\/\\])\/(?!\/))[^,;\n]*\s+[^,;\n]*[\\/]/iu;
+
 test("review refuses a closing-parenthesis file URL residue that the base matcher fully redacted", () => {
+  const command = "inspect file:///var/tmp/archive)tail/input.txt";
   const payload = {
     reexecuted: [{
-      command: "inspect file:///var/tmp/archive)tail/input.txt",
+      command,
       cwd: "scratch",
       exit_code: 0,
       result: "The command was inspected without execution.",
@@ -4193,34 +4201,9 @@ test("review refuses a closing-parenthesis file URL residue that the base matche
       witness: null,
     }],
   };
-  const base = makeReviewFixture("review-file-url-closing-base", { verdict: "PASS", payload });
   const current = makeReviewFixture("review-file-url-closing-current", { verdict: "PASS", payload });
   try {
-    const toolRoot = join(base.fixture.root, "base-tool");
-    const baseLane = join(toolRoot, "lane.mjs");
-    mkdirSync(join(toolRoot, "docs"), { recursive: true });
-    mkdirSync(join(toolRoot, "board"), { recursive: true });
-    writeFileSync(baseLane, gitExec([
-      "-C", resolve(HERE, ".."), "show", "3367cd53e6fa50d3212f0da32e2189900b9b6d21:lane.mjs",
-    ], { encoding: "utf8" }));
-    for (const file of ["actions.mjs", "board.mjs", "herdr-client.mjs", "registry.mjs", "view.mjs"]) {
-      writeFileSync(join(toolRoot, "board", file), gitExec([
-        "-C", resolve(HERE, ".."), "show",
-        `3367cd53e6fa50d3212f0da32e2189900b9b6d21:board/${file}`,
-      ], { encoding: "utf8" }));
-    }
-    copyFileSync(resolve(HERE, "..", "docs", "REVIEW_TEMPLATE.md"), join(toolRoot, "docs", "REVIEW_TEMPLATE.md"));
-
-    const baseRun = lane(base.fixture, [
-      "review", "review-file-url-closing-base", "--round", "1", "--brief", base.brief,
-    ], { executable: baseLane });
-    assert.equal(baseRun.status, 0, baseRun.stderr);
-    const baseHead = git(base.path, ["rev-parse", "HEAD"]);
-    const baseRecord = readFileSync(join(
-      base.path, "docs", "reviews", "review-file-url-closing-base", `${baseHead.slice(0, 7)}-r1.md`,
-    ), "utf8");
-    const baseExecutions = JSON.parse(baseRecord.match(/## Re-executed\n```json\n(.+)\n```/u)[1]);
-    assert.equal(baseExecutions[0].command, "inspect [ABS_PATH]");
+    assert.equal(command.replace(HISTORICAL_REVIEW_ABSOLUTE_PATH_PATTERN, "[ABS_PATH]"), "inspect [ABS_PATH]");
 
     const currentRun = lane(current.fixture, [
       "review", "review-file-url-closing-current", "--round", "1", "--brief", current.brief,
@@ -4234,7 +4217,6 @@ test("review refuses a closing-parenthesis file URL residue that the base matche
     )));
     negativeControl("closing-parenthesis file URL residue differential");
   } finally {
-    base.fixture.cleanup();
     current.fixture.cleanup();
   }
 });
@@ -4254,6 +4236,71 @@ test("review publishes a standalone closing delimiter after file URL redaction",
     ), "utf8");
     assert.ok(publicRecord.includes("- Inspect [ABS_PATH]) before release."));
     negativeControl("standalone closing delimiter after file URL redaction");
+  } finally {
+    review.fixture.cleanup();
+  }
+});
+
+for (const [description, topic, terminator] of [
+  ["closing parenthesis", "review-spaced-path-after-parenthesis", ")"],
+  ["closing quote", "review-spaced-path-after-quote", '"'],
+  ["closing bracket", "review-spaced-path-after-bracket", "]"],
+]) {
+  test(`review refuses a spaced-path continuation after a ${description}`, () => {
+    const command = `inspect file:///var/tmp/private${terminator} folder/secret.txt`;
+    assert.match(command, HISTORICAL_REVIEW_AMBIGUOUS_PATH_PATTERN);
+    const review = makeReviewFixture(topic, {
+      verdict: "PASS",
+      payload: {
+        reexecuted: [{
+          command,
+          cwd: "scratch",
+          exit_code: 0,
+          result: "The command was inspected without execution.",
+          tests_pass: false,
+          witness: null,
+        }],
+      },
+    });
+    try {
+      const run = lane(review.fixture, ["review", topic, "--round", "1", "--brief", review.brief]);
+      assert.equal(run.status, 2, run.stderr);
+      assert.equal(run.stdout, "");
+      assert.match(run.stderr, /projected payload contains an ambiguous absolute path/u);
+      const head = git(review.path, ["rev-parse", "HEAD"]);
+      assert.ok(!existsSync(join(review.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`)));
+      negativeControl(`spaced-path continuation after a ${description}`);
+    } finally {
+      review.fixture.cleanup();
+    }
+  });
+}
+
+test("review refuses a spaced-path continuation with an embedded absolute-path match", () => {
+  const topic = "review-spaced-path-embedded-absolute";
+  const command = "inspect file:///var/tmp/private relative/path:/opt/other";
+  assert.match(command, HISTORICAL_REVIEW_AMBIGUOUS_PATH_PATTERN);
+  const review = makeReviewFixture(topic, {
+    verdict: "PASS",
+    payload: {
+      reexecuted: [{
+        command,
+        cwd: "scratch",
+        exit_code: 0,
+        result: "The command was inspected without execution.",
+        tests_pass: false,
+        witness: null,
+      }],
+    },
+  });
+  try {
+    const run = lane(review.fixture, ["review", topic, "--round", "1", "--brief", review.brief]);
+    assert.equal(run.status, 2, run.stderr);
+    assert.equal(run.stdout, "");
+    assert.match(run.stderr, /projected payload contains an ambiguous absolute path/u);
+    const head = git(review.path, ["rev-parse", "HEAD"]);
+    assert.ok(!existsSync(join(review.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`)));
+    negativeControl("spaced-path continuation with an embedded absolute-path match");
   } finally {
     review.fixture.cleanup();
   }
@@ -5021,12 +5068,16 @@ test("review protocol documents asymmetric path redaction and spaced-path refusa
     assert.match(document, /concrete matcher[^.]*never refuses[^.]*ambiguous spaced-path[^.]*still can/iu);
     assert.match(document, /opening parenthesis[^.]*refus/iu);
     assert.match(document, /closing parenthesis[^.]*non-whitespace[^.]*refus/iu);
+    assert.match(document, /closing prose\s+delimiters[^.]*space[^.]*ambiguity\s+scan/iu);
+    assert.match(document, /concrete matches[^.]*unmatched separator-bearing prefix or suffix/iu);
   }
   assert.match(reference, /The path-specific refusals are:/u);
   for (const spec of [currentSpec, deltaSpec]) {
     assert.match(spec, /regex literals and\s+slash-delimited phrases[^.]*may be replaced[^.]*absolute-path\s+placeholder/iu);
     assert.match(spec, /opening parenthesis[^.]*refus/iu);
     assert.match(spec, /closing parenthesis[^.]*non-whitespace[^.]*refus/iu);
+    assert.match(spec, /closing prose\s+delimiters[^.]*space[^.]*spaced-path scan/iu);
+    assert.match(spec, /concrete matches[^.]*unmatched separator-bearing prefix or suffix/iu);
   }
   for (const document of [reference, template]) {
     assert.match(
