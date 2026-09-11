@@ -229,11 +229,11 @@ and never refuses; the ambiguous spaced-path and parenthesized-residue rules sti
 refuse the whole publication, including regex-like text. Shell command-substitution
 delimiters remain literal, but neither their bodies nor trailing path text are exempt
 from path sanitization. Non-file URL-like tokens remain literal when the concrete
-matcher does not match them. After
-repository-path conversion, if a concrete absolute-path match is immediately followed
-by a space, or by one or more closing prose delimiters (`)`, quote marks, backticks, or
-`]`) and then a space, start the ambiguity scan across subsequent whitespace-delimited
-tokens while they remain separator-free. Stop at the end or at another token whose
+matcher does not match them. After repository-path conversion, each concrete
+absolute-path match starts an ambiguity scan that advances to the next whitespace
+regardless of any intervening non-whitespace characters. The scan continues across
+subsequent whitespace-delimited tokens while they remain separator-free. Stop at the
+end or at another token whose
 path separators are all covered by concrete matches, which will be sanitized
 independently. Refuse if a non-absolute token containing a slash or backslash is
 reached first, or if concrete matches leave an unmatched separator-bearing prefix or
@@ -266,10 +266,11 @@ payload text to hide a value.
 The following are concrete refusal triggers, before writing any public file:
 
 - Ambiguous spaced path: after repository-path conversion, a concrete absolute-path
-  match followed by optional closing prose delimiters and spaces reaches a
-  non-absolute separator-bearing token before the end or another independently
-  sanitizable absolute path. A token is independently sanitizable only when its
-  concrete matches leave no unmatched separator-bearing prefix or suffix.
+  match advances through any following non-whitespace characters to the next
+  whitespace, then reaches a non-absolute separator-bearing token before the end or
+  another independently sanitizable absolute path. A token is independently
+  sanitizable only when its concrete matches leave no unmatched separator-bearing
+  prefix or suffix.
 - Parenthesized path residue: an opening parenthesis immediately after a concrete
   absolute-path match refuses publication, and a closing parenthesis followed by a
   non-whitespace character also refuses rather than expose an unmatched suffix; a

@@ -1118,3 +1118,30 @@ Living log for agents maintaining this repository. Newest entry last.
   alternate host, push, promotion, archive, board-code edit, or `docs/reviews/`
   change was performed. The facilitator-owned Round 8 record remains unchanged; the
   final commit and single post-commit gate remain conversation-only evidence.
+
+## 2026-09-11 — review CLI precise paths Round 10 corrections
+
+- Removed the fixed terminator class from spaced-path continuation scanning. After
+  each concrete match, scanning advances through any non-whitespace residue to the
+  next whitespace before applying the unchanged continuation and independent-token
+  rules. Standalone delimiters and the parenthesized-residue guards remain intact.
+- Added six separately negative-controlled, self-contained differential fixtures
+  across command and finding prose for greater-than, colon, less-than, opening square
+  bracket, closing brace, and arbitrary punctuation runs. Synchronized REFERENCE,
+  the review template, design, delta spec, and current spec without enumerating
+  terminators.
+- Before the production change, the focused run produced zero passes and seven
+  expected failures in 16.318 seconds: all six CLI cases published instead of
+  refusing, and the documentation assertion was absent. The corrected behavior focus
+  passed 6/6 in 16.032 seconds, and the documentation focus passed in 0.071 seconds.
+- Baseline `npm test` passed 155/155 in 288.660 seconds. Final `npm test` passed
+  161/161 with zero skips in 312.810 seconds; the full deliberate-control run produced
+  zero passes and 161 failures in 311.809 seconds. Strict OpenSpec validation passed
+  19/19. No Unix-socket `listen EPERM` occurred.
+- Runs were serialized after explicit clear process probes. Verification used Node.js
+  20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. Main remains the lane merge base
+  at `03a5dc1`, so no rebase was required. The five previously recorded matcher gaps
+  remain out of scope. No live reviewer/Herdr mutation, alternate host, push,
+  promotion, archive, board-code edit, or `docs/reviews/` change was performed. The
+  facilitator-owned Round 9 record remains unchanged; the final commit and single
+  post-commit gate remain conversation-only evidence.

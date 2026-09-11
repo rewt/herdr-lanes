@@ -4276,6 +4276,75 @@ for (const [description, topic, terminator] of [
   });
 }
 
+for (const [description, topic, field, value] of [
+  [
+    "greater-than terminator",
+    "review-spaced-path-after-greater-than",
+    "command",
+    "inspect <file:///var/tmp/private> folder/secret.txt",
+  ],
+  [
+    "colon terminator",
+    "review-spaced-path-after-colon",
+    "prose",
+    "Path /var/tmp/private: folder/secret.txt was observed; Fix: remove it",
+  ],
+  [
+    "less-than terminator",
+    "review-spaced-path-after-less-than",
+    "command",
+    "inspect file:///var/tmp/private< folder/secret.txt",
+  ],
+  [
+    "opening-bracket terminator",
+    "review-spaced-path-after-opening-bracket",
+    "prose",
+    "Path /var/tmp/private[ folder/secret.txt was observed; Fix: remove it",
+  ],
+  [
+    "closing-brace terminator",
+    "review-spaced-path-after-closing-brace",
+    "command",
+    "inspect file:///var/tmp/private} folder/secret.txt",
+  ],
+  [
+    "arbitrary punctuation run",
+    "review-spaced-path-after-punctuation-run",
+    "prose",
+    "Path /var/tmp/private>}:!? folder/secret.txt was observed; Fix: remove it",
+  ],
+]) {
+  test(`review refuses a spaced-path continuation after any ${description}`, () => {
+    assert.match(value, HISTORICAL_REVIEW_AMBIGUOUS_PATH_PATTERN);
+    const payload = field === "command"
+      ? {
+          reexecuted: [{
+            command: value,
+            cwd: "scratch",
+            exit_code: 0,
+            result: "The command was inspected without execution.",
+            tests_pass: false,
+            witness: null,
+          }],
+        }
+      : { findings: `- [Moderate] shared.txt:1 - ${value}` };
+    const review = makeReviewFixture(topic, { verdict: "PASS", payload });
+    try {
+      const run = lane(review.fixture, ["review", topic, "--round", "1", "--brief", review.brief]);
+      assert.equal(run.status, 2, run.stderr);
+      assert.equal(run.stdout, "");
+      assert.match(run.stderr, /projected payload contains an ambiguous absolute path/u);
+      const head = git(review.path, ["rev-parse", "HEAD"]);
+      assert.ok(!existsSync(join(
+        review.path, "docs", "reviews", topic, `${head.slice(0, 7)}-r1.md`,
+      )));
+      negativeControl(`spaced-path continuation after any ${description}`);
+    } finally {
+      review.fixture.cleanup();
+    }
+  });
+}
+
 test("review refuses a spaced-path continuation with an embedded absolute-path match", () => {
   const topic = "review-spaced-path-embedded-absolute";
   const command = "inspect file:///var/tmp/private relative/path:/opt/other";
@@ -5068,15 +5137,18 @@ test("review protocol documents asymmetric path redaction and spaced-path refusa
     assert.match(document, /concrete matcher[^.]*never refuses[^.]*ambiguous spaced-path[^.]*still can/iu);
     assert.match(document, /opening parenthesis[^.]*refus/iu);
     assert.match(document, /closing parenthesis[^.]*non-whitespace[^.]*refus/iu);
-    assert.match(document, /closing prose\s+delimiters[^.]*space[^.]*ambiguity\s+scan/iu);
-    assert.match(document, /concrete matches[^.]*unmatched separator-bearing prefix or suffix/iu);
+    assert.match(
+      document,
+      /each\s+concrete\s+absolute-path match[^.]*next whitespace[^.]*regardless of any intervening non-whitespace/iu,
+    );
+    assert.match(document, /concrete matches[^.]*unmatched separator-bearing\s+prefix or suffix/iu);
   }
   assert.match(reference, /The path-specific refusals are:/u);
   for (const spec of [currentSpec, deltaSpec]) {
     assert.match(spec, /regex literals and\s+slash-delimited phrases[^.]*may be replaced[^.]*absolute-path\s+placeholder/iu);
     assert.match(spec, /opening parenthesis[^.]*refus/iu);
     assert.match(spec, /closing parenthesis[^.]*non-whitespace[^.]*refus/iu);
-    assert.match(spec, /closing prose\s+delimiters[^.]*space[^.]*spaced-path scan/iu);
+    assert.match(spec, /after (?:each|any) concrete (?:absolute-path )?match[^.]*next whitespace[^.]*intervening non-whitespace/iu);
     assert.match(spec, /concrete matches[^.]*unmatched separator-bearing prefix or suffix/iu);
   }
   for (const document of [reference, template]) {
@@ -5086,7 +5158,8 @@ test("review protocol documents asymmetric path redaction and spaced-path refusa
     );
   }
   assert.match(template, /opening parenthesis immediately after an absolute path/iu);
-  assert.match(template, /ambiguous spaced path[^.]*public-safe words[^.]*separate fields/iu);
+  assert.match(template, /ambiguous spaced path[^.]*public-safe words[^.]*separate\s+fields/iu);
+  assert.match(template, /after (?:each|any) concrete absolute path[^.]*next whitespace[^.]*intervening non-whitespace/iu);
   negativeControl("asymmetric path-redaction documentation");
 });
 

@@ -280,3 +280,28 @@ read. The final clean-commit gate remains conversation-only evidence.
   20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0. The facilitator-owned Round 8
   record remains unchanged. No push, board-code edit, or `docs/reviews/` change was
   performed.
+
+## Round 10 corrections
+
+- Removed the spaced-path terminator whitelist. After every concrete path match, the
+  scanner now advances through any non-whitespace residue to the next whitespace,
+  then applies the existing continuation rule. The immediate parenthesis-residue and
+  independently-sanitizable-token guards are unchanged.
+- Added six self-contained differential fixtures across command and finding prose for
+  greater-than, colon, less-than, opening-square-bracket, closing-brace, and arbitrary
+  punctuation residue. Each asserts that the retained base ambiguity heuristic would
+  refuse the field, requires the current CLI to exit 2 without publishing, and has its
+  own `negativeControl`.
+- Before the production change, the focused run failed all six new behavior
+  expectations plus the new documentation assertion: zero passed and seven failed in
+  16.318 seconds. After correction, the six behavior fixtures passed in 16.032 seconds
+  and the synchronized documentation control passed in 0.071 seconds.
+- Baseline `npm test` passed 155/155 in 288.660 seconds. Final `npm test` passed
+  161/161 with zero skips in 312.810 seconds. The full negative-control run reported
+  zero passes and 161 deliberate failures in 311.809 seconds. No Unix-socket
+  `listen EPERM` occurred. Strict OpenSpec validation passed 19/19.
+- REFERENCE, the review template, design, delta spec, and current spec now describe
+  advancement to the next whitespace after any intervening non-whitespace characters
+  without enumerating delimiters. Main remains the lane merge base at `03a5dc1`, so
+  no rebase was required. No push, board-code edit, or `docs/reviews/` change was
+  performed; the single post-commit gate remains conversation-only evidence.

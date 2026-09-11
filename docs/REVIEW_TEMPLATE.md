@@ -101,7 +101,11 @@ file-and-line value is not prose and retains the stricter markup and encoding
 restriction.
 Spell regex patterns in words, and if a concrete absolute path is followed later in
 the same field by a separator-bearing token, avoid the ambiguous spaced path refusal
-by rewriting the path in public-safe words or putting independent paths in separate fields.
+by rewriting the path in public-safe words or putting independent paths in separate
+fields.
+After each concrete absolute path, the scanner advances to the next whitespace
+regardless of any intervening non-whitespace punctuation; punctuation is not a safe
+separator for a spaced path.
 Do not place an opening parenthesis immediately after an absolute path; spell the
 path in public-safe words instead.
 

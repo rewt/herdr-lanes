@@ -1682,7 +1682,7 @@ function containsAmbiguousAbsolutePath(value) {
         found = true;
         break;
       }
-      while ([")", "'", '"', "`", "]"].includes(part[cursor])) cursor += 1;
+      while (cursor < part.length && !/\s/u.test(part[cursor])) cursor += 1;
       while (part[cursor] === " ") {
         while (part[cursor] === " ") cursor += 1;
         let end = cursor;
