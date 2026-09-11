@@ -1,6 +1,10 @@
 # Discover local Herdr agents across repositories
 
-Status: proposed. Initiative phase 2c; one independent lane.
+Status: superseded by the pre-agreed split into
+[`board-inventory`](../board-inventory/) (2c-i) and
+[`board-sampling`](../board-sampling/) (2c-ii). This combined proposal and its
+unchecked task remain in place as historical planning context; completion requires
+both split changes to promote.
 
 ## Why
 
