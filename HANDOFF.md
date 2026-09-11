@@ -828,3 +828,37 @@ Living log for agents maintaining this repository. Newest entry last.
   clear executable-aware load probe and ran alone. Minimum-version and alternate-host
   behavior remain unverified; no live Herdr mutation, push, promotion, archive, or
   `docs/reviews/` change was performed.
+
+## 2026-09-10 — console UX review and keyboard wireframe
+
+- Added `docs/design/CONSOLE-UX.md` with a region-by-region review, explicit state
+  and attention semantics, 80/100/140-column and 24/40-row budgets, keyboard focus
+  ownership, empty/error recovery, and concrete replacement paragraphs for the
+  board-ux and idea-composer designs. OpenSpec files remain unchanged.
+- Revised the supplied single-file `docs/design/lane-console.html`: grouped
+  sessions, a stable evidence pane, a compact scope rail at wide sizes, textual
+  status/gates, no-color preview, keyboard pickers, multiline task and editable
+  topic, explicit launch review, and illustrative partial outcomes. Recommend
+  retaining drafts at identity roots while refusing launch until an existing
+  repository is selected; no implicit default/scratch repository or facilitator.
+- Preserved all eight original session records and every route tuple exactly.
+  Replaced personal root/host and other-repository labels with public sample
+  aliases; canonical-path examples are synthetic. The fixture has two repositories,
+  one non-git bucket and four unique attention rows. Absent model/effort, full-SHA,
+  deadline and completion evidence stays explicitly unavailable or unverified.
+- Read the original HTML and reference screenshot. No browser was available through
+  the browser runtime. Node.js v20.19.4 accepted the revised JavaScript syntax;
+  a source-data comparison confirmed preservation and counts. Static HTML IDs and
+  local documentation links were checked. The only external asset reference is
+  the optional Google Fonts stylesheet. Full-diff/public-text and whitespace
+  checks passed with Git 2.54.0.
+- Initial load probes found other test-related processes. No npm test, build,
+  package install, OpenSpec validation or lane check was run for this authorized
+  documentation-only task; lightweight source parsing/comparison followed a later
+  clear process probe. No production behavior changed, so no product failing test
+  or negative control was applicable. `lane.mjs`, `board/`, `test/`, package files,
+  AGENTS.md and all OpenSpec artifacts remain unchanged.
+- Browser rendering/input, real terminal sizing/Unicode, editor restoration,
+  session focus/discovery, message extraction and launch/partial-result CLI
+  schemas remain unverified. The prototype executes no commands and adds no
+  sessions. No push, promotion, archive or live Herdr mutation was performed.
