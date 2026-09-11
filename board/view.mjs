@@ -55,13 +55,13 @@ function messageCell(message = {}) {
   return message.source === "unavailable" ? "message unavailable" : "-";
 }
 
-export function rowsFromBoardDocument(document) {
+export function rowsFromBoardDocument(document, { preferTopic = false } = {}) {
   return (document.rows ?? []).map((row) => {
     const status = row.status ?? "offline";
     return {
       name: row.name ?? "(unnamed)",
       role: row.role ?? "-",
-      lane: row.branch ?? "-",
+      lane: preferTopic ? row.topic ?? row.branch ?? "-" : row.branch ?? "-",
       status,
       pane: status === "offline" ? "-" : row.pane_id ?? "-",
       git: Number.isInteger(row.git?.ahead)
@@ -156,6 +156,7 @@ export function renderPlainBoard(rows, stats, {
   missingRegistry,
   registryErrors = [],
   messageErrors = [],
+  observationErrors = [],
 } = {}) {
   const registryNotice = missingRegistry === undefined ? [] : [`registry not found: ${missingRegistry}`];
   return [
@@ -163,6 +164,7 @@ export function renderPlainBoard(rows, stats, {
     ...registryNotice,
     ...registryErrors.map((error) => `registry error: ${error}`),
     ...messageErrors.map((error) => `message notice: ${error}`),
+    ...observationErrors.map((error) => `${error.source} error: ${error.message}`),
     ...tableLines(rows),
     footerLine(stats),
   ].join("\n") + "\n";

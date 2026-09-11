@@ -40,11 +40,13 @@ import {
 } from "./board/board.mjs";
 import { verifyCanonicalSession, verifyFocusSelection } from "./board/actions.mjs";
 import { HerdrClient, herdrSocketPath } from "./board/herdr-client.mjs";
+import { collectMachineBoardObservation } from "./board/inventory.mjs";
 import { refreshMessagePreviews } from "./board/message-preview.mjs";
+import { rowsFromBoardDocument, stateFromBoardDocument } from "./board/view.mjs";
 
 const IS_REVIEW_COMMAND = process.argv[2] === "review";
 const CALLER_CWD = process.cwd();
-const BOARD_USAGE = "usage: lane board [--once | --json | --watch --json | focus <row-id> | done <row-id>] [--repo <path>]";
+const BOARD_USAGE = "usage: lane board [--once | --json | --watch --json | focus <row-id> | done <row-id>] [--repo <path>] [--all]";
 let stopBoardObservation;
 
 function parseBoardArguments(args) {
@@ -63,7 +65,7 @@ function parseBoardArguments(args) {
       rowId = argument;
       continue;
     }
-    if (!["--once", "--json", "--watch", "--repo"].includes(argument)) {
+    if (!["--once", "--json", "--watch", "--repo", "--all"].includes(argument)) {
       if (!argument.startsWith("--")) throw new Error(BOARD_USAGE);
       throw new Error(`${BOARD_USAGE} (unknown option or operand: ${argument})`);
     }
@@ -85,8 +87,9 @@ function parseBoardArguments(args) {
   const once = seen.has("--once");
   const json = seen.has("--json");
   const watch = seen.has("--watch");
+  const all = seen.has("--all");
   if (action !== undefined) {
-    if (rowId === undefined || once || json || watch) throw new Error(BOARD_USAGE);
+    if (rowId === undefined || once || json || watch || all) throw new Error(BOARD_USAGE);
     return {
       mode: action,
       rowId,
@@ -99,6 +102,7 @@ function parseBoardArguments(args) {
   return {
     mode: once ? "plain" : watch ? "watch-json" : json ? "json" : "interactive",
     repo: repo === undefined ? undefined : resolve(CALLER_CWD, repo),
+    includeHistory: all,
   };
 }
 
@@ -125,7 +129,13 @@ process.stdout.on("error", (error) => {
   throw error;
 });
 
+const BOARD_MACHINE_READ = EARLY_BOARD_OPTIONS !== undefined &&
+  ["plain", "json", "watch-json"].includes(EARLY_BOARD_OPTIONS.mode) &&
+  EARLY_BOARD_OPTIONS.repo === undefined;
+
 // The repository is whichever checkout the command runs in (any worktree of it).
+// Machine board reads may start outside Git; every other command keeps the
+// repository requirement.
 const REPO = (() => {
   try {
     const start = EARLY_BOARD_OPTIONS?.repo ?? CALLER_CWD;
@@ -134,6 +144,7 @@ const REPO = (() => {
       stdio: ["ignore", "pipe", "pipe"],
     }).trim());
   } catch (error) {
+    if (BOARD_MACHINE_READ) return undefined;
     process.stderr.write(`${IS_REVIEW_COMMAND ? "lane review" : "lane"}: not inside a git repository\n`);
     const gitStderr = typeof error.stderr === "string" ? error.stderr.trim() : "";
     const ordinaryNotRepository = /^fatal: not a git repository \(or any of the parent directories\): \.git$/u
@@ -145,6 +156,7 @@ const REPO = (() => {
   }
 })();
 const REPO_IDENTITY = (() => {
+  if (REPO === undefined) return undefined;
   try {
     const common = execFileSync("git", ["-C", REPO, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" }).trim();
     return realpathSync(common);
@@ -153,6 +165,7 @@ const REPO_IDENTITY = (() => {
   }
 })();
 const CURRENT_GIT_DIRECTORY = (() => {
+  if (REPO === undefined) return undefined;
   try {
     const directory = execFileSync("git", ["-C", REPO, "rev-parse", "--path-format=absolute", "--git-dir"], { encoding: "utf8" }).trim();
     return realpathSync(directory);
@@ -199,6 +212,10 @@ function candidateIsCanonicalCheckout(path) {
 let canonicalCheckoutResolved = false;
 let canonicalCheckout;
 function repositoryRoot({ requiredBy } = {}) {
+  if (REPO === undefined) {
+    if (requiredBy !== undefined) fail(`${requiredBy} requires --repo when started outside a Git repository`);
+    return undefined;
+  }
   if (canonicalCheckoutResolved) {
     if (canonicalCheckout === undefined && requiredBy !== undefined) {
       fail(`cannot resolve canonical non-linked checkout for git common directory ${REPO_IDENTITY}; ${requiredBy} requires a canonical checkout`);
@@ -350,8 +367,11 @@ function nearestParentConfig(repository) {
 }
 
 const EXPLICIT_CONFIG = process.env.LANE_CONFIG !== undefined;
-const REPOSITORY_CONFIG_FILE = join(REPO_ROOT, ".lane.json");
-const PARENT_CONFIG_FILE = EXPLICIT_CONFIG ? undefined : nearestParentConfig(REPO_ROOT);
+if (EXPLICIT_CONFIG && REPO_ROOT === undefined) {
+  fail("LANE_CONFIG cannot anchor a machine board outside Git; supply --repo");
+}
+const REPOSITORY_CONFIG_FILE = REPO_ROOT === undefined ? undefined : join(REPO_ROOT, ".lane.json");
+const PARENT_CONFIG_FILE = EXPLICIT_CONFIG || REPO_ROOT === undefined ? undefined : nearestParentConfig(REPO_ROOT);
 const CONFIG_LAYERS = (() => {
   if (EXPLICIT_CONFIG) {
     const file = resolve(CALLER_CWD, process.env.LANE_CONFIG);
@@ -361,7 +381,7 @@ const CONFIG_LAYERS = (() => {
   if (PARENT_CONFIG_FILE !== undefined) {
     layers.push({ file: PARENT_CONFIG_FILE, config: readConfig(PARENT_CONFIG_FILE, { required: true }) });
   }
-  const repository = readConfig(REPOSITORY_CONFIG_FILE);
+  const repository = REPOSITORY_CONFIG_FILE === undefined ? undefined : readConfig(REPOSITORY_CONFIG_FILE);
   if (repository !== undefined) layers.push({ file: REPOSITORY_CONFIG_FILE, config: repository });
   return layers;
 })();
@@ -384,9 +404,12 @@ const { config: CONFIG, sources: CONFIG_SOURCES, routeSources: ROUTE_SOURCES } =
 })();
 const MAIN = CONFIG.main ?? "main";
 const LANE_PREFIX = "lane/";
-const REPO_NAME = basename(REPO_ROOT);
-const ROOT_IDENTITY = realpathSync(PARENT_CONFIG_FILE === undefined ? dirname(REPO_ROOT) : dirname(PARENT_CONFIG_FILE));
+const REPO_NAME = REPO_ROOT === undefined ? undefined : basename(REPO_ROOT);
+const ROOT_IDENTITY = REPO_ROOT === undefined
+  ? undefined
+  : realpathSync(PARENT_CONFIG_FILE === undefined ? dirname(REPO_ROOT) : dirname(PARENT_CONFIG_FILE));
 const { path: WORKTREE_ROOT, base: WORKTREE_BASE, source: WORKTREE_ROOT_SOURCE } = (() => {
+  if (REPO_ROOT === undefined) return { path: undefined, base: undefined, source: "default" };
   if (process.env.LANE_WORKTREE_ROOT !== undefined) {
     const path = resolve(CALLER_CWD, process.env.LANE_WORKTREE_ROOT);
     return { path, base: path, source: "env" };
@@ -2339,6 +2362,153 @@ function writeBoardJson(state) {
   process.stdout.write(`${JSON.stringify(boardDocument(state))}\n`);
 }
 
+function boardInventoryOptions(options) {
+  return {
+    anchor: REPO_ROOT === undefined ? undefined : {
+      path: REPO_ROOT,
+      config: CONFIG,
+      root_id: ROOT_IDENTITY,
+      lane_base: WORKTREE_ROOT,
+    },
+    repoFilter: options.repo,
+    includeHistory: options.includeHistory,
+  };
+}
+
+function writeMachineBoardPlain(document) {
+  const projected = stateFromBoardDocument(document);
+  const registryErrors = document.errors
+    .filter((error) => error.source === "registry")
+    .map((error) => error.message);
+  const messageErrors = document.errors
+    .filter((error) => error.source === "message")
+    .map((error) => error.message);
+  const observationErrors = document.errors
+    .filter((error) => !["registry", "message"].includes(error.source));
+  process.stdout.write(renderPlainBoard(rowsFromBoardDocument(document, { preferTopic: true }), projected.stats, {
+    connection: projected.connection,
+    missingRegistry: document.coverage.registry === "missing" && REPO_ROOT !== undefined
+      ? registryPathFor(REPO_ROOT, CONFIG)
+      : undefined,
+    registryErrors,
+    messageErrors,
+    observationErrors,
+  }));
+}
+
+async function readMachineBoard(options) {
+  return collectMachineBoardObservation(boardInventoryOptions(options));
+}
+
+async function watchMachineBoard(options) {
+  let stopped = false;
+  let refreshPending = false;
+  let refreshTimer;
+  let previewTimer;
+  let document;
+  let subscriptionSignature = "";
+  const clients = new Map();
+  let finish;
+  const completed = new Promise((resolvePromise) => { finish = resolvePromise; });
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(refreshTimer);
+    clearTimeout(previewTimer);
+    for (const client of clients.values()) client.close();
+    clients.clear();
+    finish();
+  };
+  stopBoardObservation = stop;
+
+  const installSubscriptions = (subscriptions) => {
+    const signature = JSON.stringify(subscriptions);
+    if (signature === subscriptionSignature) return;
+    subscriptionSignature = signature;
+    for (const client of clients.values()) client.close();
+    clients.clear();
+    for (const item of subscriptions) {
+      if (item.subscriptions.length === 0) continue;
+      const client = new HerdrClient({
+        socketPath: item.endpoint.path,
+        requestTimeoutMs: 500,
+        paneReadTimeoutMs: 2_000,
+      });
+      client.on("event", (event) => {
+        if (stopped || document === undefined) return;
+        const paneId = event.data?.pane_id;
+        if (event.event === "pane.output_changed") {
+          if (previewTimer === undefined) {
+            previewTimer = setTimeout(() => {
+              previewTimer = undefined;
+              void refresh();
+            }, 1_000);
+          }
+          return;
+        }
+        const row = document.rows.find(
+          (candidate) => candidate.server_id === item.endpoint.path && candidate.pane_id === paneId,
+        );
+        if (row === undefined) {
+          void refresh();
+          return;
+        }
+        if (event.event === "pane.agent_status_changed") {
+          row.status = event.data?.agent_status ?? row.status;
+          if (row.done && ["idle", "done"].includes(row.status) && !options.includeHistory) {
+            document.rows = document.rows.filter((candidate) => candidate !== row);
+          } else {
+            row.active_after_done = row.done && ["working", "blocked", "unknown"].includes(row.status);
+          }
+          process.stdout.write(`${JSON.stringify(document)}\n`);
+        } else if (event.event === "pane.output_matched") {
+          row.tripwire = event.data?.matched_line ?? event.data?.read?.text ?? row.tripwire;
+          process.stdout.write(`${JSON.stringify(document)}\n`);
+        }
+      });
+      client.on("connectionError", (error) => {
+        if (!stopped) process.stderr.write(`lane board: Herdr observation: ${error.message}\n`);
+      });
+      client.subscribe(item.subscriptions);
+      clients.set(item.endpoint.server_id, client);
+    }
+  };
+
+  const refresh = async () => {
+    if (stopped || refreshPending) return;
+    refreshPending = true;
+    try {
+      const observation = await readMachineBoard(options);
+      if (stopped) return;
+      document = observation.document;
+      process.stdout.write(`${JSON.stringify(document)}\n`);
+      installSubscriptions(observation.subscriptions);
+    } catch (error) {
+      if (!stopped) {
+        process.stderr.write(`lane: board read failed: ${error.message}\n`);
+        process.exitCode = 1;
+        stop();
+      }
+    } finally {
+      refreshPending = false;
+    }
+  };
+
+  const onSignal = () => stop();
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+  try {
+    await refresh();
+    if (!stopped) refreshTimer = setInterval(() => void refresh(), 5_000);
+    await completed;
+  } finally {
+    stop();
+    process.removeListener("SIGINT", onSignal);
+    process.removeListener("SIGTERM", onSignal);
+    stopBoardObservation = undefined;
+  }
+}
+
 async function watchBoard() {
   const client = new HerdrClient({ requestTimeoutMs: 500, paneReadTimeoutMs: 2_000 });
   const runtime = new Map();
@@ -2506,26 +2676,16 @@ async function board(options) {
     return;
   }
   if (options.mode === "watch-json") {
-    await watchBoard();
+    await watchMachineBoard(options);
     return;
   }
   if (options.mode === "plain" || options.mode === "json") {
-    const client = new HerdrClient({ requestTimeoutMs: 500, paneReadTimeoutMs: 2_000 });
     try {
-      const state = await collectBoardState({ repoRoot: REPO_ROOT, config: CONFIG, client });
-      if (options.mode === "json") writeBoardJson(state);
-      else {
-        process.stdout.write(renderPlainBoard(state.rows, state.stats, {
-          connection: state.connection,
-          missingRegistry: state.exists ? undefined : state.path,
-          registryErrors: state.errors,
-          messageErrors: state.messageErrors,
-        }));
-      }
+      const { document } = await readMachineBoard(options);
+      if (options.mode === "json") process.stdout.write(`${JSON.stringify(document)}\n`);
+      else writeMachineBoardPlain(document);
     } catch (error) {
       fail(`board read failed: ${error.message}`);
-    } finally {
-      client.close();
     }
     return;
   }
@@ -2680,7 +2840,7 @@ switch (command) {
         "  check [--cmd <validate command>]\n" +
         "                   validate this clean worktree and record its HEAD gate\n" +
         "  board [--once | --json | --watch --json | focus <row-id> | done <row-id>]\n" +
-        "        [--repo <path>]\n" +
+        "        [--repo <path>] [--all]\n" +
         "                   open the UI, observe sessions, focus a verified live row,\n" +
         "                   or mark a verified registered row done\n" +
         `  promote <topic>  validate then fast-forward ${MAIN} (clean + rebased + green only)\n` +

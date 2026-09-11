@@ -245,7 +245,7 @@ async function fakeBoardServer(fixture, handleRequest) {
   };
 }
 
-function boardSnapshotResult({ status = "working" } = {}) {
+function boardSnapshotResult({ status = "working", cwd = "/ignored/live/path" } = {}) {
   return {
     type: "session_snapshot",
     snapshot: {
@@ -255,7 +255,7 @@ function boardSnapshotResult({ status = "working" } = {}) {
         name: "board-agent",
         workspace_id: "workspace-1",
         pane_id: "pane-1",
-        cwd: "/ignored/live/path",
+        cwd,
         agent_status: status,
       }],
       panes: [],
@@ -2720,7 +2720,7 @@ test("board JSON snapshots expose schema v1 from canonical --repo config without
 
     server = await fakeBoardServer(fixture, ({ socket, request }) => {
       if (request.method === "session.snapshot") {
-        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult() })}\n`);
+        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult({ cwd: fixture.repo }) })}\n`);
       }
     });
     const env = discoveredEnv(fixture, { HERDR_SOCKET_PATH: server.socketPath });
@@ -2735,7 +2735,11 @@ test("board JSON snapshots expose schema v1 from canonical --repo config without
     const snapshot = JSON.parse(result.stdout);
     assert.equal(snapshot.schema_version, 1);
     assert.match(snapshot.captured_at, /^\d{4}-\d{2}-\d{2}T.*Z$/u);
-    assert.deepEqual(snapshot.scope, { kind: "repository", repo_id: repositoryIdentity(fixture.repo) });
+    assert.deepEqual(snapshot.scope, {
+      kind: "repository",
+      repo_id: repositoryIdentity(fixture.repo),
+      include_history: false,
+    });
     assert.equal(snapshot.coverage.herdr, "connected");
     assert.equal(snapshot.coverage.registry, "available");
     assert.equal(snapshot.coverage.messages, "unavailable");
@@ -2787,7 +2791,13 @@ test("board JSON snapshots expose schema v1 from canonical --repo config without
     assert.equal(row.stale, false);
     assert.equal(typeof snapshot.host.load_1m, "number");
     assert.equal(typeof snapshot.host.free_memory_bytes, "number");
-    assert.deepEqual(snapshot.errors, []);
+    assert.equal(snapshot.coverage.discovery, "partial");
+    assert.deepEqual(snapshot.errors[0], {
+      source: "discovery",
+      message: "cannot enumerate local Herdr sessions: ENOENT",
+    });
+    assert.ok(snapshot.errors.some((error) =>
+      error.source === "repository" && /cannot map Herdr worktrees: ENOENT/u.test(error.message)));
     assert.deepEqual(server.requests.map((request) => request.method), ["session.snapshot"]);
     assert.equal(readFileSync(registryPath, "utf8"), beforeRegistry);
     assert.equal(git(fixture.repo, ["status", "--porcelain=v1"]), beforeStatus);
@@ -2855,6 +2865,7 @@ test("board one-shot and watch reads share bounded substantive message previews"
               agent: "codex",
               agent_session: { agent: "codex", kind: "id", source: "herdr:codex", value: "session-1" },
               agent_status: "working",
+              cwd: fixture.repo,
               name: "board-agent",
               pane_id: "pane-1",
               revision: 7,
@@ -3002,10 +3013,17 @@ test("plain board output reports localized message read notices", async () => {
     assert.match(plain.stdout, /message notice: pane-1: Herdr unsupported: pane\.read unavailable/);
     const json = await laneProcess(fixture, ["board", "--json"], { env }).completed;
     assert.equal(json.status, 0, json.stderr);
-    assert.deepEqual(JSON.parse(json.stdout).errors, [{
+    const errors = JSON.parse(json.stdout).errors;
+    assert.deepEqual(errors[0], {
       source: "message",
+      server_id: errors[0].server_id,
       message: "pane-1: Herdr unsupported: pane.read unavailable",
-    }]);
+    });
+    assert.match(errors[0].server_id, /^local-[0-9a-f]{12}$/u);
+    assert.deepEqual(errors[1], {
+      source: "discovery",
+      message: "cannot enumerate local Herdr sessions: ENOENT",
+    });
     negativeControl("plain message error notices");
   } finally {
     if (server !== undefined) await server.close();
@@ -3033,6 +3051,7 @@ test("plain and JSON board reads run from an isolated built-ins-only tool copy",
       "actions.mjs",
       "board.mjs",
       "herdr-client.mjs",
+      "inventory.mjs",
       "message-preview.mjs",
       "registry.mjs",
       "view.mjs",
@@ -3121,15 +3140,24 @@ test("board JSON localizes observation errors without corrupting documents and f
     assert.equal(liveResult.stdout.trim().split("\n").length, 1);
     const snapshot = JSON.parse(liveResult.stdout);
     assert.equal(snapshot.coverage.herdr, "unavailable");
-    assert.deepEqual(snapshot.errors, [{ source: "herdr", message: "Herdr unavailable: snapshot refused" }]);
+    assert.deepEqual(snapshot.errors, [
+      { source: "discovery", message: "cannot enumerate local Herdr sessions: ENOENT" },
+      {
+        source: "herdr",
+        server_id: snapshot.coverage.servers[0].server_id,
+        message: "Herdr unavailable: snapshot refused",
+      },
+    ]);
 
     writeFileSync(join(fixture.repo, ".lane", "sessions.json"), "{}\n");
     const registryError = lane(fixture, ["board", "--json"], {
       env: { ...fixture.env, HERDR_SOCKET_PATH: join(fixture.root, "missing.sock") },
     });
-    assert.equal(registryError.status, 1);
-    assert.equal(registryError.stdout, "");
-    assert.match(registryError.stderr, /^lane: board read failed: lane board registry must be a JSON array:/u);
+    assert.equal(registryError.status, 0, registryError.stderr);
+    const isolated = JSON.parse(registryError.stdout);
+    assert.equal(isolated.rows.length, 0);
+    assert.ok(isolated.errors.some((error) =>
+      error.source === "registry" && /registry must be a JSON array/u.test(error.message)));
     negativeControl("board read service errors");
   } finally {
     if (server !== undefined) await server.close();
@@ -3155,7 +3183,7 @@ test("board JSON watch frames event snapshots and stops pending refresh, reconne
     const registryBefore = readFileSync(registryPath, "utf8");
     server = await fakeBoardServer(fixture, ({ socket, request }) => {
       if (request.method === "session.snapshot") {
-        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult() })}\n`);
+        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult({ cwd: fixture.repo }) })}\n`);
       } else if (request.method === "events.subscribe") {
         const frames = `${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n` +
           `${JSON.stringify({ event: "pane.agent_status_changed", data: { pane_id: "pane-1", agent_status: "done" } })}\n` +
@@ -3218,7 +3246,7 @@ test("board JSON watch frames event snapshots and stops pending refresh, reconne
     let subscriptionClosed = false;
     server = await fakeBoardServer(fixture, ({ socket, request }) => {
       if (request.method === "session.snapshot") {
-        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult() })}\n`);
+        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult({ cwd: fixture.repo }) })}\n`);
       } else if (request.method === "events.subscribe") {
         socket.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
         setTimeout(() => {
@@ -3242,7 +3270,7 @@ test("board JSON watch frames event snapshots and stops pending refresh, reconne
 
     server = await fakeBoardServer(fixture, ({ socket, request }) => {
       if (request.method === "session.snapshot") {
-        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult() })}\n`);
+        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult({ cwd: fixture.repo }) })}\n`);
       } else if (request.method === "events.subscribe") {
         socket.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
         setTimeout(() => socket.write(`${JSON.stringify({
@@ -3269,7 +3297,7 @@ test("board JSON watch frames event snapshots and stops pending refresh, reconne
 test("board action arguments reject missing, extra, and unknown operands before observation", () => {
   const fixture = makeFixture();
   try {
-    const expectedUsage = "lane: usage: lane board [--once | --json | --watch --json | focus <row-id> | done <row-id>] [--repo <path>]\n";
+    const expectedUsage = "lane: usage: lane board [--once | --json | --watch --json | focus <row-id> | done <row-id>] [--repo <path>] [--all]\n";
     for (const args of [
       ["focus"],
       ["focus", "row-1", "extra"],

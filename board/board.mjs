@@ -33,23 +33,31 @@ export function parseVerdict(text) {
 
 function workspaceFor(session, snapshot) {
   return snapshot?.workspaces?.find(
-    (workspace) => workspace.workspace_id === session.workspace || workspace.label === session.workspace,
+    (workspace) =>
+      (workspace.workspace_id === session.workspace || workspace.label === session.workspace) &&
+      (session.server === undefined || workspace.server_id === undefined || workspace.server_id === session.server),
   );
 }
 
 function agentFor(session, workspace, snapshot) {
-  const agent = snapshot?.agents?.find((candidate) => candidate.name === session.name);
+  const candidates = snapshot?.agents?.filter((candidate) =>
+    (session.server === undefined || candidate.server_id === undefined || candidate.server_id === session.server) &&
+    (session.pane === undefined || candidate.pane_id === session.pane) &&
+    (session.name === undefined || session.name === null || candidate.name === session.name)) ?? [];
+  const agent = candidates.length === 1 ? candidates[0] : undefined;
   return workspace === undefined || agent?.workspace_id === workspace.workspace_id ? agent : undefined;
 }
 
 function branchForSession(session) {
+  if (typeof session.branch === "string") return session.branch;
+  if (typeof session.lane !== "string") return null;
   return session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`;
 }
 
 function resolveSessionContext(session, state) {
   const workspace = workspaceFor(session, state.snapshot);
   const agent = agentFor(session, workspace, state.snapshot);
-  const cached = state.runtime.get(agent?.pane_id) ?? {};
+  const cached = state.runtime.get(session.runtime_key) ?? state.runtime.get(agent?.pane_id) ?? {};
   const live = cached.occupantId === undefined || cached.occupantId === messageOccupantId(agent)
     ? cached
     : {};
@@ -57,8 +65,8 @@ function resolveSessionContext(session, state) {
     workspace,
     agent,
     live,
-    git: state.gitStates.get(session.lane) ?? {},
-    report: state.reportStates.get(session.report) ?? {},
+    git: state.gitStates.get(session.session_id) ?? state.gitStates.get(session.lane) ?? {},
+    report: state.reportStates.get(session.session_id) ?? state.reportStates.get(session.report) ?? {},
     branch: branchForSession(session),
   };
 }
@@ -144,7 +152,7 @@ export function joinBoardRows({
   now = new Date(),
 }) {
   return registry.map((session) => {
-    const { workspace, agent, live, git, report } = resolveSessionContext(session, {
+    const { workspace, agent, live, git, report, branch } = resolveSessionContext(session, {
       snapshot,
       gitStates,
       reportStates,
@@ -159,7 +167,7 @@ export function joinBoardRows({
     return {
       name: session.name,
       role: session.role,
-      lane: session.lane,
+      lane: session.lane ?? branch ?? "-",
       status: agent?.agent_status ?? "offline",
       pane: agent?.pane_id ?? "-",
       git: git.ahead === undefined ? "-" : `+${git.ahead}${git.dirty ? " DIRTY" : ""}`,
@@ -232,6 +240,7 @@ export function collectGitStates(repoRoot, main, registry, snapshot) {
   const trees = worktrees(repoRoot);
   for (const session of registry) {
     const branch = branchForSession(session);
+    if (branch === null) continue;
     const checkout = trees.find((tree) => tree.branch === branch)?.path;
     const counts = gitOutput(repoRoot, ["rev-list", "--left-right", "--count", `${branch}...${main}`]);
     if (counts === undefined) continue;
@@ -240,7 +249,7 @@ export function collectGitStates(repoRoot, main, registry, snapshot) {
       ? null
       : (gitOutput(checkout, ["status", "--porcelain=v1"]) ?? "") !== "";
     const head = gitOutput(checkout ?? repoRoot, ["rev-parse", checkout === undefined ? branch : "HEAD"]);
-    states.set(session.lane, {
+    const state = {
       ahead,
       behind,
       dirty,
@@ -248,7 +257,9 @@ export function collectGitStates(repoRoot, main, registry, snapshot) {
       head,
       available: head !== undefined,
       ...gateState(checkout, head),
-    });
+    };
+    if (session.lane !== undefined) states.set(session.lane, state);
+    if (session.session_id !== undefined) states.set(session.session_id, state);
   }
   return states;
 }
@@ -257,8 +268,9 @@ export function collectReportStates(repoRoot, registry) {
   const states = new Map();
   const trees = worktrees(repoRoot);
   for (const session of registry) {
+    if (typeof session.report !== "string" || session.report === "") continue;
     const branch = branchForSession(session);
-    const checkout = trees.find((tree) => tree.branch === branch)?.path;
+    const checkout = branch === null ? undefined : trees.find((tree) => tree.branch === branch)?.path;
     const candidates = isAbsolute(session.report)
       ? [session.report]
       : [...(checkout === undefined ? [] : [resolve(checkout, session.report)]), resolve(repoRoot, session.report)];
@@ -268,13 +280,15 @@ export function collectReportStates(repoRoot, registry) {
         const mtimeIso = statSync(path).mtime.toISOString();
         const mtime = mtimeIso.slice(5, 16).replace("T", " ");
         const reviewedHead = text.match(/^Reviewed commit:\s*([0-9a-f]{40})\s*$/imu)?.[1] ?? null;
-        states.set(session.report, {
+        const state = {
           verdict: parseVerdict(text),
           mtime,
           mtimeIso,
           path,
           reviewedHead,
-        });
+        };
+        states.set(session.report, state);
+        if (session.session_id !== undefined) states.set(session.session_id, state);
         break;
       } catch {
         // Try the canonical checkout after the lane; a missing report is normal.
@@ -405,10 +419,16 @@ function structuredLastMessage(runtime = {}, agent) {
 function messageCoverage(state) {
   if (state.snapshotError !== undefined) return "unavailable";
   const readable = state.sessions
-    .map((session) => agentFor(session, workspaceFor(session, state.snapshot), state.snapshot))
-    .filter((agent) => supportsMessagePreview(agent?.agent) && typeof agent.pane_id === "string");
+    .map((session) => ({
+      session,
+      agent: agentFor(session, workspaceFor(session, state.snapshot), state.snapshot),
+    }))
+    .filter(({ agent }) => supportsMessagePreview(agent?.agent) && typeof agent.pane_id === "string");
   if (readable.length === 0) return "unavailable";
-  const messages = readable.map((agent) => structuredLastMessage(state.runtime.get(agent.pane_id), agent));
+  const messages = readable.map(({ session, agent }) => structuredLastMessage(
+    state.runtime.get(session.runtime_key) ?? state.runtime.get(agent.pane_id),
+    agent,
+  ));
   if ((state.messageErrors ?? []).length > 0 || messages.some((message) => !message.available)) return "partial";
   return "assistant-preview";
 }
@@ -430,58 +450,68 @@ export function boardSnapshotDocument({
       reportStates: state.reportStates,
       runtime: state.runtime,
     });
-    const deadlineTime = session.deadline === null ? null : new Date(session.deadline).valueOf();
+    const deadlineTime = session.deadline === null || session.deadline === undefined
+      ? null
+      : new Date(session.deadline).valueOf();
     return {
       row_id: session.session_id,
-      repo_id: session.repo_id ?? repoId,
-      root_id: session.root_id ?? rootId,
-      server_id: session.server ?? null,
+      repo_id: Object.hasOwn(session, "repo_id") ? session.repo_id : repoId,
+      root_id: Object.hasOwn(session, "root_id") ? session.root_id : rootId,
+      server_id: session.reported_server ?? session.server ?? null,
       name: session.name ?? null,
       pane_id: agent?.pane_id ?? session.pane ?? null,
       tab_id: tabIdFor(agent, state.snapshot),
       workspace_id: workspace?.workspace_id ?? session.workspace ?? null,
-      registered: true,
-      topic: session.topic ?? branch.slice("lane/".length),
+      registered: session.registered !== false,
+      topic: session.topic ?? (branch?.startsWith("lane/") ? branch.slice("lane/".length) : null),
       branch,
       role: session.role ?? null,
       goal: session.goal ?? null,
+      goal_source: session.goal_source ?? (session.goal === undefined ? null : "registry"),
       brief: {
         path: session.brief ?? null,
         excerpt: session.goal ?? null,
       },
       status: agent?.agent_status ?? "offline",
-      done: session.done,
+      done: session.done === true,
+      active_after_done: session.active_after_done === true,
+      group: session.group ?? {
+        kind: branch?.startsWith("lane/") ? "lane" : "facilitator",
+        key: branch?.startsWith("lane/") ? branch : "facilitator",
+      },
       git: structuredGitState(git),
       gate: structuredGateState(git),
       report: structuredReportState(report),
-      deadline: session.deadline,
+      deadline: session.deadline ?? null,
       overdue: Number.isFinite(deadlineTime) ? !session.done && deadlineTime < capturedAt.valueOf() : false,
       last_message: structuredLastMessage(live, agent),
       tripwire: live.tripwire ?? null,
-      stale: state.snapshotError !== undefined,
+      stale: session.stale === true || state.snapshotError !== undefined,
     };
   });
   const registryCoverage = !state.exists
     ? "missing"
     : state.errors.length > 0 ? "partial" : "available";
+  const defaultRepository = {
+    repo_id: repoId,
+    root_id: rootId,
+    path: repoRoot,
+    root_label: rootLabel,
+    repository_label: repositoryLabel,
+    lane_base: laneBase,
+  };
   return {
     schema_version: 1,
     captured_at: capturedAt.toISOString(),
-    scope: { kind: "repository", repo_id: repoId },
+    scope: state.inventory?.scope ?? { kind: "repository", repo_id: repoId },
     coverage: {
       repository: "complete",
       registry: registryCoverage,
       herdr: state.snapshotError === undefined ? "connected" : "unavailable",
       messages: messageCoverage(state),
+      ...(state.inventory?.coverage ?? {}),
     },
-    repositories: [{
-      repo_id: repoId,
-      root_id: rootId,
-      path: repoRoot,
-      root_label: rootLabel,
-      repository_label: repositoryLabel,
-      lane_base: laneBase,
-    }],
+    repositories: state.inventory?.repositories ?? [defaultRepository],
     rows,
     host: {
       load_1m: state.stats.load,
@@ -491,7 +521,9 @@ export function boardSnapshotDocument({
     errors: [
       ...state.errors.map((message) => ({ source: "registry", message })),
       ...(state.snapshotError === undefined ? [] : [{ source: "herdr", message: state.snapshotError }]),
-      ...(state.messageErrors ?? []).map((message) => ({ source: "message", message })),
+      ...(state.inventory?.messageErrors ??
+        (state.messageErrors ?? []).map((message) => ({ source: "message", message }))),
+      ...(state.inventory?.errors ?? []),
     ],
   };
 }
