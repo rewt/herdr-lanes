@@ -291,22 +291,25 @@ timed or interrupt-advertising status; count-clause in-flight tool summaries; an
 approval, pure composer-frame, and footer boundaries. Every chrome classifier is a
 named, fully anchored per-adapter rendered-row rule with one minimal example and an
 explicit candidate-first-line scope. The matcher skips a rule before testing its
-pattern when that scope is false; only the interrupt-affordance status rule may inspect
-a marked candidate row or its captured first line. Timed progress is continuation-only
-chrome: its parenthesized, bracketed, or ellipsis form must directly follow the progress
-verb and reach the end of the rendered row. It is recognized when an elapsed time ends
-the form; when parentheses or brackets contain an elapsed time and are followed only by
-a bounded count, `left`, `total`, or `remaining` field; when an ellipsis form ends with
-an elapsed time and one of those words; or when bounded rendered fields contain both an
-elapsed time and a `·`, `•`, or `|` separator. Codex prompt rows remain column-zero, and
+pattern when that scope is false. Only the interrupt-affordance and timed-status rules
+may inspect a marked candidate row or its captured first line, because a rendered status
+row is chrome in candidate, continuation, and lone-row positions. Timed progress must
+directly follow the progress verb and reach the end of the rendered row. A parenthesized
+or bracketed group contains only an elapsed field plus bounded `left`, `total`, or
+`remaining` words, or bounded status fields joined by a rendered `·`, `•`, or `|`
+separator; a bounded count or status word may follow the closing delimiter. An ellipsis
+form contains only optional whitespace followed by those same bounded fields. Codex
+prompt rows remain column-zero, and
 context bars use colon-free rendered wording. An indented result marker is both tool
 evidence and a block boundary unless it belongs to a same-indent run of hand-drawn tree
 lines. A tool-label opening
 remains unavailable only when its first line is bare or its remainder has a
 command-invocation shape; prose, colon-introduced lists, short sentences, and paths
-within prose remain messages. Approval-worded row openings are excluded for Codex at
-any indentation, while only indented approval prompts are chrome for Claude. Neither
-approval rule is applied to a marked assistant candidate's own first line. Indented
+within prose remain messages. A single rendered approval row is chrome only when its
+trailing question mark ends that same row: such rows are excluded for Codex at any
+indentation, while only indented rows are chrome for Claude. An approval opening that
+wraps before its question mark remains prose. Neither approval rule is applied to a
+marked assistant candidate's own first line. Indented
 quotes, bullets, covered directory-tree runs, and tables remain message content. An
 isolated bare elbow line remains ambiguous and is treated as a result marker. The
 detail value

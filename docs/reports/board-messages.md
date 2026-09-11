@@ -342,19 +342,22 @@ timeout, occupant replacement, stale retention, tripwire rule, and every file un
 The candidate matcher now enforces each table entry's scope before consulting its
 pattern. Both the marked rendered row and its captured first-line body are checked in
 candidate-first-line mode, so every flag-false rule is skipped and
-`interrupt-status` remains the sole allowed first-line classifier. A matcher-level
-spy rule admits both adapter markers and indented `Summary:` rows; its pattern is not
-consulted in either first-line shape and is consulted as a continuation.
+`interrupt-status` remained the sole allowed first-line classifier at that commit.
+That correctly enforced the flag but incorrectly left timed status unable to classify
+marked candidates or lone marked rows. A matcher-level spy rule admits both adapter
+markers and indented `Summary:` rows; its pattern is not consulted in either first-line
+shape and is consulted as a continuation.
 
 The tables remain 16 Codex rules and 17 Claude rules, producing 33 generated
 chrome/prose pairs. Each twin removes only rendered indentation and row-leading
-chrome, retains the complete lexical example body—including parentheses, brackets,
-colons, elapsed fields, and separators—then appends an ordinary clause. Every twin is
-exercised as both a marked first line and an indented continuation after a blank line.
-Consequently a new rule without the required example/scope shape, a non-interrupt
-first-line scope, a marker-admitting flag-false `Summary:` rule, or an overbroad
-indented `Note:` rule fails a negative-controlled group without a hand-maintained
-pair list.
+chrome, then appends an ordinary clause. That retained later parentheses, brackets,
+colons, elapsed fields, and separators, but it removed the leading keyed glyph from
+eight rules and therefore did not test those rules' closest glyph-preserving near
+misses. Every twin is exercised as both a marked first line and an indented continuation
+after a blank line. A new rule without the required example/scope shape, a
+marker-admitting flag-false `Summary:` rule, or an overbroad indented `Note:` rule fails
+the negative-controlled groups; widening a shortcut rule to any question-mark row was
+not yet detected.
 
 Timed status is again a direct trailing rendered form: the timed group or ellipsis
 must immediately follow the progress verb and reach the end of the row. Bounded forms
@@ -363,8 +366,9 @@ with `·`, `•`, or `|`, and the recorded count/`total`/`remaining` suffixes. T
 duration-bearing prose sentences—including the review's parenthesized, bracketed,
 and three-period cases—survive in candidate and continuation positions for both
 adapters. Codex prompt rows are column-zero again, and colon-bearing `Context left:`
-continuations remain prose. The cumulative corpus retains the examples from all seven
-public review records.
+continuations remain prose. Timed-status remained continuation-only at that commit,
+however, so marked and lone timed rows leaked. The cumulative corpus retains the
+examples from all seven public review records.
 
 Before product changes, the finalized fixture set passed 29/35 focused groups and
 failed the six affected negative-controlled groups in 0.057 seconds. After correction
@@ -386,3 +390,50 @@ action-boundary change, or contract amendment was exercised. `board/app.mjs`, th
 bounds, reader pool, pane timeout, occupant replacement, stale retention, tripwire
 live-only rule, and every file under `docs/reviews/` remain unchanged. The single
 post-commit lane gate remains to be run and quoted in the handoff conversation.
+
+## Round 9 corrections — 2026-09-11
+
+The matcher continues to enforce each rule's scope before consulting its pattern, but
+the corrected scope principle now classifies both `interrupt-status` and `timed-status`
+as first-line rules. Those are the only two: a rendered status row is chrome as a marked
+candidate, an indented continuation, or a lone row, while all other prompt, result,
+shortcut, context, token/cost, approval, spinner, summary, footer, and composer rules
+remain flag-false. The timed rule admits each adapter marker, the captured body, and
+indentation while keeping the status body exact and trailing. Parenthesized, bracketed,
+and ellipsis forms contain only elapsed fields and bounded count/status fields, with
+rendered `·`, `•`, or `|` separators where present; arbitrary prose between the progress
+verb, ellipsis or delimiter and the duration no longer matches.
+
+The tables still contain 16 Codex and 17 Claude entries, so their examples mechanically
+generate 33 literal chrome/prose pairs. Each ordinary twin now embeds the complete
+literal example, including its row-leading glyph. Eight rules whose classification keys
+on such a glyph also have per-rule near-miss twins that keep the glyph, change a later
+keyed group, and run as indented continuations. A temporary widening of both
+question-shortcut patterns to every indented question-mark row failed that group 37/38,
+proving the reviewer mutation is observed. Sixteen status forms and matching
+same-opening prose twins run in candidate, continuation, and lone placements for Codex
+and both Claude markers. The corpus also pins the five overbroad elapsed-time prose
+shapes in candidate and continuation positions.
+
+Approval chrome is explicitly a single rendered row whose question mark ends that same
+row. The existing asymmetry remains: Codex recognizes that row at any indentation and
+Claude only when indented, while neither rule is consulted on a marked candidate's own
+first line. Two paired fixtures record the intended wrapped behavior: an approval opening
+whose question mark appears on the next indented row remains prose.
+
+The clean baseline passed 168/168 with zero skips in 123.195 seconds. Before product
+changes, the finalized focused fixtures passed 34/38 and failed four affected,
+negative-controlled groups in 0.065 seconds. After correction the focused file passed
+38/38 in 0.076 seconds. Final `npm test` passed 171/171 with zero skips in 128.896
+seconds. The exact `LANE_TEST_NEGATIVE_CONTROL=1 npm test` run produced zero passes,
+171 deliberate failures, and zero skips in 112.917 seconds without a socket failure.
+Strict OpenSpec validation passed 20/20. Every build, test, and validation followed a
+clear load probe and ran alone. Verification used Node.js 20.19.4, npm 10.8.2, Git
+2.54.0, and OpenSpec 1.6.0.
+
+Main did not move, so no rebase was needed. No live pane, interactive render, alternate
+host, model API, push, promotion, archive, action-boundary change, or contract amendment
+was exercised. `board/app.mjs`, the read bounds, reader pool, pane timeout, occupant
+replacement, stale retention, tripwire live-only rule, and every file under
+`docs/reviews/` remain unchanged. The single post-commit lane gate remains to be run and
+quoted verbatim.

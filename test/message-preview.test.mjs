@@ -96,6 +96,40 @@ const REVIEW_PROSE_FIXTURES = [
   ].map((answer) => ({ kinds: ["codex", "claude"], answer })),
 ];
 
+const STATUS_FORMS = [
+  "Working (1m 23s • esc to interrupt)",
+  "Working (2m 04s • esc to interrupt)",
+  "✻ Working… esc to interrupt",
+  "Compacting context (1m 42s • esc to interrupt)",
+  "Consolidating context… 48s · esc to interrupt",
+  "Working (2m 04s)",
+  "Worked [48s]",
+  "Thinking… 30s",
+  "Thinking... 12s",
+  "Thinking... 30s left",
+  "Running (45s)",
+  "Working... 2m 04s · 1,024 tokens",
+  "Thinking [12s | 3 files]",
+  "Worked [48s] total",
+  "Running (45s) remaining",
+  "✻ Thinking... 30s · 1,024 tokens",
+];
+
+const KEYED_NEAR_MISS_TWINS = Object.freeze({
+  codex: Object.freeze({
+    "prompt-row": "› This quoted prompt glyph belongs to ordinary prose.",
+    "result-marker": "⎿output names the result glyph in ordinary prose.",
+    "question-shortcut-bar": "? for context is an ordinary question.",
+  }),
+  claude: Object.freeze({
+    "prompt-row": "❯ This quoted prompt glyph belongs to ordinary prose.",
+    "result-marker": "⎿output names the result glyph in ordinary prose.",
+    "question-shortcut-bar": "? for context is an ordinary question.",
+    "fast-mode-bar": "⏵⏵ describes the fast-mode glyph in ordinary prose.",
+    "spinner-row": "✻ Thinking about the design remains ordinary prose.",
+  }),
+});
+
 function answerFixture(kind, lines) {
   const marker = kind === "codex" ? "•" : "⏺";
   return [
@@ -106,19 +140,12 @@ function answerFixture(kind, lines) {
   ].join("\n");
 }
 
-function ordinaryTwinBody(example) {
-  return example
-    .trim()
-    .replace(/^(?:•|⏺|●)\s+/u, "")
-    .replace(/^(?:❯|›|>|⏵⏵|\?|[✻✽✶✳·])\s+/u, "")
-    .replace(/^(?:└|⎿|├)\s+/u, "");
+function ordinaryTwin(example) {
+  return `This ordinary explanation quotes ${example} before continuing.`;
 }
 
-function ordinaryTwin(example) {
-  const body = ordinaryTwinBody(example);
-  return /\p{L}|\p{N}/u.test(body)
-    ? `${body} — this complete example appears inside ordinary prose.`
-    : `This ordinary explanation includes ${body} between words.`;
+function statusTwin(status) {
+  return `${status} is reproduced here as an ordinary prose example.`;
 }
 
 function chromeFixture(kind, example) {
@@ -156,7 +183,7 @@ test("review prose corpus preserves every prior paired answer", async () => {
   negativeControl("review prose corpus");
 });
 
-test("adapter chrome tables mechanically pair every rule and scope only interrupt status to candidate text", async () => {
+test("adapter chrome tables mechanically pair every rule and scope both status forms to candidate text", async () => {
   const {
     CODEX_CHROME_RULES,
     CLAUDE_CHROME_RULES,
@@ -171,7 +198,7 @@ test("adapter chrome tables mechanically pair every rule and scope only interrup
       Object.entries(rules)
         .filter(([, rule]) => rule.candidateFirstLine)
         .map(([name]) => name),
-      ["interrupt-status"],
+      ["interrupt-status", "timed-status"],
       `${kind}: candidate-first-line scope`,
     );
     for (const [name, rule] of Object.entries(rules)) {
@@ -195,7 +222,7 @@ test("adapter chrome tables mechanically pair every rule and scope only interrup
       assert.equal(chrome.text, expectedChrome, `${kind}: ${name} chrome`);
 
       const answer = ordinaryTwin(rule.example);
-      assert.ok(answer.includes(ordinaryTwinBody(rule.example)), `${kind}: ${name} full body`);
+      assert.ok(answer.includes(rule.example), `${kind}: ${name} literal example body`);
       assert.equal(
         extractAssistantPreview({ kind, text: answerFixture(kind, [answer]) }).text,
         answer,
@@ -212,6 +239,36 @@ test("adapter chrome tables mechanically pair every rule and scope only interrup
     }
   }
   negativeControl("mechanically paired adapter chrome tables");
+});
+
+test("keyed chrome rules pair their leading glyphs with indented near misses", async () => {
+  const { CODEX_CHROME_RULES, CLAUDE_CHROME_RULES, extractAssistantPreview } = await previewApi();
+  for (const [kind, rules] of [
+    ["codex", CODEX_CHROME_RULES],
+    ["claude", CLAUDE_CHROME_RULES],
+  ]) {
+    const marker = kind === "codex" ? "•" : "⏺";
+    const twins = KEYED_NEAR_MISS_TWINS[kind];
+    assert.deepEqual(
+      Object.keys(twins),
+      kind === "codex"
+        ? ["prompt-row", "result-marker", "question-shortcut-bar"]
+        : ["prompt-row", "result-marker", "question-shortcut-bar", "fast-mode-bar", "spinner-row"],
+      `${kind}: keyed near-miss coverage`,
+    );
+    for (const [name, twin] of Object.entries(twins)) {
+      assert.ok(Object.hasOwn(rules, name), `${kind}: ${name} exists`);
+      assert.equal(
+        extractAssistantPreview({
+          kind,
+          text: `${marker} Current response.\n\n  ${twin}`,
+        }).text,
+        `Current response.\n\n${twin}`,
+        `${kind}: ${name} keyed near miss`,
+      );
+    }
+  }
+  negativeControl("keyed chrome near-miss twins");
 });
 
 test("chrome matcher skips flag-false rules for candidate first lines", async () => {
@@ -270,6 +327,11 @@ test("mid-sentence duration groups remain prose in candidate and continuation po
     "Thinking about caching... 200 ms per read · 3 files were touched.",
     "Running the comparison… 2 minutes later | every row matched.",
     "Worked through the logs... 30s elapsed • then the answer was clear.",
+    "Running... it finished after 45s",
+    "Working... the first one timed out after 30s",
+    "Worked (from 09:00 to 12:30)",
+    "Worked [from 09:00 to 12:30]",
+    "Running (see the 30s timeout)",
   ];
   for (const kind of ["codex", "claude"]) {
     const marker = kind === "codex" ? "•" : "⏺";
@@ -340,6 +402,63 @@ test("trailing status fields stay paired with ordinary progress prose", async ()
   negativeControl("paired trailing status fields");
 });
 
+test("every rendered status form and prose twin is classified in all three placements", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  for (const [kind, marker] of [
+    ["codex", "•"],
+    ["claude", "⏺"],
+    ["claude", "●"],
+  ]) {
+    for (const status of STATUS_FORMS) {
+      assert.equal(
+        extractAssistantPreview({
+          kind,
+          text: `${marker} Earlier response.\n\n${marker} ${status}`,
+        }).text,
+        "Earlier response.",
+        `${kind}/${marker}: candidate status: ${status}`,
+      );
+      assert.equal(
+        extractAssistantPreview({ kind, text: `${marker} ${status}` }).available,
+        false,
+        `${kind}/${marker}: lone status: ${status}`,
+      );
+      assert.equal(
+        extractAssistantPreview({
+          kind,
+          text: `${marker} Current response.\n\n  ${status}`,
+        }).text,
+        "Current response.",
+        `${kind}/${marker}: continuation status: ${status}`,
+      );
+
+      const twin = statusTwin(status);
+      assert.equal(
+        extractAssistantPreview({
+          kind,
+          text: `${marker} Superseded response.\n\n${marker} ${twin}`,
+        }).text,
+        twin,
+        `${kind}/${marker}: candidate twin: ${status}`,
+      );
+      assert.equal(
+        extractAssistantPreview({ kind, text: `${marker} ${twin}` }).text,
+        twin,
+        `${kind}/${marker}: lone twin: ${status}`,
+      );
+      assert.equal(
+        extractAssistantPreview({
+          kind,
+          text: `${marker} Current response.\n\n  ${twin}`,
+        }).text,
+        `Current response.\n\n${twin}`,
+        `${kind}/${marker}: continuation twin: ${status}`,
+      );
+    }
+  }
+  negativeControl("status forms and prose twins in every placement");
+});
+
 test("Codex approval rows allow any indentation while Claude approval rows require it", async () => {
   const { CODEX_CHROME_RULES, CLAUDE_CHROME_RULES, extractAssistantPreview } = await previewApi();
   const prompts = [
@@ -368,6 +487,31 @@ test("Codex approval rows allow any indentation while Claude approval rows requi
     }).text, "Current response.", `claude indented: ${prompt}`);
   }
   negativeControl("adapter approval-row asymmetry");
+});
+
+test("approval chrome requires a trailing question mark on the same rendered row", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  for (const [kind, marker] of [["codex", "•"], ["claude", "⏺"]]) {
+    for (const opening of [
+      "Would you like to run the following command",
+      "Do you want to allow this action",
+    ]) {
+      assert.equal(extractAssistantPreview({
+        kind,
+        text: `${marker} Current response.\n\n  ${opening}?`,
+      }).text, "Current response.", `${kind}: single-row approval: ${opening}`);
+      assert.equal(extractAssistantPreview({
+        kind,
+        text: `${marker} Current response.\n\n  ${opening}\n  after reviewing its effects?`,
+      }).text, [
+        "Current response.",
+        "",
+        opening,
+        "after reviewing its effects?",
+      ].join("\n"), `${kind}: wrapped approval prose: ${opening}`);
+    }
+  }
+  negativeControl("single-row and wrapped approval pairing");
 });
 
 test("Codex preview extracts the last multiline assistant block before footer chrome", async () => {
@@ -488,19 +632,7 @@ test("cumulative status corpus rejects only trailing rendered duration forms", a
   const { extractAssistantPreview } = await previewApi();
   for (const kind of ["codex", "claude"]) {
     const marker = kind === "codex" ? "•" : "⏺";
-    for (const status of [
-      "Working (1m 23s • esc to interrupt)",
-      "Working (2m 04s • esc to interrupt)",
-      "✻ Working… esc to interrupt",
-      "Compacting context (1m 42s • esc to interrupt)",
-      "Consolidating context… 48s · esc to interrupt",
-      "Working (2m 04s)",
-      "Worked [48s]",
-      "Thinking… 30s",
-      "Thinking... 12s",
-      "Thinking... 30s left",
-      "Running (45s)",
-    ]) {
+    for (const status of STATUS_FORMS) {
       assert.equal(extractAssistantPreview({
         kind,
         text: `${marker} Earlier response.\n\n  ${status}`,

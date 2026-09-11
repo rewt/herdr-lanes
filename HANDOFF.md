@@ -1296,16 +1296,18 @@ Living log for agents maintaining this repository. Newest entry last.
 
 - Enforced each chrome rule's candidate-first-line scope before its pattern is
   consulted for either the marked rendered row or captured body. Only
-  `interrupt-status` remains first-line scoped. Timed status now requires a direct,
-  trailing rendered group or ellipsis; mid-sentence duration prose survives, Codex
-  prompts are column-zero, and colon-bearing `Context left:` continuations remain
+  `interrupt-status` remained first-line scoped at that commit; timed status therefore
+  still leaked from marked-candidate and lone-row placements. Timed status requires a
+  direct, trailing rendered group or ellipsis; mid-sentence duration prose survives,
+  Codex prompts are column-zero, and colon-bearing `Context left:` continuations remain
   content.
 - Kept the 16-entry Codex and 17-entry Claude tables and generated all 33 pairs from
-  their examples. Twins retain the complete lexical body and distinguishing groups,
-  append an ordinary clause, and run in both candidate and indented-continuation
-  positions. A matcher spy proves a flag-false marker-admitting `Summary:` rule is not
-  consulted on either first-line form; the generated continuation catches an
-  overbroad `Note:` rule. Every new group has a deliberate negative control.
+  their examples. Twins retained later distinguishing groups but stripped the keyed
+  leading glyph from eight rules, appended an ordinary clause, and ran in both candidate
+  and indented-continuation positions. A matcher spy proves a flag-false marker-admitting
+  `Summary:` rule is not consulted on either first-line form; the generated continuation
+  catches an overbroad `Note:` rule, but not a widened question-shortcut rule. Every new
+  group has a deliberate negative control.
 - The finalized fixtures passed 29/35 focused groups before product edits, failing
   the six affected groups, and 35/35 afterward in 0.057 seconds. The initial clean
   baseline passed 164/164 in 113.331 seconds. After rebasing onto advanced main,
@@ -1320,6 +1322,38 @@ Living log for agents maintaining this repository. Newest entry last.
   pane timeout, occupant replacement, stale retention, the live-only tripwire rule,
   and the action boundary are unchanged. The final post-commit lane gate remains to
   be run once and quoted verbatim.
+
+## 2026-09-11 — message previews Round 9 corrections
+
+- Corrected the scope principle without weakening enforcement: `interrupt-status` and
+  `timed-status` are the only candidate-first-line rules. Timed status now admits each
+  adapter marker, captured first-line body, and indentation, so all 16 recorded status
+  forms are chrome in candidate, continuation, and lone placements. Its parenthesized,
+  bracketed, and ellipsis bodies accept only elapsed and bounded status fields, keeping
+  duration-bearing prose and time ranges as messages.
+- Kept the 16-entry Codex and 17-entry Claude tables and their 33 mechanically generated
+  literal example pairs. Generated prose twins now embed the complete example rather
+  than a glyph-stripped body. Eight keyed rules have explicit glyph-preserving indented
+  near misses; the reviewer's temporary question-shortcut widening failed the focused
+  suite 37/38. Status fixtures pair all 16 forms with same-opening prose twins in all
+  three placements and both Claude marker forms. Every new group has a deliberate
+  negative control.
+- Documented that approval chrome requires its trailing question mark on the same
+  rendered row, retained the Codex-any-indentation/Claude-indented asymmetry, and pinned
+  two wrapped approval openings as prose. Corrected the Round 8 report and handoff text
+  that overstated glyph retention and omitted the timed-status first-line leak.
+- The untouched baseline passed 168/168 with zero skips in 123.195 seconds. Fixture-first
+  focused tests passed 34/38 and failed the four affected groups before product changes;
+  the corrected focused file passed 38/38. Final `npm test` passed 171/171 with zero
+  skips in 128.896 seconds. The exact full negative-control run produced zero passes,
+  171 deliberate failures, and zero skips in 112.917 seconds without a socket failure.
+  Strict OpenSpec validation passed 20/20. Verified Node.js 20.19.4, npm 10.8.2, Git
+  2.54.0, and OpenSpec 1.6.0 after clear serialized load probes.
+- Main did not move, so no rebase was needed. No live pane, interactive UI, alternate
+  host, model API, push, promotion, archive, contract amendment, `board/app.mjs` change,
+  or `docs/reviews/` edit occurred. The read bounds, reader pool, pane timeout, occupant
+  replacement, stale retention, live-only tripwire rule, and action boundary are
+  unchanged. The final post-commit lane gate remains to be run once and quoted verbatim.
 
 ## 2026-09-11 — review CLI precise paths Round 10 corrections
 
