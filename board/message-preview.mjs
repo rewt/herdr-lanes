@@ -9,8 +9,14 @@ const CONTROL_CHARACTER = /[\u0000-\u0008\u000b\u000c\u000e-\u001a\u001c-\u001f\
 const TREE_MARKER = /^(\s{2,})[└├](?:\s+|$)/u;
 const TOOL_SUMMARY_CLAUSE = String.raw`(?:Searched for|Read|Listed|Ran)\s+\d+\s+[\p{L}-]+(?:\s+[\p{L}-]+)?`;
 const ELAPSED_TIME = String.raw`(?:\b\d+(?:[.,]\d+)?\s*(?:ms|s|m|h|secs?|seconds?|mins?|minutes?|hours?)\b|\b\d{1,2}:\d{2}(?::\d{2})?\b)`;
+const ELAPSED_FIELD = String.raw`${ELAPSED_TIME}(?:\s+${ELAPSED_TIME})*`;
+const COUNT_FIELD = String.raw`[\d,.]+\s+(?:tokens?|files?)`;
+const WORD_FIELD = String.raw`(?:left|total|remaining)`;
+const STATUS_FIELD = String.raw`(?:${ELAPSED_FIELD}|${COUNT_FIELD}|${WORD_FIELD})`;
 const PROGRESS_PREFIX = String.raw`(?:[✻✽✶✳·]\s+)?(?:Working|Worked|Thinking|Running)\b`;
-const TIMED_STATUS_BODY = String.raw`${PROGRESS_PREFIX}[^\n]*(?:\((?=[^\n)]*${ELAPSED_TIME})[^\n)]*\)[^\n]*|\[(?=[^\n\]]*${ELAPSED_TIME})[^\n\]]*\][^\n]*|(?:…|\.{3})[^\n]*${ELAPSED_TIME}(?:\)|\])?\s*|(?:…|\.{3})(?=[^\n]*${ELAPSED_TIME})(?=[^\n]*[·•|])[^\n]*)`;
+const TIMED_STATUS_GROUP = String.raw`(?:\((?=[^\n)]*${ELAPSED_TIME})[^\n)]*\)|\[(?=[^\n\]]*${ELAPSED_TIME})[^\n\]]*\])(?:\s+(?:${COUNT_FIELD}|${WORD_FIELD}))?`;
+const TIMED_STATUS_ELLIPSIS = String.raw`(?:…|\.{3})(?:[^\n]*${ELAPSED_TIME}(?:\)|\])?\s*|\s*(?=[^\n]*${ELAPSED_TIME})${STATUS_FIELD}(?:\s*[·•|]\s*${STATUS_FIELD})+\s*|\s*${ELAPSED_FIELD}\s+${WORD_FIELD}\s*)`;
+const TIMED_STATUS = String.raw`${PROGRESS_PREFIX}\s*(?:${TIMED_STATUS_GROUP}|${TIMED_STATUS_ELLIPSIS})`;
 const APPROVAL_WORDS = String.raw`(?:Would you like to run|Do you want to (?:run|allow|approve)|Allow Codex to)\b`;
 const COMMAND_INVOCATION = /^(?:(?:npm|npx|node|pnpm|yarn|bun|deno|git|rg|grep|sed|awk|find|ls|pwd|cd|cat|head|tail|printf|echo|cp|mv|rm|mkdir|touch|chmod|curl|wget|cargo|rustc|go|python3?|pytest|make|cmake|sh|bash|zsh)(?:\s|$)|[A-Z_][A-Z0-9_]*=|(?:\.{0,2}|~)\/\S+(?:\s.*)?$|(?:[\w.-]+\/)+[\w.-]+$|[\w.-]+\.[A-Za-z0-9]+$)/u;
 
@@ -21,20 +27,20 @@ function chromeRule(pattern, candidateFirstLine, example) {
 export const CODEX_CHROME_RULES = Object.freeze({
   "horizontal-divider": chromeRule(/^(?:\s{2,})?[─━═╌╍┄┅┈┉-]{6,}\s*$/u, false, "────────────────"),
   "composer-frame": chromeRule(/^(?:\s{2,})*[╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉ ]*[╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉][╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉ ]*$/u, false, "╭────────╮"),
-  "prompt-row": chromeRule(/^(?:\s{2,})?›(?:\s.*)?$/u, false, "› Ask Codex to do anything"),
+  "prompt-row": chromeRule(/^›(?:\s.*)?$/u, false, "› Ask Codex to do anything"),
   "result-marker": chromeRule(/^(\s{2,})(└|⎿|├)(?:\s+.*)?$/u, false, "  ⎿ output"),
   "tool-summary": chromeRule(new RegExp(`^\\s{2,}${TOOL_SUMMARY_CLAUSE}(?:,\\s+${TOOL_SUMMARY_CLAUSE})*\\s*$`, "iu"), false, "  Read 1 file"),
-  "interrupt-status": chromeRule(/^(?:(?:•\s+)|\s{2,})?[^\n]*\besc(?:ape)? to interrupt\b[^\n]*$/iu, true, "• Compacting context (1s • esc to interrupt)"),
-  "timed-status": chromeRule(new RegExp(`^(?:•\\s+|\\s{2,})${TIMED_STATUS_BODY}$`, "iu"), false, "• Working (1s)"),
+  "interrupt-status": chromeRule(/^(?:(?:•\s+)|\s{2,})?[^\n]*\besc(?:ape)? to interrupt\b(?:\s*[)\]])?\s*$/iu, true, "• Compacting context (1s • esc to interrupt)"),
+  "timed-status": chromeRule(new RegExp(`^\\s{2,}${TIMED_STATUS}$`, "iu"), false, "  Working (1s)"),
   "question-shortcut-bar": chromeRule(/^\s{2,}\?[^\n]*(?:shortcut|submit|edit)[^\n]*$/iu, false, "  ? for shortcuts"),
-  "escape-toggle-bar": chromeRule(/^\s{2,}(?:esc\b|ctrl-[a-z]\b)[^\n]*(?:interrupt|toggle|submit|edit)[^\n]*$/iu, false, "  esc to toggle"),
-  "context-bar": chromeRule(/^\s{2,}context left(?:\s|:|$)[^\n]*$/iu, false, "  Context left: 12%"),
-  "percentage-context-bar": chromeRule(/^\s{2,}[\d,.]+%?\s+context left(?:\s|:|$)[^\n]*$/iu, false, "  12% context left"),
-  "token-usage-bar": chromeRule(/^\s{2,}tokens?\b[^\n]*\bused\b[^\n]*$/iu, false, "  Tokens are used: 1,024"),
-  "token-cost-bar": chromeRule(/^\s{2,}tokens?\b[^\n]*\bcost\b[^\n]*$/iu, false, "  Tokens cost $0.01"),
-  "metered-token-bar": chromeRule(/^\s{2,}[\d,.]+[km]?\s+tokens?\b[^\n]*(?:\$|\bcost\b|\bused\b)[^\n]*$/iu, false, "  1,024 tokens · $0.01"),
-  "approval-prompt": chromeRule(new RegExp(`^\\s*${APPROVAL_WORDS}[^\\n]*$`, "iu"), false, "Would you like to run this command?"),
-  "footer-row": chromeRule(/^\s{2,}[^\s·]+(?:\s+[^·\n]+)?\s+·\s+[^\n]*(?:context left|\/[^\s·]+)[^\n]*$/iu, false, "  model high · example/repository · task"),
+  "escape-toggle-bar": chromeRule(/^\s{2,}(?:esc\b|ctrl-[a-z]\b)\s+to\s+(?:interrupt|toggle|submit|edit)\s*$/iu, false, "  esc to toggle"),
+  "context-bar": chromeRule(/^\s{2,}context left(?:\s+[\d,.]+%?)?\s*$/iu, false, "  Context left 12%"),
+  "percentage-context-bar": chromeRule(/^\s{2,}[\d,.]+%?\s+context left\s*$/iu, false, "  12% context left"),
+  "token-usage-bar": chromeRule(/^\s{2,}tokens?\s+(?:are\s+)?used(?::\s*|\s+)[\d,.]+[km]?\s*$/iu, false, "  Tokens are used: 1,024"),
+  "token-cost-bar": chromeRule(/^\s{2,}tokens?\s+cost(?::\s*|\s+)\$[\d,.]+\s*$/iu, false, "  Tokens cost $0.01"),
+  "metered-token-bar": chromeRule(/^\s{2,}[\d,.]+[km]?\s+tokens?\s*(?:·\s*)?(?:\$[\d,.]+|cost(?:\s+\$?[\d,.]+)?|used)\s*$/iu, false, "  1,024 tokens · $0.01"),
+  "approval-prompt": chromeRule(new RegExp(`^\\s*${APPROVAL_WORDS}[^\\n]*\\?\\s*$`, "iu"), false, "Would you like to run this command?"),
+  "footer-row": chromeRule(/^\s{2,}\S+(?:\s+\S+)?\s+·\s+(?:\S+\/\S+\s+·\s+\S+|(?:[\d,.]+%?\s+)?context left)\s*$/iu, false, "  model high · example/repository · task"),
 });
 
 export const CLAUDE_CHROME_RULES = Object.freeze({
@@ -43,18 +49,18 @@ export const CLAUDE_CHROME_RULES = Object.freeze({
   "prompt-row": chromeRule(/^(?:❯|›|>)(?:\s.*)?$/u, false, "❯ Ask another question"),
   "result-marker": chromeRule(/^(\s{2,})(└|⎿|├)(?:\s+.*)?$/u, false, "  ⎿ output"),
   "tool-summary": chromeRule(new RegExp(`^\\s{2,}${TOOL_SUMMARY_CLAUSE}(?:,\\s+${TOOL_SUMMARY_CLAUSE})*\\s*$`, "iu"), false, "  Read 1 file"),
-  "interrupt-status": chromeRule(/^(?:(?:⏺|●)\s+|\s{2,})?[^\n]*\besc(?:ape)? to interrupt\b[^\n]*$/iu, true, "⏺ Compacting context (1s • esc to interrupt)"),
-  "timed-status": chromeRule(new RegExp(`^(?:(?:⏺|●)\\s+|\\s{2,})${TIMED_STATUS_BODY}$`, "iu"), false, "⏺ Working (1s)"),
+  "interrupt-status": chromeRule(/^(?:(?:⏺|●)\s+|\s{2,})?[^\n]*\besc(?:ape)? to interrupt\b(?:\s*[)\]])?\s*$/iu, true, "⏺ Compacting context (1s • esc to interrupt)"),
+  "timed-status": chromeRule(new RegExp(`^\\s{2,}${TIMED_STATUS}$`, "iu"), false, "  Working (1s)"),
   "question-shortcut-bar": chromeRule(/^\s{2,}\?[^\n]*(?:shortcut|submit|edit)[^\n]*$/iu, false, "  ? for shortcuts"),
   "fast-mode-bar": chromeRule(/^\s{2,}⏵⏵\s+[^\n]*$/u, false, "  ⏵⏵ accept edits"),
-  "escape-toggle-bar": chromeRule(/^\s{2,}(?:esc\b|ctrl-[a-z]\b)[^\n]*(?:interrupt|toggle|submit|edit)[^\n]*$/iu, false, "  esc to toggle"),
+  "escape-toggle-bar": chromeRule(/^\s{2,}(?:esc\b|ctrl-[a-z]\b)\s+to\s+(?:interrupt|toggle|submit|edit)\s*$/iu, false, "  esc to toggle"),
   "spinner-row": chromeRule(/^\s*[✻✽✶✳·]\s+[^\n]+$/u, false, "✻ Thinking…"),
-  "context-bar": chromeRule(/^\s{2,}context left(?:\s|:|$)[^\n]*$/iu, false, "  Context left: 12%"),
-  "percentage-context-bar": chromeRule(/^\s{2,}[\d,.]+%?\s+context left(?:\s|:|$)[^\n]*$/iu, false, "  12% context left"),
-  "token-usage-bar": chromeRule(/^\s{2,}tokens?\b[^\n]*\bused\b[^\n]*$/iu, false, "  Tokens are used: 1,024"),
-  "token-cost-bar": chromeRule(/^\s{2,}tokens?\b[^\n]*\bcost\b[^\n]*$/iu, false, "  Tokens cost $0.01"),
-  "metered-token-bar": chromeRule(/^\s{2,}[\d,.]+[km]?\s+tokens?\b[^\n]*(?:\$|\bcost\b|\bused\b)[^\n]*$/iu, false, "  1,024 tokens · $0.01"),
-  "approval-prompt": chromeRule(new RegExp(`^\\s{2,}${APPROVAL_WORDS}[^\\n]*$`, "iu"), false, "  Would you like to run this command?"),
+  "context-bar": chromeRule(/^\s{2,}context left(?:\s+[\d,.]+%?)?\s*$/iu, false, "  Context left 12%"),
+  "percentage-context-bar": chromeRule(/^\s{2,}[\d,.]+%?\s+context left\s*$/iu, false, "  12% context left"),
+  "token-usage-bar": chromeRule(/^\s{2,}tokens?\s+(?:are\s+)?used(?::\s*|\s+)[\d,.]+[km]?\s*$/iu, false, "  Tokens are used: 1,024"),
+  "token-cost-bar": chromeRule(/^\s{2,}tokens?\s+cost(?::\s*|\s+)\$[\d,.]+\s*$/iu, false, "  Tokens cost $0.01"),
+  "metered-token-bar": chromeRule(/^\s{2,}[\d,.]+[km]?\s+tokens?\s*(?:·\s*)?(?:\$[\d,.]+|cost(?:\s+\$?[\d,.]+)?|used)\s*$/iu, false, "  1,024 tokens · $0.01"),
+  "approval-prompt": chromeRule(new RegExp(`^\\s{2,}${APPROVAL_WORDS}[^\\n]*\\?\\s*$`, "iu"), false, "  Would you like to run this command?"),
 });
 
 function isolatedResultMarker(lines, index, pattern) {
@@ -65,7 +71,7 @@ function isolatedResultMarker(lines, index, pattern) {
   return !sameIndentTree(lines[index - 1]) && !sameIndentTree(lines[index + 1]);
 }
 
-function matchingChromeRule(rules, line, lines, index, candidateFirstLine = false) {
+export function matchingChromeRule(rules, line, lines, index, candidateFirstLine = false) {
   for (const [name, rule] of Object.entries(rules)) {
     if (candidateFirstLine && !rule.candidateFirstLine) continue;
     if (!rule.pattern.test(line)) continue;
@@ -124,7 +130,7 @@ function extractBlocks(lines, { start, toolLabel, rules }) {
   for (let index = 0; index < lines.length; index += 1) {
     const match = lines[index].match(start);
     if (match === null
-        || matchingChromeRule(rules, lines[index], lines, index) !== null
+        || matchingChromeRule(rules, lines[index], lines, index, true) !== null
         || matchingChromeRule(rules, match[1], [match[1]], 0, true) !== null
         || hasToolEvidence(lines, index, match[1], toolLabel, rules)) continue;
     const block = [match[1].trimEnd()];

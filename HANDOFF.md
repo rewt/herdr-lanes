@@ -1265,9 +1265,10 @@ Living log for agents maintaining this repository. Newest entry last.
 - Replaced free-form preview chrome predicates with named per-adapter tables containing
   exactly three fields per rule: an anchored rendered-row pattern, a
   candidate-first-line scope flag, and a minimal chrome example. The tables contain
-  16 Codex rules and 17 Claude rules; only `interrupt-status` is candidate-text scoped.
-  Tests enumerate all 33 entries into 33 generated chrome/prose pairs and fail the
-  same group if a rule gains unapproved first-line scope.
+  16 Codex rules and 17 Claude rules; only `interrupt-status` declares candidate-text
+  scope. At that commit, tests enumerated all 33 entries but retained at most three
+  leading word tokens per twin and exercised twins only as marked first lines. The
+  group pinned the declared scope list, not matcher enforcement or continuation twins.
 - Extended timed status structurally for elapsed-ending groups, elapsed time anywhere
   in parentheses or brackets, and elapsed plus a rendered `·`, `•`, or `|` separator.
   Four explicit pairs cover token count, file count, `total`, and `remaining` fields.
@@ -1290,6 +1291,35 @@ Living log for agents maintaining this repository. Newest entry last.
   read bounds, reader pool, pane timeout, occupant replacement, stale retention,
   tripwire behavior, and `docs/reviews/` are unchanged. The final post-commit lane
   gate remains to be run and quoted in the handoff conversation.
+
+## 2026-09-10 — message previews Round 8 corrections
+
+- Enforced each chrome rule's candidate-first-line scope before its pattern is
+  consulted for either the marked rendered row or captured body. Only
+  `interrupt-status` remains first-line scoped. Timed status now requires a direct,
+  trailing rendered group or ellipsis; mid-sentence duration prose survives, Codex
+  prompts are column-zero, and colon-bearing `Context left:` continuations remain
+  content.
+- Kept the 16-entry Codex and 17-entry Claude tables and generated all 33 pairs from
+  their examples. Twins retain the complete lexical body and distinguishing groups,
+  append an ordinary clause, and run in both candidate and indented-continuation
+  positions. A matcher spy proves a flag-false marker-admitting `Summary:` rule is not
+  consulted on either first-line form; the generated continuation catches an
+  overbroad `Note:` rule. Every new group has a deliberate negative control.
+- The finalized fixtures passed 29/35 focused groups before product edits, failing
+  the six affected groups, and 35/35 afterward in 0.057 seconds. The initial clean
+  baseline passed 164/164 in 113.331 seconds. After rebasing onto advanced main,
+  `npm test` passed 168/168 with zero skips in 115.479 seconds; the exact full negative
+  run had zero passes, 168 failures, and zero skips in 108.497 seconds with no socket
+  failure. Strict OpenSpec validation passed 20/20. Verified Node.js 20.19.4, npm
+  10.8.2, Git 2.54.0, and OpenSpec 1.6.0 after clear serialized load probes.
+- Main advanced twice; both required rebases preserved main's HANDOFF entries before
+  the lane history, and the second advance changed documentation/OpenSpec only. No
+  live pane, UI, alternate host, model API, push, promotion, archive, contract change,
+  `board/app.mjs` change, or `docs/reviews/` edit occurred. Read bounds, reader pool,
+  pane timeout, occupant replacement, stale retention, the live-only tripwire rule,
+  and the action boundary are unchanged. The final post-commit lane gate remains to
+  be run once and quoted verbatim.
 
 ## 2026-09-11 — review CLI precise paths Round 10 corrections
 

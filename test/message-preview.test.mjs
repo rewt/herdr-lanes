@@ -106,11 +106,19 @@ function answerFixture(kind, lines) {
   ].join("\n");
 }
 
+function ordinaryTwinBody(example) {
+  return example
+    .trim()
+    .replace(/^(?:•|⏺|●)\s+/u, "")
+    .replace(/^(?:❯|›|>|⏵⏵|\?|[✻✽✶✳·])\s+/u, "")
+    .replace(/^(?:└|⎿|├)\s+/u, "");
+}
+
 function ordinaryTwin(example) {
-  const rendered = example.trim().replace(/^(?:•|⏺|●)\s+/u, "");
-  const opening = rendered.match(/^[^\p{L}\p{N}]*[\p{L}\p{N}%$]+(?:\s+[\p{L}\p{N}_/-]+){0,2}/u)?.[0]
-    ?? rendered;
-  return `${opening} appears here in ordinary prose.`;
+  const body = ordinaryTwinBody(example);
+  return /\p{L}|\p{N}/u.test(body)
+    ? `${body} — this complete example appears inside ordinary prose.`
+    : `This ordinary explanation includes ${body} between words.`;
 }
 
 function chromeFixture(kind, example) {
@@ -187,14 +195,116 @@ test("adapter chrome tables mechanically pair every rule and scope only interrup
       assert.equal(chrome.text, expectedChrome, `${kind}: ${name} chrome`);
 
       const answer = ordinaryTwin(rule.example);
+      assert.ok(answer.includes(ordinaryTwinBody(rule.example)), `${kind}: ${name} full body`);
       assert.equal(
         extractAssistantPreview({ kind, text: answerFixture(kind, [answer]) }).text,
         answer,
-        `${kind}: ${name} twin`,
+        `${kind}: ${name} candidate twin`,
+      );
+      assert.equal(
+        extractAssistantPreview({
+          kind,
+          text: `${kind === "codex" ? "•" : "⏺"} Current response.\n\n  ${answer}`,
+        }).text,
+        `Current response.\n\n${answer}`,
+        `${kind}: ${name} continuation twin`,
       );
     }
   }
   negativeControl("mechanically paired adapter chrome tables");
+});
+
+test("chrome matcher skips flag-false rules for candidate first lines", async () => {
+  const {
+    CODEX_CHROME_RULES,
+    CLAUDE_CHROME_RULES,
+    matchingChromeRule,
+  } = await previewApi();
+  assert.equal(typeof matchingChromeRule, "function");
+  for (const [marker, baseRules] of [
+    ["•", CODEX_CHROME_RULES],
+    ["⏺", CLAUDE_CHROME_RULES],
+  ]) {
+    let consultations = 0;
+    const summaryPattern = new RegExp(
+      `^(?:${marker}\\s+|\\s{2,})Summary: 3 files(?: were checked in ordinary prose\\.)?$`,
+      "u",
+    );
+    const testPattern = summaryPattern.test.bind(summaryPattern);
+    summaryPattern.test = (value) => {
+      consultations += 1;
+      return testPattern(value);
+    };
+    const summaryRule = {
+      pattern: summaryPattern,
+      candidateFirstLine: false,
+      example: `${marker} Summary: 3 files`,
+    };
+    const rules = { ...baseRules, "summary-row": summaryRule };
+    const candidate = `${marker} Summary: 3 files were checked in ordinary prose.`;
+    assert.equal(matchingChromeRule(rules, candidate, [candidate], 0, true), null);
+    const captured = "Summary: 3 files were checked in ordinary prose.";
+    assert.equal(matchingChromeRule(rules, captured, [captured], 0, true), null);
+    assert.equal(consultations, 0, `${marker}: flag-false first-line rule was consulted`);
+
+    const continuation = "  Summary: 3 files";
+    assert.equal(
+      matchingChromeRule(rules, continuation, [continuation], 0),
+      "summary-row",
+    );
+    assert.equal(consultations, 1, `${marker}: continuation rule was not consulted`);
+  }
+  negativeControl("candidate first-line matcher scope");
+});
+
+test("mid-sentence duration groups remain prose in candidate and continuation positions", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  const answers = [
+    "Running the full suite (about 2 minutes) confirmed the fix.",
+    "Working through the parser (it took 30s) fixed the leak.",
+    "Worked through the backlog [took 12 minutes] and closed it.",
+    "Thinking through the cache (after 200 ms) clarified the result.",
+    "Running the comparison [about 45s] revealed the cause.",
+    "Worked on the documentation (for 2 minutes) before committing.",
+    "Working with timers [after 30s] still preserves prose.",
+    "Thinking about caching... 200 ms per read · 3 files were touched.",
+    "Running the comparison… 2 minutes later | every row matched.",
+    "Worked through the logs... 30s elapsed • then the answer was clear.",
+  ];
+  for (const kind of ["codex", "claude"]) {
+    const marker = kind === "codex" ? "•" : "⏺";
+    for (const answer of answers) {
+      assert.equal(
+        extractAssistantPreview({ kind, text: answerFixture(kind, [answer]) }).text,
+        answer,
+        `${kind}: candidate: ${answer}`,
+      );
+      assert.equal(
+        extractAssistantPreview({
+          kind,
+          text: `${marker} Current response.\n\n  ${answer}`,
+        }).text,
+        `Current response.\n\n${answer}`,
+        `${kind}: continuation: ${answer}`,
+      );
+    }
+  }
+  negativeControl("mid-sentence duration prose positions");
+});
+
+test("Codex prompt glyph and colon-bearing context prose remain continuations", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  assert.equal(extractAssistantPreview({
+    kind: "codex",
+    text: "• Follow this menu path:\n  › File › Settings opens the relevant panel.",
+  }).text, "Follow this menu path:\n› File › Settings opens the relevant panel.");
+  for (const [kind, marker] of [["codex", "•"], ["claude", "⏺"]]) {
+    assert.equal(extractAssistantPreview({
+      kind,
+      text: `${marker} The quoted status remains explanatory.\n  Context left: 40% is what the display reported.`,
+    }).text, "The quoted status remains explanatory.\nContext left: 40% is what the display reported.", kind);
+  }
+  negativeControl("prompt and context continuation prose");
 });
 
 test("trailing status fields stay paired with ordinary progress prose", async () => {
@@ -209,10 +319,6 @@ test("trailing status fields stay paired with ordinary progress prose", async ()
       const marker = kind === "codex" ? "•" : "⏺";
       assert.equal(extractAssistantPreview({
         kind,
-        text: `${marker} Earlier response.\n\n${marker} ${status}`,
-      }).text, "Earlier response.", `${kind}: ${status} chrome`);
-      assert.equal(extractAssistantPreview({
-        kind,
         text: `${marker} Current response.\n\n  ${status}`,
       }).text, "Current response.", `${kind}: ${status} continuation`);
       const answer = ordinaryTwin(status);
@@ -220,6 +326,14 @@ test("trailing status fields stay paired with ordinary progress prose", async ()
         extractAssistantPreview({ kind, text: answerFixture(kind, [answer]) }).text,
         answer,
         `${kind}: ${status} twin`,
+      );
+      assert.equal(
+        extractAssistantPreview({
+          kind,
+          text: `${marker} Current response.\n\n  ${answer}`,
+        }).text,
+        `Current response.\n\n${answer}`,
+        `${kind}: ${status} continuation twin`,
       );
     }
   }
@@ -384,11 +498,12 @@ test("cumulative status corpus rejects only trailing rendered duration forms", a
       "Worked [48s]",
       "Thinking… 30s",
       "Thinking... 12s",
+      "Thinking... 30s left",
       "Running (45s)",
     ]) {
       assert.equal(extractAssistantPreview({
         kind,
-        text: `${marker} Earlier response.\n\n${marker} ${status}`,
+        text: `${marker} Earlier response.\n\n  ${status}`,
       }).text, "Earlier response.", `${kind}: ${status}`);
     }
   }

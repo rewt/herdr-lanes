@@ -290,20 +290,26 @@ assistant and prompt markers; call-shaped or contextual result-marker tool evide
 timed or interrupt-advertising status; count-clause in-flight tool summaries; and
 approval, pure composer-frame, and footer boundaries. Every chrome classifier is a
 named, fully anchored per-adapter rendered-row rule with one minimal example and an
-explicit candidate-first-line scope. Only the interrupt-affordance status rule may
-also inspect a candidate's captured first line. Timed progress is chrome when its
-trailing elapsed time ends the group, when a parenthesized or bracketed group contains
-an elapsed time, or when the group contains both an elapsed time and a rendered field
-separator (`·`, `•`, or `|`). An indented result marker is both tool evidence and a
-block boundary unless it belongs to a same-indent run of hand-drawn tree lines. A
-tool-label opening remains unavailable only when its first line is bare or its
-remainder has a command-invocation shape; prose, colon-introduced lists, short
-sentences, and paths within prose remain messages. Approval-worded row openings are
-excluded for Codex at any indentation, while only indented approval prompts are chrome
-for Claude. Neither approval rule is applied to a marked assistant candidate's own
-first line. Indented quotes, bullets, covered directory-tree runs, and tables remain
-message content. An isolated bare elbow line remains ambiguous and is treated as a
-result marker. The detail value
+explicit candidate-first-line scope. The matcher skips a rule before testing its
+pattern when that scope is false; only the interrupt-affordance status rule may inspect
+a marked candidate row or its captured first line. Timed progress is continuation-only
+chrome: its parenthesized, bracketed, or ellipsis form must directly follow the progress
+verb and reach the end of the rendered row. It is recognized when an elapsed time ends
+the form; when parentheses or brackets contain an elapsed time and are followed only by
+a bounded count, `left`, `total`, or `remaining` field; when an ellipsis form ends with
+an elapsed time and one of those words; or when bounded rendered fields contain both an
+elapsed time and a `·`, `•`, or `|` separator. Codex prompt rows remain column-zero, and
+context bars use colon-free rendered wording. An indented result marker is both tool
+evidence and a block boundary unless it belongs to a same-indent run of hand-drawn tree
+lines. A tool-label opening
+remains unavailable only when its first line is bare or its remainder has a
+command-invocation shape; prose, colon-introduced lists, short sentences, and paths
+within prose remain messages. Approval-worded row openings are excluded for Codex at
+any indentation, while only indented approval prompts are chrome for Claude. Neither
+approval rule is applied to a marked assistant candidate's own first line. Indented
+quotes, bullets, covered directory-tree runs, and tables remain message content. An
+isolated bare elbow line remains ambiguous and is treated as a result marker. The
+detail value
 preserves the last confidently bounded multiline assistant block; the table
 summarizes its first substantive line. Tool-only, footer-only, unsupported, or
 otherwise ambiguous text yields `source: "unavailable"`, never a guessed message. A

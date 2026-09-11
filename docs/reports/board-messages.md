@@ -300,12 +300,12 @@ conversation-only evidence and may encounter the same sandbox socket restriction
 
 The parser now owns one named chrome-rule table per adapter: 16 Codex entries and
 17 Claude entries. Each of the 33 entries has exactly an anchored rendered-row
-pattern, a candidate-first-line scope flag, and a minimal chrome example. The suite
-enumerates those tables to generate 33 chrome/prose pairs mechanically, rejecting
-each rendered example while preserving an ordinary-prose twin with the same leading
-words. It also asserts that `interrupt-status` is the sole rule scoped to captured
-candidate text, so a new rule is paired automatically and any additional first-line
-scope fails the same negative-controlled group.
+pattern, a candidate-first-line scope flag, and a minimal chrome example. At the
+Round 7 commit, the suite enumerated those tables into 33 chrome/leading-token pairs:
+each twin retained at most three word tokens and was exercised only as a marked first
+line. It asserted that `interrupt-status` was the sole declared first-line scope, but
+did not prove that the matcher enforced the flag or that a continuation-scoped rule
+preserved ordinary prose containing its complete example.
 
 The timed-status entry now recognizes an elapsed time that ends the trailing group,
 an elapsed time anywhere inside a parenthesized or bracketed group, or an elapsed
@@ -336,3 +336,53 @@ render, alternate host, model API, push, promotion, archive, action-boundary cha
 or contract change was exercised. `board/app.mjs`, the read bounds, reader pool, pane
 timeout, occupant replacement, stale retention, tripwire rule, and every file under
 `docs/reviews/` remain unchanged. The single post-commit lane gate remains to be run.
+
+## Round 8 corrections — 2026-09-10
+
+The candidate matcher now enforces each table entry's scope before consulting its
+pattern. Both the marked rendered row and its captured first-line body are checked in
+candidate-first-line mode, so every flag-false rule is skipped and
+`interrupt-status` remains the sole allowed first-line classifier. A matcher-level
+spy rule admits both adapter markers and indented `Summary:` rows; its pattern is not
+consulted in either first-line shape and is consulted as a continuation.
+
+The tables remain 16 Codex rules and 17 Claude rules, producing 33 generated
+chrome/prose pairs. Each twin removes only rendered indentation and row-leading
+chrome, retains the complete lexical example body—including parentheses, brackets,
+colons, elapsed fields, and separators—then appends an ordinary clause. Every twin is
+exercised as both a marked first line and an indented continuation after a blank line.
+Consequently a new rule without the required example/scope shape, a non-interrupt
+first-line scope, a marker-admitting flag-false `Summary:` rule, or an overbroad
+indented `Note:` rule fails a negative-controlled group without a hand-maintained
+pair list.
+
+Timed status is again a direct trailing rendered form: the timed group or ellipsis
+must immediately follow the progress verb and reach the end of the row. Bounded forms
+cover elapsed-ending status, parenthesized or bracketed elapsed fields, elapsed fields
+with `·`, `•`, or `|`, and the recorded count/`total`/`remaining` suffixes. Ten
+duration-bearing prose sentences—including the review's parenthesized, bracketed,
+and three-period cases—survive in candidate and continuation positions for both
+adapters. Codex prompt rows are column-zero again, and colon-bearing `Context left:`
+continuations remain prose. The cumulative corpus retains the examples from all seven
+public review records.
+
+Before product changes, the finalized fixture set passed 29/35 focused groups and
+failed the six affected negative-controlled groups in 0.057 seconds. After correction
+and rebasing, the focused parser file passed 35/35 in 0.057 seconds. The initial clean
+baseline passed 164/164 in 113.331 seconds. The rebased `npm test` passed 168/168 with
+zero skips in 115.479 seconds; the exact `LANE_TEST_NEGATIVE_CONTROL=1 npm test` run
+produced zero passes, 168 failures, and zero skips in 108.497 seconds, with no socket
+failure. Strict OpenSpec validation passed 20/20.
+
+Main advanced twice during verification, first with test isolation and console UX
+documentation and then with proposed console OpenSpec text. The lane was rebased onto
+each new tip, preserving main's HANDOFF entries before this lane's entries; the second
+advance changed documentation and OpenSpec artifacts only. Every build, test, and
+validation followed a clear load probe and ran alone. Verification used Node.js
+20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+
+No live pane, interactive render, alternate host, model API, push, promotion, archive,
+action-boundary change, or contract amendment was exercised. `board/app.mjs`, the read
+bounds, reader pool, pane timeout, occupant replacement, stale retention, tripwire
+live-only rule, and every file under `docs/reviews/` remain unchanged. The single
+post-commit lane gate remains to be run and quoted in the handoff conversation.
