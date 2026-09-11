@@ -295,3 +295,44 @@ No live pane, interactive render, alternate host, model API, push, promotion, ar
 or contract change was exercised. No further approval is needed. `board/app.mjs` and
 every file under `docs/reviews/` remain unchanged; the post-commit lane gate remains
 conversation-only evidence and may encounter the same sandbox socket restriction.
+
+## Round 7 restructure — 2026-09-10
+
+The parser now owns one named chrome-rule table per adapter: 16 Codex entries and
+17 Claude entries. Each of the 33 entries has exactly an anchored rendered-row
+pattern, a candidate-first-line scope flag, and a minimal chrome example. The suite
+enumerates those tables to generate 33 chrome/prose pairs mechanically, rejecting
+each rendered example while preserving an ordinary-prose twin with the same leading
+words. It also asserts that `interrupt-status` is the sole rule scoped to captured
+candidate text, so a new rule is paired automatically and any additional first-line
+scope fails the same negative-controlled group.
+
+The timed-status entry now recognizes an elapsed time that ends the trailing group,
+an elapsed time anywhere inside a parenthesized or bracketed group, or an elapsed
+time combined with a rendered `·`, `•`, or `|` field separator. Four explicit paired
+fixtures cover a duration followed by a token count, file count, `total`, and
+`remaining`. Shortcut, context, token/cost, Claude spinner, Codex approval, and Codex
+footer rows are table entries rather than free predicates. REFERENCE records the
+approval-row asymmetry and the common rule that approval chrome is not consulted
+against a marked candidate's captured first line. The cumulative review corpus keeps
+the status, three-period prose, tool-word, approval, and count-summary examples from
+all six review rounds.
+
+Before the parser edit, the focused file passed 29/31 groups and failed the two new
+negative-controlled groups: the chrome tables did not exist, and a timed status with
+a following token-count field was published as the newest answer. The final focused
+run passed 32/32 in 0.059 seconds. Final `npm test` passed 164/164 with zero skips in
+125.195 seconds. The serialized `LANE_TEST_NEGATIVE_CONTROL=1 npm test` run produced
+zero passes, 164 deliberate failures, and zero skips in 119.958 seconds. Strict
+OpenSpec validation passed 20/20. Each build, test, or validation followed a clear
+executable-aware load probe and ran alone. Verification used Node.js 20.19.4,
+npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+
+The initial in-sandbox baseline passed 157/161; four unrelated host Git-ignore policy
+checks failed. Separate environment probes also reproduced the known sandbox socket
+restriction. Final verification isolated global/XDG Git configuration and ran with
+socket access; it did not change the product or tests. No live pane, interactive
+render, alternate host, model API, push, promotion, archive, action-boundary change,
+or contract change was exercised. `board/app.mjs`, the read bounds, reader pool, pane
+timeout, occupant replacement, stale retention, tripwire rule, and every file under
+`docs/reviews/` remain unchanged. The single post-commit lane gate remains to be run.

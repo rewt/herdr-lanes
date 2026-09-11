@@ -6,42 +6,73 @@ const SUPPORTED_AGENT_KINDS = new Set(["codex", "claude"]);
 
 const ANSI_SEQUENCE = /\u001b(?:\][^\u0007]*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])/gu;
 const CONTROL_CHARACTER = /[\u0000-\u0008\u000b\u000c\u000e-\u001a\u001c-\u001f\u007f]/gu;
-const HORIZONTAL_DIVIDER = /^\s*[─━═╌╍┄┅┈┉-]{6,}\s*$/u;
-const FRAME_LINE = /^\s*[╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉ ]+\s*$/u;
-const FRAME_CHARACTER = /[╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉]/u;
-const SHORTCUT_BAR = /^\s*(?:\?|esc\b|ctrl-[a-z]\b).*(?:shortcut|interrupt|toggle|submit|edit)/iu;
-const CONTEXT_BAR = /^\s*(?:[\d,.]+%?\s+)?context left(?:\s|$)/iu;
-const TOKEN_OR_COST_BAR = /^\s*(?:[\d,.]+[km]?\s+)?tokens?\b.*(?:\$|cost|used)/iu;
-const INTERRUPT_AFFORDANCE = /\besc(?:ape)? to interrupt\b/iu;
-const PROGRESS_PREFIX = /^\s*(?:[✻✽✶✳·]\s+)?(?:Working|Worked|Thinking|Running)\b/iu;
-const ELAPSED_TIME_AT_END = /(?:\b\d+(?:[.,]\d+)?\s*(?:ms|s|m|h|secs?|seconds?|mins?|minutes?|hours?)\b|\b\d{1,2}:\d{2}(?::\d{2})?\b)(?:\)|\])?\s*$/iu;
-const TRAILING_STATUS = /(?:\([^\n)]*\)|\[[^\n\]]*\]|(?:…|\.{3})[^\n]*)\s*$/u;
-const APPROVAL_PROMPT = /^\s*(?:Would you like to run|Do you want to (?:run|allow|approve)|Allow Codex to)\b/iu;
-const INDENTED_APPROVAL_PROMPT = /^\s{2,}(?:Would you like to run|Do you want to (?:run|allow|approve)|Allow Codex to)\b/iu;
-const RESULT_MARKER = /^(\s{2,})(└|⎿|├)(?:\s+|$)/u;
 const TREE_MARKER = /^(\s{2,})[└├](?:\s+|$)/u;
 const TOOL_SUMMARY_CLAUSE = String.raw`(?:Searched for|Read|Listed|Ran)\s+\d+\s+[\p{L}-]+(?:\s+[\p{L}-]+)?`;
-const TOOL_SUMMARY = new RegExp(`^\\s{2,}${TOOL_SUMMARY_CLAUSE}(?:,\\s+${TOOL_SUMMARY_CLAUSE})*\\s*$`, "iu");
+const ELAPSED_TIME = String.raw`(?:\b\d+(?:[.,]\d+)?\s*(?:ms|s|m|h|secs?|seconds?|mins?|minutes?|hours?)\b|\b\d{1,2}:\d{2}(?::\d{2})?\b)`;
+const PROGRESS_PREFIX = String.raw`(?:[✻✽✶✳·]\s+)?(?:Working|Worked|Thinking|Running)\b`;
+const TIMED_STATUS_BODY = String.raw`${PROGRESS_PREFIX}[^\n]*(?:\((?=[^\n)]*${ELAPSED_TIME})[^\n)]*\)[^\n]*|\[(?=[^\n\]]*${ELAPSED_TIME})[^\n\]]*\][^\n]*|(?:…|\.{3})[^\n]*${ELAPSED_TIME}(?:\)|\])?\s*|(?:…|\.{3})(?=[^\n]*${ELAPSED_TIME})(?=[^\n]*[·•|])[^\n]*)`;
+const APPROVAL_WORDS = String.raw`(?:Would you like to run|Do you want to (?:run|allow|approve)|Allow Codex to)\b`;
 const COMMAND_INVOCATION = /^(?:(?:npm|npx|node|pnpm|yarn|bun|deno|git|rg|grep|sed|awk|find|ls|pwd|cd|cat|head|tail|printf|echo|cp|mv|rm|mkdir|touch|chmod|curl|wget|cargo|rustc|go|python3?|pytest|make|cmake|sh|bash|zsh)(?:\s|$)|[A-Z_][A-Z0-9_]*=|(?:\.{0,2}|~)\/\S+(?:\s.*)?$|(?:[\w.-]+\/)+[\w.-]+$|[\w.-]+\.[A-Za-z0-9]+$)/u;
 
-function statusChrome(line) {
-  if (INTERRUPT_AFFORDANCE.test(line)) return true;
-  if (!PROGRESS_PREFIX.test(line)) return false;
-  const trailing = line.match(TRAILING_STATUS)?.[0];
-  return trailing !== undefined && ELAPSED_TIME_AT_END.test(trailing);
+function chromeRule(pattern, candidateFirstLine, example) {
+  return Object.freeze({ pattern, candidateFirstLine, example });
 }
 
-function divider(line) {
-  return HORIZONTAL_DIVIDER.test(line)
-    || (FRAME_LINE.test(line) && FRAME_CHARACTER.test(line));
-}
+export const CODEX_CHROME_RULES = Object.freeze({
+  "horizontal-divider": chromeRule(/^(?:\s{2,})?[─━═╌╍┄┅┈┉-]{6,}\s*$/u, false, "────────────────"),
+  "composer-frame": chromeRule(/^(?:\s{2,})*[╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉ ]*[╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉][╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉ ]*$/u, false, "╭────────╮"),
+  "prompt-row": chromeRule(/^(?:\s{2,})?›(?:\s.*)?$/u, false, "› Ask Codex to do anything"),
+  "result-marker": chromeRule(/^(\s{2,})(└|⎿|├)(?:\s+.*)?$/u, false, "  ⎿ output"),
+  "tool-summary": chromeRule(new RegExp(`^\\s{2,}${TOOL_SUMMARY_CLAUSE}(?:,\\s+${TOOL_SUMMARY_CLAUSE})*\\s*$`, "iu"), false, "  Read 1 file"),
+  "interrupt-status": chromeRule(/^(?:(?:•\s+)|\s{2,})?[^\n]*\besc(?:ape)? to interrupt\b[^\n]*$/iu, true, "• Compacting context (1s • esc to interrupt)"),
+  "timed-status": chromeRule(new RegExp(`^(?:•\\s+|\\s{2,})${TIMED_STATUS_BODY}$`, "iu"), false, "• Working (1s)"),
+  "question-shortcut-bar": chromeRule(/^\s{2,}\?[^\n]*(?:shortcut|submit|edit)[^\n]*$/iu, false, "  ? for shortcuts"),
+  "escape-toggle-bar": chromeRule(/^\s{2,}(?:esc\b|ctrl-[a-z]\b)[^\n]*(?:interrupt|toggle|submit|edit)[^\n]*$/iu, false, "  esc to toggle"),
+  "context-bar": chromeRule(/^\s{2,}context left(?:\s|:|$)[^\n]*$/iu, false, "  Context left: 12%"),
+  "percentage-context-bar": chromeRule(/^\s{2,}[\d,.]+%?\s+context left(?:\s|:|$)[^\n]*$/iu, false, "  12% context left"),
+  "token-usage-bar": chromeRule(/^\s{2,}tokens?\b[^\n]*\bused\b[^\n]*$/iu, false, "  Tokens are used: 1,024"),
+  "token-cost-bar": chromeRule(/^\s{2,}tokens?\b[^\n]*\bcost\b[^\n]*$/iu, false, "  Tokens cost $0.01"),
+  "metered-token-bar": chromeRule(/^\s{2,}[\d,.]+[km]?\s+tokens?\b[^\n]*(?:\$|\bcost\b|\bused\b)[^\n]*$/iu, false, "  1,024 tokens · $0.01"),
+  "approval-prompt": chromeRule(new RegExp(`^\\s*${APPROVAL_WORDS}[^\\n]*$`, "iu"), false, "Would you like to run this command?"),
+  "footer-row": chromeRule(/^\s{2,}[^\s·]+(?:\s+[^·\n]+)?\s+·\s+[^\n]*(?:context left|\/[^\s·]+)[^\n]*$/iu, false, "  model high · example/repository · task"),
+});
 
-function resultMarker(lines, index) {
-  const match = lines[index]?.match(RESULT_MARKER);
+export const CLAUDE_CHROME_RULES = Object.freeze({
+  "horizontal-divider": chromeRule(/^(?:\s{2,})?[─━═╌╍┄┅┈┉-]{6,}\s*$/u, false, "────────────────"),
+  "composer-frame": chromeRule(/^(?:\s{2,})*[╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉ ]*[╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉][╭╮╰╯┌┐└┘│┃─━═╌╍┄┅┈┉ ]*$/u, false, "╭────────╮"),
+  "prompt-row": chromeRule(/^(?:❯|›|>)(?:\s.*)?$/u, false, "❯ Ask another question"),
+  "result-marker": chromeRule(/^(\s{2,})(└|⎿|├)(?:\s+.*)?$/u, false, "  ⎿ output"),
+  "tool-summary": chromeRule(new RegExp(`^\\s{2,}${TOOL_SUMMARY_CLAUSE}(?:,\\s+${TOOL_SUMMARY_CLAUSE})*\\s*$`, "iu"), false, "  Read 1 file"),
+  "interrupt-status": chromeRule(/^(?:(?:⏺|●)\s+|\s{2,})?[^\n]*\besc(?:ape)? to interrupt\b[^\n]*$/iu, true, "⏺ Compacting context (1s • esc to interrupt)"),
+  "timed-status": chromeRule(new RegExp(`^(?:(?:⏺|●)\\s+|\\s{2,})${TIMED_STATUS_BODY}$`, "iu"), false, "⏺ Working (1s)"),
+  "question-shortcut-bar": chromeRule(/^\s{2,}\?[^\n]*(?:shortcut|submit|edit)[^\n]*$/iu, false, "  ? for shortcuts"),
+  "fast-mode-bar": chromeRule(/^\s{2,}⏵⏵\s+[^\n]*$/u, false, "  ⏵⏵ accept edits"),
+  "escape-toggle-bar": chromeRule(/^\s{2,}(?:esc\b|ctrl-[a-z]\b)[^\n]*(?:interrupt|toggle|submit|edit)[^\n]*$/iu, false, "  esc to toggle"),
+  "spinner-row": chromeRule(/^\s*[✻✽✶✳·]\s+[^\n]+$/u, false, "✻ Thinking…"),
+  "context-bar": chromeRule(/^\s{2,}context left(?:\s|:|$)[^\n]*$/iu, false, "  Context left: 12%"),
+  "percentage-context-bar": chromeRule(/^\s{2,}[\d,.]+%?\s+context left(?:\s|:|$)[^\n]*$/iu, false, "  12% context left"),
+  "token-usage-bar": chromeRule(/^\s{2,}tokens?\b[^\n]*\bused\b[^\n]*$/iu, false, "  Tokens are used: 1,024"),
+  "token-cost-bar": chromeRule(/^\s{2,}tokens?\b[^\n]*\bcost\b[^\n]*$/iu, false, "  Tokens cost $0.01"),
+  "metered-token-bar": chromeRule(/^\s{2,}[\d,.]+[km]?\s+tokens?\b[^\n]*(?:\$|\bcost\b|\bused\b)[^\n]*$/iu, false, "  1,024 tokens · $0.01"),
+  "approval-prompt": chromeRule(new RegExp(`^\\s{2,}${APPROVAL_WORDS}[^\\n]*$`, "iu"), false, "  Would you like to run this command?"),
+});
+
+function isolatedResultMarker(lines, index, pattern) {
+  const match = lines[index]?.match(pattern);
   if (match === null || match === undefined) return false;
   if (match[2] === "⎿") return true;
   const sameIndentTree = (line) => line?.match(TREE_MARKER)?.[1] === match[1];
   return !sameIndentTree(lines[index - 1]) && !sameIndentTree(lines[index + 1]);
+}
+
+function matchingChromeRule(rules, line, lines, index, candidateFirstLine = false) {
+  for (const [name, rule] of Object.entries(rules)) {
+    if (candidateFirstLine && !rule.candidateFirstLine) continue;
+    if (!rule.pattern.test(line)) continue;
+    if (name === "result-marker" && !isolatedResultMarker(lines, index, rule.pattern)) continue;
+    return name;
+  }
+  return null;
 }
 
 function cleanPaneText(text) {
@@ -62,49 +93,16 @@ function continuation(line) {
   return line.startsWith("  ") ? line.slice(2) : line;
 }
 
-function codexBoundary(line, lines = [line], index = 0) {
-  // Other than exact status evidence, keep chrome additions scoped to rendered
-  // block boundaries; paired chrome/prose fixtures protect candidate openings.
-  return /^•\s+/u.test(line)
-    || /^›(?:\s|$)/u.test(line)
-    || divider(line)
-    || resultMarker(lines, index)
-    || TOOL_SUMMARY.test(line)
-    || statusChrome(line)
-    || SHORTCUT_BAR.test(line)
-    || CONTEXT_BAR.test(line)
-    || TOKEN_OR_COST_BAR.test(line)
-    || APPROVAL_PROMPT.test(line)
-    || /^\s*[^\s]+(?:\s+[^·\n]+)?\s+·\s+.*(?:context left|\/[^\n]*)$/u.test(line);
-}
-
 function codexToolLabel(text) {
   return text.match(/^(?:Ran|Explored|Waited|Searched|Read|Listed|Viewed|Called|Edited|Added|Deleted|Updated|Applied|Opened|Found)\b/iu);
-}
-
-function claudeBoundary(line, lines = [line], index = 0) {
-  // Other than exact status evidence, keep chrome additions scoped to rendered
-  // block boundaries; paired chrome/prose fixtures protect candidate openings.
-  return /^(?:⏺|●)\s+/u.test(line)
-    || /^(?:❯|›|>)\s*/u.test(line)
-    || divider(line)
-    || /^\s*(?:\?|⏵⏵)\s+/u.test(line)
-    || /^\s*[✻✽✶✳·]\s+/u.test(line)
-    || resultMarker(lines, index)
-    || TOOL_SUMMARY.test(line)
-    || statusChrome(line)
-    || SHORTCUT_BAR.test(line)
-    || CONTEXT_BAR.test(line)
-    || TOKEN_OR_COST_BAR.test(line)
-    || INDENTED_APPROVAL_PROMPT.test(line);
 }
 
 function claudeToolLabel(text) {
   return text.match(/^(?:Read|Write|Edit|Update|Bash|Glob|Grep|Search|Task|WebFetch|WebSearch|Skill|TodoWrite|AskUserQuestion|NotebookEdit|EnterPlanMode|ExitPlanMode|Save|Fetch|mcp__[^\s(]+)\b/iu);
 }
 
-function hasToolEvidence(lines, index, text, toolLabel) {
-  if (resultMarker(lines, index + 1)) return true;
+function hasToolEvidence(lines, index, text, toolLabel, rules) {
+  if (matchingChromeRule(rules, lines[index + 1], lines, index + 1) === "result-marker") return true;
   return toolLabel(text) && /^[^\s(\n]+\([^\n)]*\)\s*$/u.test(text);
 }
 
@@ -120,15 +118,21 @@ function pendingToolCommand(text, toolLabel) {
   return remainder === "" || COMMAND_INVOCATION.test(remainder);
 }
 
-function extractBlocks(lines, { start, toolLabel, boundary }) {
+function extractBlocks(lines, { start, toolLabel, rules }) {
   const blocks = [];
   let trailingPendingTool = false;
   for (let index = 0; index < lines.length; index += 1) {
     const match = lines[index].match(start);
-    if (match === null || boundary(match[1]) || hasToolEvidence(lines, index, match[1], toolLabel)) continue;
+    if (match === null
+        || matchingChromeRule(rules, lines[index], lines, index) !== null
+        || matchingChromeRule(rules, match[1], [match[1]], 0, true) !== null
+        || hasToolEvidence(lines, index, match[1], toolLabel, rules)) continue;
     const block = [match[1].trimEnd()];
     for (index += 1;
-      index < lines.length && !boundary(lines[index], lines, index) && plausibleContinuation(lines[index]);
+      index < lines.length
+        && !start.test(lines[index])
+        && matchingChromeRule(rules, lines[index], lines, index) === null
+        && plausibleContinuation(lines[index]);
       index += 1) {
       block.push(continuation(lines[index]).trimEnd());
     }
@@ -164,13 +168,13 @@ export function extractAssistantPreview({ kind, text }) {
     blocks = extractBlocks(lines, {
       start: /^•\s+(.+)$/u,
       toolLabel: codexToolLabel,
-      boundary: codexBoundary,
+      rules: CODEX_CHROME_RULES,
     });
   } else if (kind === "claude") {
     blocks = extractBlocks(lines, {
       start: /^(?:⏺|●)\s+(.+)$/u,
       toolLabel: claudeToolLabel,
-      boundary: claudeBoundary,
+      rules: CLAUDE_CHROME_RULES,
     });
   }
   const assistantText = blocks.at(-1);

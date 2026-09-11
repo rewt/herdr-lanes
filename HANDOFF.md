@@ -1260,6 +1260,37 @@ Living log for agents maintaining this repository. Newest entry last.
   occurred. No further approval is needed; the final clean-commit gate remains
   conversation-only evidence and may encounter the known sandbox socket restriction.
 
+## 2026-09-10 — message previews Round 7 restructure
+
+- Replaced free-form preview chrome predicates with named per-adapter tables containing
+  exactly three fields per rule: an anchored rendered-row pattern, a
+  candidate-first-line scope flag, and a minimal chrome example. The tables contain
+  16 Codex rules and 17 Claude rules; only `interrupt-status` is candidate-text scoped.
+  Tests enumerate all 33 entries into 33 generated chrome/prose pairs and fail the
+  same group if a rule gains unapproved first-line scope.
+- Extended timed status structurally for elapsed-ending groups, elapsed time anywhere
+  in parentheses or brackets, and elapsed plus a rendered `·`, `•`, or `|` separator.
+  Four explicit pairs cover token count, file count, `total`, and `remaining` fields.
+  Shortcut/context/token-cost bars, the Claude spinner, and Codex approval/footer
+  rows now share the table mechanism. REFERENCE documents the approval-row asymmetry
+  and that neither approval rule inspects a marked candidate's captured first line.
+- Before product changes, the focused parser file passed 29/31 groups and failed the
+  two new negative-controlled groups: missing rule tables and the trailing-token
+  status leak. It finally passed 32/32 in 0.059 seconds. The cumulative corpus retains
+  the examples from all six review rounds.
+- Final `npm test` passed 164/164 with zero skips in 125.195 seconds. The isolated,
+  socket-enabled negative-control run had zero passes, 164 deliberate failures, and
+  zero skips in 119.958 seconds. Strict OpenSpec validation passed 20/20. The initial
+  in-sandbox baseline passed 157/161, with four unrelated host Git-ignore policy
+  failures; separate probes also reproduced the known sandbox socket restriction.
+  Every build, test, or validation followed a clear load probe and ran alone.
+  Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0.
+- No live pane, interactive render, alternate host, model API, push, promotion,
+  archive, action-boundary change, or contract amendment occurred. `board/app.mjs`,
+  read bounds, reader pool, pane timeout, occupant replacement, stale retention,
+  tripwire behavior, and `docs/reviews/` are unchanged. The final post-commit lane
+  gate remains to be run and quoted in the handoff conversation.
+
 ## 2026-09-11 — review CLI precise paths Round 10 corrections
 
 - Removed the fixed terminator class from spaced-path continuation scanning. After

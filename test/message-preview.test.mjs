@@ -56,6 +56,46 @@ const ROUND_THREE_ANSWER_FIXTURES = [
   ["thinking duration", ["Thinking about caching saves 200 ms per read."]],
 ];
 
+const REVIEW_PROSE_FIXTURES = [
+  ...[
+    "Working on the timeout... 30s is the current budget.",
+    "Working through the queue while the timeout is reviewed.",
+    "Working carefully through the remaining parser cases.",
+    "Compacting context safely preserves the latest answer.",
+    "Consolidating context now keeps the useful details.",
+    "Worked through the queue... 12:30 is the final slot.",
+    "Thinking about caching… the measured saving is 200 ms per read.",
+    "Thinking about caching... 200 ms is saved per read.",
+    "Running the full suite... 2 minutes is the current estimate.",
+    "Searched for 5 patterns, read 2 files, listed 2 directories, and then summarized the result.",
+    "Searched for 2 patterns, read 3 files before explaining the result.",
+    "Ran 4 shell commands, listed 2 directories, and documented what changed.",
+  ].map((answer) => ({ kinds: ["codex", "claude"], answer })),
+  ...[
+    "Added it.",
+    "Updated the parser in board/message-preview.mjs.",
+    "Applied the narrow boundary correction.",
+    "Opened the file and verified the result.",
+    "Read the config and confirmed the setting.",
+    "Found the cause: the boundary rule.",
+    "Ran into a compatibility issue.",
+  ].map((answer) => ({ kinds: ["codex"], answer })),
+  ...[
+    "Read the guide and confirmed the behavior.",
+    "Search found three relevant call sites.",
+    "Save points remain available for recovery.",
+    "Edit history shows the narrow correction.",
+    "Bash output is summarized below.",
+  ].map((answer) => ({ kinds: ["claude"], answer })),
+  ...[
+    "Would you like to run through the design together?",
+    "Do you want to run the suite after this change?",
+    "Do you want to allow callers to retry safely?",
+    "Do you want to approve the documented workflow?",
+    "Allow Codex to explain the result before proceeding.",
+  ].map((answer) => ({ kinds: ["codex", "claude"], answer })),
+];
+
 function answerFixture(kind, lines) {
   const marker = kind === "codex" ? "•" : "⏺";
   return [
@@ -66,74 +106,19 @@ function answerFixture(kind, lines) {
   ].join("\n");
 }
 
-const PAIRED_CHROME_FIXTURES = [
-  ...[
-    ["working interrupt", "Working (1m 23s • esc to interrupt)", "Working on the timeout... 30s is the current budget."],
-    ["working compact interrupt", "Working (2m 04s • esc to interrupt)", "Working through the queue while the timeout is reviewed."],
-    ["working spinner interrupt", "✻ Working… esc to interrupt", "Working carefully through the remaining parser cases."],
-    ["compacting interrupt", "Compacting context (1m 42s • esc to interrupt)", "Compacting context safely preserves the latest answer."],
-    ["consolidating interrupt", "Consolidating context… 48s · esc to interrupt", "Consolidating context now keeps the useful details."],
-    ["working duration", "Working (2m 04s)", "Working on the timeout... 30s is the current budget."],
-    ["worked duration", "Worked [48s]", "Worked through the queue... 12:30 is the final slot."],
-    ["thinking ellipsis", "Thinking… 30s", "Thinking about caching… the measured saving is 200 ms per read."],
-    ["thinking three dots", "Thinking... 12s", "Thinking about caching... 200 ms is saved per read."],
-    ["running duration", "Running (45s)", "Running the full suite... 2 minutes is the current estimate."],
-  ].map(([name, chrome, answer]) => ({
-    name,
-    kinds: ["codex", "claude"],
-    position: "candidate",
-    chrome,
-    answer,
-    expectedChrome: "Earlier response.",
-  })),
-  ...[
-    ["codex", "Added", "Added it."],
-    ["codex", "Updated", "Updated the parser in board/message-preview.mjs."],
-    ["codex", "Applied", "Applied the narrow boundary correction."],
-    ["codex", "Opened", "Opened the file and verified the result."],
-    ["codex", "Read", "Read the config and confirmed the setting."],
-    ["codex", "Found", "Found the cause: the boundary rule."],
-    ["codex", "Ran", "Ran into a compatibility issue."],
-    ["claude", "Read", "Read the guide and confirmed the behavior."],
-    ["claude", "Search", "Search found three relevant call sites."],
-    ["claude", "Save", "Save points remain available for recovery."],
-    ["claude", "Edit", "Edit history shows the narrow correction."],
-    ["claude", "Bash", "Bash output is summarized below."],
-  ].map(([kind, chrome, answer]) => ({
-    name: `${kind} ${chrome.toLowerCase()} tool word`,
-    kinds: [kind],
-    position: "candidate",
-    chrome,
-    answer,
-    expectedChrome: null,
-  })),
-  ...[
-    ["would run", "Would you like to run the following command?", "Would you like to run through the design together?"],
-    ["want to run", "Do you want to run this command?", "Do you want to run the suite after this change?"],
-    ["want to allow", "Do you want to allow this action?", "Do you want to allow callers to retry safely?"],
-    ["want to approve", "Do you want to approve this command?", "Do you want to approve the documented workflow?"],
-    ["allow Codex", "Allow Codex to run this command?", "Allow Codex to explain the result before proceeding."],
-  ].map(([name, chrome, answer]) => ({
-    name: `Claude approval ${name}`,
-    kinds: ["claude"],
-    position: "continuation",
-    chrome,
-    answer,
-    expectedChrome: "Current response.",
-  })),
-  ...[
-    ["full tool summary", "Searched for 5 patterns, read 2 files, listed 2 directories, ran 55 shell commands", "Searched for 5 patterns, read 2 files, listed 2 directories, and then summarized the result."],
-    ["short tool summary", "Searched for 2 patterns, read 3 files", "Searched for 2 patterns, read 3 files before explaining the result."],
-    ["reordered tool summary", "Ran 4 shell commands, listed 2 directories, read 3 files", "Ran 4 shell commands, listed 2 directories, and documented what changed."],
-  ].map(([name, chrome, answer]) => ({
-    name,
-    kinds: ["codex", "claude"],
-    position: "continuation",
-    chrome,
-    answer,
-    expectedChrome: "Current response.",
-  })),
-];
+function ordinaryTwin(example) {
+  const rendered = example.trim().replace(/^(?:•|⏺|●)\s+/u, "");
+  const opening = rendered.match(/^[^\p{L}\p{N}]*[\p{L}\p{N}%$]+(?:\s+[\p{L}\p{N}_/-]+){0,2}/u)?.[0]
+    ?? rendered;
+  return `${opening} appears here in ordinary prose.`;
+}
+
+function chromeFixture(kind, example) {
+  const marker = kind === "codex" ? "•" : "⏺";
+  return /^(?:•|⏺|●)\s+/u.test(example)
+    ? `${marker} Earlier response.\n\n${example}`
+    : `${marker} Current response.\n\n${example}`;
+}
 
 for (const [name, lines] of ROUND_THREE_ANSWER_FIXTURES) {
   test(`cumulative answer corpus preserves ${name} in both adapters`, async () => {
@@ -149,29 +134,126 @@ for (const [name, lines] of ROUND_THREE_ANSWER_FIXTURES) {
   });
 }
 
-test("every chrome fixture has a substantive same-opening answer pair", async () => {
+test("review prose corpus preserves every prior paired answer", async () => {
   const { extractAssistantPreview } = await previewApi();
-  for (const fixture of PAIRED_CHROME_FIXTURES) {
-    for (const kind of fixture.kinds) {
-      const marker = kind === "codex" ? "•" : "⏺";
-      const chromeText = fixture.position === "continuation"
-        ? `${marker} Current response.\n\n  ${fixture.chrome}`
-        : `${marker} Earlier response.\n\n${marker} ${fixture.chrome}`;
-      const chromePreview = extractAssistantPreview({ kind, text: chromeText });
-      if (fixture.expectedChrome === null) {
-        assert.equal(chromePreview.available, false, `${kind}: ${fixture.name} chrome`);
-      } else {
-        assert.equal(chromePreview.text, fixture.expectedChrome, `${kind}: ${fixture.name} chrome`);
-      }
-
-      const answerPreview = extractAssistantPreview({
-        kind,
-        text: answerFixture(kind, [fixture.answer]),
-      });
-      assert.equal(answerPreview.text, fixture.answer, `${kind}: ${fixture.name} answer`);
+  for (const { kinds, answer } of REVIEW_PROSE_FIXTURES) {
+    for (const kind of kinds) {
+      assert.equal(
+        extractAssistantPreview({ kind, text: answerFixture(kind, [answer]) }).text,
+        answer,
+        `${kind}: ${answer}`,
+      );
     }
   }
-  negativeControl("paired chrome and answer invariant");
+  negativeControl("review prose corpus");
+});
+
+test("adapter chrome tables mechanically pair every rule and scope only interrupt status to candidate text", async () => {
+  const {
+    CODEX_CHROME_RULES,
+    CLAUDE_CHROME_RULES,
+    extractAssistantPreview,
+  } = await previewApi();
+  for (const [kind, rules] of [
+    ["codex", CODEX_CHROME_RULES],
+    ["claude", CLAUDE_CHROME_RULES],
+  ]) {
+    assert.ok(rules !== null && typeof rules === "object", `${kind}: chrome table`);
+    assert.deepEqual(
+      Object.entries(rules)
+        .filter(([, rule]) => rule.candidateFirstLine)
+        .map(([name]) => name),
+      ["interrupt-status"],
+      `${kind}: candidate-first-line scope`,
+    );
+    for (const [name, rule] of Object.entries(rules)) {
+      assert.deepEqual(
+        Object.keys(rule).sort(),
+        ["candidateFirstLine", "example", "pattern"],
+        `${kind}: ${name} fields`,
+      );
+      assert.ok(rule.pattern instanceof RegExp, `${kind}: ${name} pattern`);
+      assert.ok(rule.pattern.source.startsWith("^"), `${kind}: ${name} start anchor`);
+      assert.ok(rule.pattern.source.endsWith("$"), `${kind}: ${name} end anchor`);
+      assert.equal(typeof rule.candidateFirstLine, "boolean", `${kind}: ${name} scope flag`);
+      assert.equal(typeof rule.example, "string", `${kind}: ${name} example`);
+      assert.ok(rule.example.length > 0, `${kind}: ${name} nonempty example`);
+      assert.equal(rule.pattern.test(rule.example), true, `${kind}: ${name} example matches`);
+
+      const chrome = extractAssistantPreview({ kind, text: chromeFixture(kind, rule.example) });
+      const expectedChrome = /^(?:•|⏺|●)\s+/u.test(rule.example)
+        ? "Earlier response."
+        : "Current response.";
+      assert.equal(chrome.text, expectedChrome, `${kind}: ${name} chrome`);
+
+      const answer = ordinaryTwin(rule.example);
+      assert.equal(
+        extractAssistantPreview({ kind, text: answerFixture(kind, [answer]) }).text,
+        answer,
+        `${kind}: ${name} twin`,
+      );
+    }
+  }
+  negativeControl("mechanically paired adapter chrome tables");
+});
+
+test("trailing status fields stay paired with ordinary progress prose", async () => {
+  const { extractAssistantPreview } = await previewApi();
+  for (const status of [
+    "Working... 2m 04s · 1,024 tokens",
+    "Thinking [12s | 3 files]",
+    "Worked [48s] total",
+    "Running (45s) remaining",
+  ]) {
+    for (const kind of ["codex", "claude"]) {
+      const marker = kind === "codex" ? "•" : "⏺";
+      assert.equal(extractAssistantPreview({
+        kind,
+        text: `${marker} Earlier response.\n\n${marker} ${status}`,
+      }).text, "Earlier response.", `${kind}: ${status} chrome`);
+      assert.equal(extractAssistantPreview({
+        kind,
+        text: `${marker} Current response.\n\n  ${status}`,
+      }).text, "Current response.", `${kind}: ${status} continuation`);
+      const answer = ordinaryTwin(status);
+      assert.equal(
+        extractAssistantPreview({ kind, text: answerFixture(kind, [answer]) }).text,
+        answer,
+        `${kind}: ${status} twin`,
+      );
+    }
+  }
+  negativeControl("paired trailing status fields");
+});
+
+test("Codex approval rows allow any indentation while Claude approval rows require it", async () => {
+  const { CODEX_CHROME_RULES, CLAUDE_CHROME_RULES, extractAssistantPreview } = await previewApi();
+  const prompts = [
+    "Would you like to run the following command?",
+    "Do you want to run this command?",
+    "Do you want to allow this action?",
+    "Do you want to approve this command?",
+    "Allow Codex to run this command?",
+  ];
+  for (const prompt of prompts) {
+    assert.equal(CODEX_CHROME_RULES["approval-prompt"].pattern.test(prompt), true);
+    assert.equal(CODEX_CHROME_RULES["approval-prompt"].pattern.test(`  ${prompt}`), true);
+    assert.equal(CLAUDE_CHROME_RULES["approval-prompt"].pattern.test(prompt), false);
+    assert.equal(CLAUDE_CHROME_RULES["approval-prompt"].pattern.test(`  ${prompt}`), true);
+    assert.equal(extractAssistantPreview({
+      kind: "codex",
+      text: `• Current response.\n\n${prompt}`,
+    }).text, "Current response.", `codex unindented: ${prompt}`);
+    assert.equal(extractAssistantPreview({
+      kind: "codex",
+      text: `• Current response.\n\n  ${prompt}`,
+    }).text, "Current response.", `codex indented: ${prompt}`);
+    assert.equal(extractAssistantPreview({
+      kind: "claude",
+      text: `⏺ Current response.\n\n  ${prompt}`,
+    }).text, "Current response.", `claude indented: ${prompt}`);
+  }
+  negativeControl("adapter approval-row asymmetry");
 });
 
 test("Codex preview extracts the last multiline assistant block before footer chrome", async () => {
@@ -293,10 +375,16 @@ test("cumulative status corpus rejects only trailing rendered duration forms", a
   for (const kind of ["codex", "claude"]) {
     const marker = kind === "codex" ? "•" : "⏺";
     for (const status of [
+      "Working (1m 23s • esc to interrupt)",
+      "Working (2m 04s • esc to interrupt)",
+      "✻ Working… esc to interrupt",
+      "Compacting context (1m 42s • esc to interrupt)",
+      "Consolidating context… 48s · esc to interrupt",
       "Working (2m 04s)",
       "Worked [48s]",
       "Thinking… 30s",
       "Thinking... 12s",
+      "Running (45s)",
     ]) {
       assert.equal(extractAssistantPreview({
         kind,
@@ -358,14 +446,29 @@ test("Claude result markers independently identify tool blocks and bound answer 
 
 test("pending tool labels stay unavailable while prose remains substantive", async () => {
   const { extractAssistantPreview } = await previewApi();
-  for (const text of [
-    "• Ran",
-    "• Ran\n  git status --short",
+  for (const label of [
+    "Ran", "Explored", "Waited", "Searched", "Read", "Listed", "Viewed", "Called",
+    "Edited", "Added", "Deleted", "Updated", "Applied", "Opened", "Found",
   ]) {
+    const text = `• ${label}`;
     const preview = extractAssistantPreview({ kind: "codex", text });
     assert.equal(preview.available, false, JSON.stringify(text));
     assert.equal(preview.source, "unavailable", JSON.stringify(text));
   }
+  for (const label of [
+    "Read", "Write", "Edit", "Update", "Bash", "Glob", "Grep", "Search", "Task",
+    "WebFetch", "WebSearch", "Skill", "TodoWrite", "AskUserQuestion", "NotebookEdit",
+    "EnterPlanMode", "ExitPlanMode", "Save", "Fetch",
+  ]) {
+    const text = `⏺ ${label}`;
+    const preview = extractAssistantPreview({ kind: "claude", text });
+    assert.equal(preview.available, false, JSON.stringify(text));
+    assert.equal(preview.source, "unavailable", JSON.stringify(text));
+  }
+  assert.equal(extractAssistantPreview({
+    kind: "codex",
+    text: "• Ran\n  git status --short",
+  }).available, false);
   assert.equal(extractAssistantPreview({
     kind: "codex",
     text: "• Earlier response.\n\n• Ran into a compatibility issue.",
