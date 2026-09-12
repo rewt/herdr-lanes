@@ -1469,3 +1469,32 @@ Living log for agents maintaining this repository. Newest entry last.
   busy or blocked, and actual token savings remain unverified. Reports are claims
   to check against Git, gates, and review records. No push, promotion, or console
   review was performed.
+
+## 2026-09-12 — project-aware daily supervisor bootstrap 2026.09.12.2
+
+- Added a versioned project locator and daily handoff template to the
+  report-driven supervisor pack. A fresh supervisor now reads the project's
+  own agent instructions, exact goal sources, latest durable transition record,
+  and declared archive destinations before acting. It checks newer commits and
+  records, treats stale daily notes as handoffs, and does not poll engineers.
+  Project-approved supervisor worktrees are supported where canonical checkouts
+  must remain clean. The core CLI, route defaults, and console are unchanged.
+- Installed the new pack under three local identity roots, advanced only their
+  `current` protocol pointers, and verified six release hashes per root. The
+  previous pack remains intact and hash-verified for rollback. Two private,
+  gitignored project locators and daily handoffs were prepared as examples;
+  other projects still require their own verified goal and archive mappings.
+  No project archive path was guessed from identity alone.
+- The prior pack contained no project goal-source or archive locator; that was
+  the observed documentation gap. No code-behavior negative control applies to
+  this documentation-only update. The pre-change `npm test` baseline passed
+  206/206 in 309.496 seconds. The final sandbox run passed 200/206; six board
+  socket fixtures were refused by local `listen EPERM`, with no assertion
+  failure outside those fixtures. The host-side final run passed 206/206 in
+  308.297 seconds with zero skips.
+  `git diff --check` passed. Node.js 20.19.4, npm 10.8.2, Git 2.54.0.
+- Live report delivery, actual token savings, and automatic freshness for
+  projects without an onboarded locator remain unverified. A conflict between
+  one project's supervisor model sources is explicitly surfaced before a new
+  queue owner starts. No new supervisor session, financial action, publication,
+  console review, or push occurred.
