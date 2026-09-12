@@ -1420,3 +1420,30 @@ Living log for agents maintaining this repository. Newest entry last.
   reader pool, pane timeout, occupant replacement, stale retention, the live-only
   tripwire rule, and the action boundary are unchanged. The single post-commit lane
   gate remains to be run once and quoted verbatim.
+
+## 2026-09-12 — pinned core configuration release 2026.09.12.1
+
+- Added `config/releases/2026.09.12.1/` with a portable two-route profile, a
+  monitoring protocol, a source-commit manifest, and the exact core CLI file list.
+  The source is `de11d4b` at package version 0.1.0. The installed core snapshot
+  omits the interactive console entrypoint and dependencies; the two new console
+  lanes remain unreviewed and unpromoted. No CLI behavior or product default changed
+  in the canonical checkout.
+- The operator-local rollout pinned the `lane` command to a versioned core snapshot
+  and installed parent configurations under three identity roots, preserving exact
+  before-images and release hashes for rollback. Existing engineering and review
+  routes were retained. A new opt-in one-shot monitor route uses Codex Luna low;
+  `review-codex` permits explicit independent Codex review. A project-specific
+  Codex root marker was preserved where present.
+- Before rollout, two representative target repositories lacked both new routes.
+  After rollout, read-only `lane config` verified both route sources in all 74
+  discovered canonical repositories across the three roots, with zero errors.
+  Installed configuration and all nine core files verified against the private
+  release manifest in every root; no interactive console entrypoint was present.
+- The sandbox baseline `npm test` passed 200/206; six board fixture failures were
+  all Unix-socket `listen EPERM` from the sandbox. The serialized host rerun
+  passed 206/206 with zero skips in 309.513 seconds. `git diff --check` passed.
+  Verification used Node.js 20.19.4, npm 10.8.2, and Git 2.54.0.
+- No live dispatch, reviewer, supervisor restart, model spend reduction, remote
+  push, console promotion, or alternate-host behavior was verified. Repository-local
+  dispatchers and direct Herdr starts do not inherit the parent route profile.
