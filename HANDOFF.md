@@ -1498,3 +1498,31 @@ Living log for agents maintaining this repository. Newest entry last.
   one project's supervisor model sources is explicitly surfaced before a new
   queue owner starts. No new supervisor session, financial action, publication,
   console review, or push occurred.
+
+## 2026-09-12 — native Codex remote and explicit daily model selection
+
+- Added `config/supervisor/2026.09.12.3/` with separate fields for the future
+  daily supervisor default, the currently active queue owner, and an explicit
+  launch-time model override. A default change does not replace a running
+  supervisor. Added a host-level native Codex remote-control guide: start the
+  managed daemon once, connect new Herdr Codex TUIs with `--remote unix://`,
+  and generate a short-lived manual phone pairing code only when needed. The
+  core CLI, console, and lane route defaults remain unchanged.
+- Installed the versioned protocol under three local identity roots, advanced
+  their `current` pointers, verified seven source and installed hashes in each,
+  and retained the prior pack for rollback. A private project locator and an
+  external archive record now preserve the operator's active-owner and future
+  default distinction. The installed Codex CLI 0.154.0 reported its managed
+  app-server running and native remote control connected and enabled. No
+  pairing code was generated or stored.
+- Before the documentation change, the prior pack had no native CLI server
+  launch recipe and did not distinguish default model from active owner. No
+  code-behavior negative control applies. The sandbox `npm test` baseline
+  passed 200/206; six board Unix-socket fixtures were refused with `listen
+  EPERM`. The host-side final run passed 206/206 with zero skips in
+  307.908 seconds. `git diff --check` passed. Node.js 20.19.4,
+  npm 10.8.2, Git 2.54.0.
+- iOS manual pairing, visibility of a new daemon-connected Herdr Codex
+  session, live engineer report delivery, and measured token savings remain
+  unverified. Existing agents were not retargeted or restarted. No push,
+  financial action, publication, or console review occurred.
