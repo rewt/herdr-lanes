@@ -1447,3 +1447,25 @@ Living log for agents maintaining this repository. Newest entry last.
 - No live dispatch, reviewer, supervisor restart, model spend reduction, remote
   push, console promotion, or alternate-host behavior was verified. Repository-local
   dispatchers and direct Herdr starts do not inherit the parent route profile.
+
+## 2026-09-12 — report-driven daily supervisor protocol
+
+- Added `config/supervisor/2026.09.12.1/` with a daily starter, private checkpoint
+  template, engineering-brief report appendix, and deployment guide; linked it from
+  `README.md`. A dispatched engineer now has an explicit way to send one concise
+  evidence pointer to the named supervisor after a material milestone, blockage, or
+  gate. The supervisor verifies artifacts instead of polling. Independent reviewers
+  still write only their mandated record; the review command supplies their verdict.
+- The versioned protocol pack was copied into three operator identity roots. All
+  five manifest-listed files matched byte-for-byte in each root. No model session
+  was started or restarted. The earlier config release remains immutable, and no
+  product CLI behavior or route default changed.
+- The prior release's `routes.<name>.use` field is descriptive and ignored by
+  dispatch; that was the observed gap before this workflow supplement. There was
+  no code-behavior negative control because this change is documentation only.
+  `npm test` passed 206/206 with zero skips in 310.221 seconds on the host;
+  `git diff --check` passed. Node.js 20.19.4, npm 10.8.2, and Git 2.54.0.
+- Live engineer-to-supervisor Herdr delivery, delivery while the supervisor is
+  busy or blocked, and actual token savings remain unverified. Reports are claims
+  to check against Git, gates, and review records. No push, promotion, or console
+  review was performed.

@@ -106,6 +106,9 @@ reported as partial success and never causes the brief to be replayed.
 and files changed by more than one lane. Keep concurrent lanes in separate files when
 possible. If `shared files` appears, coordinate or serialize those lanes.
 
+For a conversational daily facilitator with engineer reports instead of polling,
+use the [supervisor session protocol](config/supervisor/2026.09.12.1/README.md).
+
 After one lane is promoted, the others are behind the new main. Their next promotion
 rebases automatically when clean and refuses with a file list when conflicts exist.
 
