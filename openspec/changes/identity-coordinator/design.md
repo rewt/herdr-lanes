@@ -44,8 +44,10 @@ one or two daily outcomes per project and cross-project dependency edges with an
 explicit unblock criterion. No implicit task dispatch follows recording.
 
 A report contains `assignment_id`, `revision`, `report_id`, increasing `sequence`,
-project, reporting owner, milestone/result, change since prior accepted report,
+project, reporting owner, milestone/result, change since prior reconciled report,
 blocker or requested decision, evidence pointers, and exactly one next action/owner.
+Its result is a report claim, never project acceptance; the integration owner
+checks the stated criteria, gate, and required review before recording acceptance.
 It is sent only at a material checkpoint, blocker, or ready handoff. Evidence is
 preserved before a single no-wait notification. For engineering lanes, include
 branch, full HEAD, exact gate result or unverified, and durable report path as in
@@ -56,7 +58,7 @@ is below; it is not a real assignment or authorization:
 ASSIGN v1 id=A-001 rev=1 project=<verified-common-dir> outcome=O-1
 owner=<engineer-agent> integration_owner=<named-owner>
 accept=<project-check-and-independent-review> budget=<approved-ceilings>
-milestone=<first-accepted-result> blocker=none evidence=<durable-index>
+milestone=<planned-next-result> blocker=none evidence=<durable-index>
 next=<owner-acknowledges-revision>
 
 DELTA v1 id=A-001 rev=1 report=R-001 seq=1 project=<verified-common-dir>
@@ -65,7 +67,7 @@ evidence=<full-head-and-report-pointer> next=<integration-owner-verifies-gate>
 ```
 
 Detailed project context stays at the project owner. The coordinator's daily view
-contains only roster revision, outcomes, dependency/budget decisions, latest accepted
+contains only roster revision, outcomes, dependency/budget decisions, latest reconciled
 report IDs, evidence pointers, and next actions. Private raw output and credentials
 never enter tracked documents or brief messages.
 
@@ -74,21 +76,26 @@ never enter tracked documents or brief messages.
 - Deduplicate exact `report_id` plus content digest; record receipt without another
   action. Conflicting bytes for one ID or the same sequence are quarantined for
   explicit owner clarification. An older revision or sequence cannot roll back the
-  latest accepted report. An out-of-order newer report is held until its predecessor
+  latest reconciled report. An out-of-order newer report is held until its predecessor
   and primary evidence are checked; a missing predecessor is an explicit gap, not a
   reason to replay work.
 - If notification delivery fails, retain the durable report and mark delivery
   unconfirmed. Do not retry, redispatch, or infer failure of the underlying work.
   The operator or owner can make one explicit later reconciliation decision.
-- A handoff is stale if its assignment revision, owner, repository identity, HEAD,
-  gate, review applicability, or authoritative plan differs from current primary
-  evidence. The receiving owner checks those sources before accepting. An unavailable
-  owner freezes new assignment to that target; it does not create a lease expiry or
-  automatic reassignment. The coordinator, within existing delegated authority or
-  after operator approval, issues a new revision naming one successor. The old owner
+- A stale handoff is an evidence problem first. If its saved plan, HEAD, gate,
+  review applicability, or report pointer is obsolete but the same owner remains
+  available and authorized under the current assignment revision, that owner
+  reconciles primary evidence and continues only the unfinished authorized step.
+  No successor, new assignment revision, or duplicate review is required solely
+  because the saved evidence is old. A changed scope/budget or contradictory
+  authority still waits for an explicit decision.
+- Owner transfer is separate. An unavailable, replaced, or no-longer-authorized
+  owner freezes new assignment to that target; it does not create a lease expiry
+  or automatic reassignment. The coordinator, within delegated authority or after
+  operator approval, issues a new revision naming one successor. The old owner
   acknowledges when available; if unavailable, the authority source records its
-  supersession explicitly. The successor acknowledges and verifies evidence. Unclear ownership
-  remains blocked.
+  supersession. The successor acknowledges and checks primary evidence. Unclear
+  ownership remains blocked.
 - On resumption, compare current operator direction and project instructions,
   canonical Git common directory, branch/full HEAD/clean state, exact gate and
   independent review record, durable reports, and freshly observed Herdr occupant
@@ -133,28 +140,106 @@ The board UI must consume CLI observations and actions only. Display data never
 authorizes focus, done, review, promotion, close, push, or resource allocation.
 
 The read-model is explicitly opt-in: `lane board --json --coordination <path>` or
-`lane board --watch --json --coordination <path>` reads one operator-maintained,
-local JSON snapshot; no default path, file discovery, or writer is added. The
-`--coordination` path is an argument, not an authority source. Its v1 object has
-`schema_version`, `recorded_at`, and `projects[]`; each project has
-`git_common_dir` and `assignments[]`. An assignment has the manual envelope's
-`assignment_id`, `revision`, `outcome_id`, `outcome_goal`, `owner_id`,
-`integration_owner_id`, `session_row_ids[]`, `milestone`, `blocker`,
-`decision_needed`, `next_action`, and nullable `latest_delta` containing
-`report_id`, `sequence`, `recorded_at`, and `evidence_ref`. The CLI verifies a
-project's canonical common directory against discovered repository identity and
-matches only exact stable row IDs listed in an assignment. Duplicated project,
-assignment, or row mappings yield localized unavailable/error state, never a
-chosen winner. Unknown fields remain ignored for schema-v1 compatibility. The
-snapshot is a display projection of already-decided assignments, not the roster's
-authority or a place to store raw reports. It may be private; tracked examples use
-placeholders only. A matching row gains nullable `coordination` fields matching
-the input names plus `source: explicit-snapshot`, `recorded_at`, `stale`, and
-`unavailable_reason`; top-level `coverage.coordination` is `not-selected`,
-`available`, `partial`, or `unavailable`. `latest_delta` is a reported pointer,
-not an independently verified accepted result. On each foreground refresh, bounded reads and last-known-value
-staleness follow board-sampling's limits. New CLI flags and fields must be documented
-in README/REFERENCE when implemented, not in today's current command docs.
+`lane board --watch --json --coordination <path>` reads one operator-maintained
+local JSON snapshot. There is no default path, discovery, or writer. The path is
+resolved once against the invoking cwd and passed as an argument, not an authority
+source. The CLI read-model slice accepts it for JSON/watch reads; interactive use
+refuses clearly until the later UI slice completes source forwarding. Neither slice
+adds it to `focus` or `done` actions.
+
+The v1 file is a strictly decoded UTF-8 JSON object without a BOM, at most 1 MiB
+(1,048,576 raw bytes). Accept only an existing regular file: reject a directory, FIFO, device,
+or symlink rather than blocking on or following it. Inspect with `lstat`/`fstat`,
+read at most the cap plus one byte, and refuse a changed file identity/size during
+the read. Bound the decoded structure to at most 32 projects, 512 assignments in
+total, 32 `session_row_ids` per assignment, and 4,096 row links in total. Refuse
+over-limit, malformed, duplicate project/assignment/row mapping, or invalid
+type input as a localized `coordination` error. Unsafe, malformed, or oversized
+files make the whole optional projection unavailable; ambiguous joins make only
+affected mappings unavailable and coverage partial. Retain underlying board
+rows and technical evidence. Do not leak raw source bytes in a diagnostic.
+
+Required top-level fields are integer `schema_version: 1`, UTC RFC 3339
+`recorded_at`, and `projects[]`. Each project requires a nonempty absolute
+`git_common_dir` string (at most 4,096 Unicode code points) and `assignments[]`. Each
+assignment requires nonempty `assignment_id` and `outcome_id` strings (at most
+128 Unicode code points), positive safe-integer `revision`, and an array of 1–32
+distinct nonempty `session_row_ids` (each at most 128 Unicode code points). `outcome_goal`,
+`owner_id`, `integration_owner_id`, `milestone`, `blocker`, `decision_needed`, and
+`next_action` are required but nullable strings: IDs at most 128 Unicode code
+points, other text at most 512 Unicode code points. `milestone` is the **planned
+next milestone**, not an accepted result. `latest_delta` is required and either null or an object with
+nonempty `report_id` (at most 128 code points), positive safe-integer `sequence`,
+positive safe-integer `revision`, UTC RFC 3339 `recorded_at`, nullable
+`evidence_ref` (at most 1,024 Unicode code points), and nullable full Git object ID
+`evidence_head` (40 or 64 hexadecimal characters, matching the repository's
+object format). An assignment also requires nullable full Git object ID
+`applies_to_head`. A delta revision differing from its assignment is historical,
+not malformed. Unknown fields are ignored for schema-v1 compatibility;
+missing required fields, wrong types, empty identifiers, and invalid timestamps
+refuse the source. This example is illustrative, not an observed assignment:
+
+```json
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-13T12:00:00Z",
+  "projects": [{
+    "git_common_dir": "/sample/project-a/.git",
+    "assignments": [{
+      "assignment_id": "A-001", "revision": 1,
+      "outcome_id": "O-1", "outcome_goal": "Document one workflow",
+      "owner_id": "engineer-a", "integration_owner_id": "owner-a",
+      "session_row_ids": ["sample-row-1"],
+      "milestone": "Draft ready for review", "blocker": null,
+      "decision_needed": null, "next_action": "Owner verifies evidence",
+      "applies_to_head": null, "latest_delta": null
+    }]
+  }]
+}
+```
+
+The CLI verifies `git_common_dir` against discovered canonical
+repository identity and joins only exact stable row IDs. Duplicated project,
+assignment, or row mappings yield localized unavailable/error state, not a winner.
+
+Read freshness and content applicability are separate. `observed_at` means a
+successful foreground read; a failed read immediately marks retained values
+read-stale, and missed-refresh staleness follows board-sampling. A successful
+reread clears only read-staleness. Neither `recorded_at` is a TTL or heartbeat;
+quiet, unchanged work needs no rewrite. `applies_to_head` matches a row's current
+verified Git HEAD for assignment applicability. A mismatch is historical; missing
+head evidence makes applicability unknown, never current. `latest_delta` is
+current-applicable only when the assignment itself is current-applicable, its
+revision matches the assignment revision, and its `evidence_head` matches that
+verified HEAD. A mismatch is historical; missing head or null delta is unknown.
+Validate timestamps for UTC form, ordering
+(`latest_delta.recorded_at` no later than snapshot `recorded_at`), and no more
+than five minutes ahead of capture time; age alone never invalidates a report.
+Thus a readable old snapshot with a mismatched HEAD is obsolete, while an
+unchanged snapshot with a matching HEAD remains applicable without report traffic.
+Even a current-applicable pointer is a report claim, not verified acceptance or
+authority; changed plans outside the observed Git/head evidence remain unverified
+until the project owner checks primary sources.
+
+The snapshot is a display projection, not the roster's authority or a raw-report
+store. It may be private; tracked examples use placeholders only. A matching row
+gains nullable `coordination` fields with `source: explicit-snapshot`,
+`observed_at`, `read_stale`, `assignment_applicability`,
+`delta_applicability`, and `unavailable_reason`. Top-level
+`coverage.coordination` is `not-selected`, `available`, `partial`, or
+`unavailable`. Historical pointers may remain visible with their reason but must
+not be labeled current, accepted, or counted as a current decision. New CLI flags
+and fields must be documented in README/REFERENCE when implemented, not in today's
+current command docs.
+
+The UI slice completes the source path: `lane.mjs` interactive launcher forwards
+the once-resolved `--coordination` value through `board/args.mjs` and
+`board/app.mjs` to `board/cli-client.mjs`, whose foreground watch child retains
+the same value on initial spawn, explicit refresh, and reconnect. The UI never
+opens the file itself; action children still receive only row ID and repository.
+Reject missing/duplicate/unknown interactive options before starting Ink. An
+injected process-boundary fixture must prove all forwarding stages and no replay,
+even after reconnect.
 
 The read-model brief may start only after inventory and sampling are promoted and
 reviewed, so it can consume stable machine coverage and bounded observation. A UI

@@ -1645,3 +1645,31 @@ Living log for agents maintaining this repository. Newest entry last.
   during inventory's later reserved focused slot. No live pilot, selected identity
   or projects, protocol adoption, supervisor notification result, console extension,
   independent review, alternate-host check, push, promotion, or close is claimed.
+
+## 2026-09-13 — identity coordinator specification Round 1 corrections
+
+- Addressed all six Moderate/Minor findings in the preserved NEEDS-WORK review of
+  `dcf44a1` (record `docs/reviews/identity-coordinator-spec/dcf44a1-r1.md`).
+  Stale saved evidence now has a same-owner reconciliation path distinct from
+  authority-backed owner transfer; no automatic successor or duplicate review.
+- Assigned the future interactive source path across the CLI launcher,
+  `board/args.mjs`, app, and observation client, including initial watch, refresh,
+  reconnect, unchanged action arguments and an injected process-boundary fixture.
+  The earlier CLI slice refuses interactive use until that UI path exists.
+- Specified a regular-file/no-symlink 1 MiB snapshot cap, finite project/assignment/
+  row-link and text limits, typed nullable fields, bounded reads, localized errors,
+  and read freshness separate from HEAD/revision applicability. Old matching
+  evidence needs no heartbeat; planned/reported milestones remain unaccepted
+  without project-owner evidence.
+- Partitioned current-spec sync: CLI projection and bounded-read blocks ship with
+  the future CLI lane; interactive forwarding and separate-attention blocks ship
+  with the future UI lane. The manual protocol is separate. No current spec,
+  runtime, dependency, inventory/frame lane, or review file was edited here.
+- After inventory's final gate released the slot, `npm test` passed 209/209 with
+  zero failures/skips in 309.445 seconds; strict OpenSpec validation passed 21/21
+  at concurrency one. No behavior change warranted a failing product test or
+  prose negative control. Node.js 20.19.4, Git 2.54.0, OpenSpec 1.6.0.
+  Diff/public-safety checks and the final source-CLI gate are conversation evidence.
+- Live source parsing/forwarding, report delivery, pilot selection/measurement,
+  alternate-host behavior, independent Round 2 review, push, promotion and close
+  remain unverified or undone. The historical Round 1 verdict is not acceptance.

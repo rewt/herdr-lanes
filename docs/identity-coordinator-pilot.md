@@ -43,8 +43,13 @@ in workload, parallelism, cache availability, tools and reviewer demands. Keep t
 same start/acceptance timestamps and role-inclusive accounting on both arms. This
 is an observational pilot, not a causal proof of savings.
 
-For each accepted milestone, sum engineer, integration-owner/project-supervisor,
-coordinator, and reviewer usage where available. Record total input, cached input
+Only the named integration owner may mark a milestone accepted after verifying the
+project's own gate/review and outcome evidence; a planned assignment or engineer
+report remains unaccepted. A stale saved handoff with the same available authorized
+owner requires evidence reconciliation, not a new owner. An unavailable/replaced
+owner requires an explicit authority-backed transfer before resumption. For each
+accepted milestone, sum engineer, integration-owner/project-supervisor, coordinator,
+and reviewer usage where available. Record total input, cached input
 as a subset, uncached input (`total - cached` only if both are known), output, model
 turns, repeated reads of unchanged primary evidence, operator interventions,
 elapsed time, and coordination overhead separately. A repeated read is a second

@@ -28,8 +28,14 @@ Record operator selection and authority privately, four or fewer outcomes, owner
 acknowledgements and revision transfers, accepted/rejected milestone evidence,
 baseline and comparison measurement rows, missing usage, confounders, interventions,
 and stop/reconsider decisions. Verify Git common directories, exact HEAD/gate/review
-and live occupant identity at handoffs. Treat duplicate/out-of-order and failed
+and live occupant identity at handoffs. If only saved evidence is stale, the
+unchanged authorized owner reconciles it and continues without transfer; if the
+owner is unavailable or replaced, require an explicit authority-backed revision
+and successor acknowledgement. Treat duplicate/out-of-order and failed
 notifications by the design's reconciliation rules; do not replay. Report results
 without claiming savings unless the denominators and observed values support them.
 No product negative-control test is warranted for this manual protocol. Any tracked
 public summary must omit real local paths, identities, transcripts and credentials.
+Only after the operator adopts the reviewed manual protocol, sync its complete
+`identity-coordination` requirement blocks into the current spec in that separate
+authorized documentation lane; do not mark them current from this proposal.

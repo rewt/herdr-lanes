@@ -2,8 +2,10 @@
 
 Copy to a project-approved private location; do not fill this tracked template with
 real identities, paths, usage records, transcripts or credentials. One row is one
-accepted milestone; rejected/reworked attempts stay linked in the notes and their
-costs remain in the accepted milestone's totals. Mark unavailable usage `unknown`.
+candidate milestone; mark it accepted only after the named integration owner checks
+project acceptance evidence. Rejected/reworked attempts stay linked and their costs
+remain in the eventual accepted milestone's totals if one exists. Mark unavailable
+usage `unknown`; compute per-accepted-milestone comparisons only from verified rows.
 
 ## Selection and precommitted limits
 

@@ -1,8 +1,8 @@
 # Identity coordinator specification report
 
-Date: 2026-09-13. Topic: `identity-coordinator-spec`. Status: proposal ready for
-independent review, not adopted protocol, implemented console behavior, or live
-pilot result.
+Date: 2026-09-13. Topic: `identity-coordinator-spec`. Round 1 returned
+NEEDS-WORK at `dcf44a1`; this correction is for independent re-review, not an
+adopted protocol, implemented console behavior, or live pilot result.
 
 ## Delivered
 
@@ -56,6 +56,48 @@ only; it separates coordination from technical attention. Sampling's concurrency
 freshness and coverage prerequisites stay with `board-sampling`; complete details
 stay with `board-details`; idea CLI/composer remain separate explicit-launch work.
 No display datum can dispatch, focus, validate, review, promote, close or push.
+
+## Round 1 correction scope
+
+The preserved public review at
+`docs/reviews/identity-coordinator-spec/dcf44a1-r1.md` records six findings.
+This lane does not edit that review or reinterpret its NEEDS-WORK verdict.
+
+1. Stale saved evidence now has a same-owner reconciliation path; only unavailable,
+   replaced, or unauthorized ownership invokes explicit successor transfer.
+2. The CLI read-model brief refuses interactive `--coordination` until the later
+   UI brief forwards the selected source through `lane.mjs`, `board/args.mjs`,
+   `board/app.mjs`, and `board/cli-client.mjs` on initial watch, refresh, and
+   reconnect. An injected process-boundary fixture is required; actions remain
+   source-free and non-replayed.
+3. The read-only snapshot now has a 1 MiB raw-byte cap, regular-file/no-symlink
+   rule, finite project/assignment/link and text limits, explicit required and
+   nullable types, bounded read, and localized malformed/oversized refusal.
+4. Successful read time is distinct from HEAD/revision applicability. Old readable
+   content with mismatched evidence is historical; unchanged matching content stays
+   applicable without heartbeat traffic. A report pointer never proves acceptance.
+5. Assignment milestones and delta results are labeled planned and reported;
+   acceptance is unknown without separate integration-owner evidence. The pilot
+   template now marks candidate milestones accepted only after that check.
+6. Only the projection and bounded-read requirement blocks sync with a future CLI
+   implementation. Interactive forwarding and separate attention sync only with
+   the later UI implementation. No current capability is synced in this lane.
+
+The inspected current launcher forwards only `--repo`, and the app/client create
+their own watch arguments. The briefs explicitly allocate this missing route;
+the current console remains unchanged. No new model polling, scheduling, lease,
+metadata authority, lifecycle replay, or console feature is claimed.
+
+## Round 1 verification addendum
+
+After inventory's final gate released the test slot, this lane's serial `npm test`
+passed 209/209 with zero failures/skips in 309.445 seconds. Strict repository-wide
+OpenSpec validation passed 21/21 with concurrency one. These exercise unchanged
+product behavior and validate proposal structure; no product failing test or prose
+mirror-image negative control was appropriate. The final source-CLI post-commit
+gate, complete-diff/public-safety checks, and review-file preservation are
+reported at handoff. No live UI forwarding, source parsing, or pilot acceptance
+was tested because those remain future work.
 
 ## Verification and limits
 
