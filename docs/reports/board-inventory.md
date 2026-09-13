@@ -112,6 +112,47 @@ event coalescing remain. Final whitespace/public-safety checks and a source-CLI 
 against the clean final commit follow this report; the gate line stays outside tracked
 files.
 
+## Correction round 3 — 2026-09-13
+
+The saved Round 3 NEEDS-WORK review remains unchanged (Git blob
+`2de4e8575ab78962162e97170ce4ba4dd44258ea`). Before product edits, the
+expanded offline `npm test` run passed 226/230, with four failures at the intended
+coalesced status preview, same-session terminal replacement, titleless goal
+provenance, and late terminal read assertions. The revised workspace-claim fixture
+first established a successful verified lane/workspace join, then kept missing,
+stale, and duplicate claims separate; that group passed in the failure-first run.
+No product file changed until those results were observed.
+
+The foreground machine watch now retains one coalesced status-preview request if
+its timer fires during collection and drains it on completion without concurrent
+observations. The shared occupant identity includes terminal ID when available,
+even when the Herdr agent-session value is unchanged. Thus replacement terminals
+cannot inherit an old preview, tripwire, or late pane read. An unregistered row
+without a title retains null `goal` and `goal_source`; registry provenance is inferred
+only for actual registered goal metadata. No public JSON field was added or changed
+in meaning. `docs/REFERENCE.md`, the board-inventory delta, and only its current
+machine-session-discovery capability spec describe these boundaries. The existing
+five-second periodic refresh remains; this round makes no sampling freshness or
+responsiveness guarantee.
+
+After correction, the four selected inventory/message groups passed 4/4 (50
+name-filter skips), the delayed-watch group passed 1/1 (148 skips), and all five
+deliberate controls failed at their named assertions (198 skips). Strict OpenSpec
+validation passed 23/23 at concurrency one. The correction was committed, then the
+lane rebased only onto confirmed `main` at `ee529a3`. The HANDOFF conflict was
+resolved by retaining coordinator and inventory histories. All three saved
+inventory review blobs are unchanged: Round 1 `992703ffe8d47594cdbdc416bbff92b2cd248172`,
+Round 2 `99c93a64d595f3780621e8ccb668d7cace29895a`, and Round 3
+`2de4e8575ab78962162e97170ce4ba4dd44258ea`.
+
+The serialized post-rebase `npm test` passed 230/230 with zero failures/skips in
+339.090 seconds, including local socket fixtures. Each full run followed a clear
+process probe and held the sole test slot. The focused tests are offline and use
+cleaned system-temp fixtures; no live Herdr replacement, alternate-host test,
+multi-endpoint watch, or Ink rendering was performed. Node.js 20.19.4 and Git
+2.54.0 were used. The final source-CLI gate is run only after this report and
+HANDOFF are committed; its exact result is conversation-only evidence.
+
 ## Result
 
 The dependency-free board read path now defaults to accessible local-machine Herdr

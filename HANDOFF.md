@@ -1801,3 +1801,32 @@ Living log for agents maintaining this repository. Newest entry last.
   version run, sampling freshness guarantee, lifecycle action, push, promotion,
   close, or review-record edit was performed. `board/app.mjs` and `board/ui/` remain
   untouched.
+
+## 2026-09-13 — board inventory Round 3 corrections
+
+- Addressed all four findings in the preserved Round 3 NEEDS-WORK review. The
+  three inventory review blobs remain unchanged: Round 1
+  `992703ffe8d47594cdbdc416bbff92b2cd248172`, Round 2
+  `99c93a64d595f3780621e8ccb668d7cace29895a`, and Round 3
+  `2de4e8575ab78962162e97170ce4ba4dd44258ea`.
+- `lane.mjs` drains a coalesced status-preview request after a busy machine-watch
+  collection without observation overlap. `board/inventory.mjs` and
+  `board/message-preview.mjs` use available terminal identity alongside the
+  agent-session value so replacement occupants do not inherit preview/tripwire
+  state or late reads. `board/board.mjs` preserves null goal provenance for a
+  titleless unregistered row. The workspace-claim fixture now proves a successful
+  verified lane join before missing, stale, and duplicate claims. The JSON schema
+  remains v1; the reference and only board-inventory capability delta/current
+  spec were updated.
+- Failure-first `npm test` passed 226/230 with four expected product failures;
+  the eligible-join baseline passed. Corrected focused groups passed 5/5, and
+  their five deliberate controls failed at named assertions. Strict OpenSpec
+  validation passed 23/23. The correction was committed, then rebased only onto
+  confirmed main `ee529a3`; the HANDOFF conflict retained both coordinator and
+  inventory histories. Post-rebase serialized `npm test` passed 230/230, zero
+  skips, in 339.090 seconds. Clear process probes preceded full runs.
+- The final clean-commit source-CLI gate is conversation-only evidence after this
+  documentation commit. Offline system-temp fixtures were cleaned. No live
+  terminal replacement, alternate-host or multi-endpoint watch, Ink rendering,
+  sampling freshness guarantee, push, promotion, close, or review-record edit is
+  claimed. Node.js 20.19.4 and Git 2.54.0 were used.
