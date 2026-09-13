@@ -1583,3 +1583,21 @@ Living log for agents maintaining this repository. Newest entry last.
   roots or sent to a running supervisor, and no live accepted-lane promotion,
   Herdr retirement, fallback cleanup, alternate host, push, or publication was
   performed.
+
+## 2026-09-13 — console integration resumed
+
+- Recorded the exact inventory/frame delivery commits, current gates, integration
+  order, and remaining split dependencies in `docs/reports/console-integration.md`.
+  Both lanes were clean; inventory had a matching successful gate and frame a
+  matching failed gate attributed by its delivery report to sandbox socket fixtures.
+- Started independent inventory Round 1 through the configured Codex review route
+  with a zero-test budget and a fixed target. The reviewer was observed working in
+  the intended lane workspace. No verdict or acceptance is claimed at this checkpoint.
+- Git merge-tree previews against release `48ee44c` identify only HANDOFF conflicts
+  for both lanes. Neither lane was rebased, promoted, or closed. Required review,
+  refreshed gates, and post-close identity checks remain before acceptance.
+- Reused the immediately preceding 209/209 full-suite result and 3/3 release checks;
+  no product code changed. This checkpoint is documentation only, so no behavior
+  negative control applies. Whitespace and public-text checks passed. Live console
+  integration, downstream sampling/details/composer, installation, and publication
+  remain unverified or pending.
