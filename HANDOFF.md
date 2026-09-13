@@ -1832,3 +1832,32 @@ Living log for agents maintaining this repository. Newest entry last.
   terminal replacement, alternate-host or multi-endpoint watch, Ink rendering,
   sampling freshness guarantee, push, promotion, close, or review-record edit is
   claimed. Node.js 20.19.4 and Git 2.54.0 were used.
+
+## 2026-09-13 — board inventory Round 4 tripwire race correction
+
+- Preserved the Round 4 NEEDS-WORK review unchanged at blob
+  `6d8cc34b94c080c16b053bf8bee34be14b8b943a`; all earlier inventory review
+  records also remain untouched. Main stayed `ee529a3`, with no rebase.
+- `board/inventory.mjs` merges the latest same-occupant tripwire and match time
+  after pending pane reads and refuses an intervening different-occupant runtime
+  write. The adjacent successful and failed preview writebacks in
+  `board/message-preview.mjs` retain newer same-occupant match evidence without
+  overriding a different occupant. `docs/REFERENCE.md` and only the inventory
+  delta/current machine-session-discovery spec describe this display-only rule;
+  no JSON field, lifecycle action, or sampling bound changed.
+- The untouched baseline passed 230/230 in 332.922 seconds. Failure-first
+  witnesses showed `OLD` instead of `LATEST` after a delayed two-pane collection,
+  null instead of `LATEST` after a real watch match frame, and `OLD` instead of
+  `LATEST` in direct successful and failed preview writebacks. The socket fixture
+  first timed out because it lacked an agent-kind field; after completing that
+  fixture, its behavioral failure was observed before product edits.
+- Corrected race and existing replacement/late-read focused checks passed 7/7;
+  the fourth failed-read witness passed in the full run. Four deliberate controls
+  failed 4/4 at their named assertions. Serialized `npm test` passed 234/234,
+  zero skips, in 336.045 seconds. Strict OpenSpec passed 24/24. Clear process
+  probes preceded tests; Node.js 20.19.4 and Git 2.54.0 were used.
+- Offline system-temp fixtures were cleaned. Live Herdr matching, an alternate
+  host, Ink rendering, a multi-endpoint watch, and sampling freshness remain
+  unverified. The final source-CLI gate is run after the documentation commit
+  and reported in the conversation. No push, promotion, close, or review edit
+  was performed.

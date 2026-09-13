@@ -156,6 +156,45 @@ multi-endpoint watch, or Ink rendering was performed. Node.js 20.19.4 and Git
 2.54.0 were used. The final source-CLI gate is run only after this report and
 HANDOFF are committed; its exact result is conversation-only evidence.
 
+## Correction round 4 — 2026-09-13
+
+The preserved Round 4 NEEDS-WORK review is unchanged at Git blob
+`6d8cc34b94c080c16b053bf8bee34be14b8b943a`. The untouched serialized
+baseline passed 230/230 with zero skips in 332.922 seconds. Before product edits,
+the deterministic two-pane collection fixture failed: a first-pane match changed
+the live tripwire from `OLD` to `LATEST` while the second pane read was pending,
+but completion restored `OLD`. The real socket watch fixture then showed a
+`LATEST` match frame followed by a completed frame with null tripwire. The
+adjacent shared preview helper independently overwrote a newer match with `OLD`
+on both successful and failed pane reads. Its failed-read witness was observed
+against the original writeback before that path was corrected. An early socket
+fixture lacked its agent-kind field and timed out before any pane read; the
+fixture was completed and the actual null-versus-`LATEST` failure was captured
+before implementation.
+
+`board/inventory.mjs` now merges the latest tripwire and match observation time
+only when the endpoint occupant still matches, while preserving refreshed message
+fields. It refuses a concurrent different-occupant runtime replacement. The
+adjacent successful and failed writebacks in `board/message-preview.mjs` likewise
+retain a newer same-occupant match and refuse a concurrent different occupant.
+The existing terminal replacement and late-read protections remain unchanged.
+This is a memory-only display correction, not a new sampling, freshness,
+subscription, or lifecycle behavior. The reference and only the board-inventory
+delta/current machine-session-discovery spec were synchronized; JSON schema v1
+has no new fields.
+
+The corrected three race fixtures passed 3/3; they and the existing replacement
+and late-read checks passed together 7/7. The fourth failed-read fixture passed
+in the full run. Four deliberate controls failed 4/4 at their named assertions.
+The serialized post-correction `npm test` passed 234/234 with zero skips in
+336.045 seconds; strict OpenSpec validation passed 24/24 at concurrency one.
+All full and focused runs followed clear process probes and used cleaned system-
+temp, offline fixtures. No live Herdr match, alternate host, interactive Ink
+render, multi-endpoint watch, or sampling bound was verified. Node.js 20.19.4
+and Git 2.54.0 were used. Main remained `ee529a3`; no rebase, push, promotion,
+close, or review-record edit occurred. The clean-commit source-CLI gate follows
+this report and HANDOFF commit; its exact line is conversation-only evidence.
+
 ## Result
 
 The dependency-free board read path now defaults to accessible local-machine Herdr
