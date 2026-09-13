@@ -80,6 +80,7 @@ function writeSession(repository, session, registry = ".lane/sessions.json") {
     brief: null,
     goal: session.goal ?? session.topic,
     report: `docs/reports/${session.topic}.md`,
+    ...(session.tripwires === undefined ? {} : { tripwires: session.tripwires }),
     deadline: null,
     done: session.done ?? false,
     created_at: "2026-09-11T12:00:00.000Z",
@@ -708,6 +709,80 @@ test("a new terminal with the same agent-session value cannot inherit preview or
     assert.equal(live.tripwire, null);
     assert.notEqual(live.row_id, oldLiveId);
     negativeControl("same-session terminal replacement drops runtime evidence");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a match after the first of two pane reads survives the pending collection", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-tripwire-race-")));
+  try {
+    const repository = makeRepository(root, "tripwire-race");
+    const checkout = join(root, "lane-checkout");
+    git(repository.repo, ["worktree", "add", "-b", "lane/race", checkout]);
+    const socket = join(root, "board.sock");
+    const agents = ["first", "second"].map((name) => liveAgent({
+      name, cwd: checkout, workspace: "race-workspace", pane: `${name}-pane`,
+    }));
+    for (const [index, name] of ["first", "second"].entries()) {
+      writeSession(repository, {
+        session_id: `77777777-7777-4777-8777-77777777777${index}`,
+        topic: "race", name, workspace: "race-workspace", pane: `${name}-pane`,
+        server: socket, tripwires: name === "first" ? ["OLD", "LATEST"] : [],
+      });
+    }
+    let round = 1;
+    let releaseSecond;
+    let secondStarted;
+    const secondPending = new Promise((resolvePromise) => { releaseSecond = resolvePromise; });
+    const secondRequested = new Promise((resolvePromise) => { secondStarted = resolvePromise; });
+    const runtime = new Map();
+    const response = (pane) => ({
+      pane_id: pane, source: "recent_unwrapped", format: "text",
+      text: `• ${pane} round ${round}\n`, revision: round, truncated: false,
+    });
+    const { collectMachineBoardDocument } = await import(INVENTORY);
+    const options = {
+      currentSocketPath: socket,
+      listSessions: () => ({ sessions: [] }),
+      clientFactory: () => ({
+        snapshot: async () => snapshot(agents, [workspace(repository, "race-workspace", checkout, true)]),
+        readPane: (pane) => {
+          if (round === 2 && pane === "second-pane") {
+            secondStarted();
+            return secondPending;
+          }
+          return Promise.resolve(response(pane));
+        },
+        close() {},
+      }),
+      listWorktrees: () => worktreeList(repository, [{
+        branch: "lane/race", open_workspace_id: "race-workspace", path: checkout,
+      }]),
+      runtime,
+      stats: { load: 0, freeMemoryBytes: 1024, workers: {} },
+    };
+    const baseline = await collectMachineBoardDocument(options);
+    assert.equal(baseline.rows.filter((row) => row.registered).length, 2);
+    const firstKey = [...runtime.keys()].find((key) => key.endsWith("\0first-pane"));
+    assert.ok(firstKey);
+    const oldMatchAt = "2026-09-13T12:00:00.000Z";
+    const latestMatchAt = "2026-09-13T12:00:01.000Z";
+    runtime.set(firstKey, { ...runtime.get(firstKey), tripwire: "OLD", observedAt: oldMatchAt });
+
+    round = 2;
+    const collecting = collectMachineBoardDocument(options);
+    await secondRequested;
+    await new Promise((resolvePromise) => setImmediate(resolvePromise));
+    assert.equal(runtime.get(firstKey).tripwire, "OLD");
+    runtime.set(firstKey, { ...runtime.get(firstKey), tripwire: "LATEST", observedAt: latestMatchAt });
+    releaseSecond(response("second-pane"));
+    const completed = await collecting;
+    assert.equal(completed.rows.find((row) => row.name === "first").tripwire, "LATEST");
+    assert.equal(runtime.get(firstKey).tripwire, "LATEST");
+    assert.equal(runtime.get(firstKey).observedAt, latestMatchAt);
+    assert.equal(completed.rows.find((row) => row.name === "first").last_message.text, "first-pane round 2");
+    negativeControl("same-occupant match timestamp survives pending second pane read");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

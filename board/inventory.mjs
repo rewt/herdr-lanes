@@ -708,9 +708,11 @@ export async function collectMachineBoardObservation({
     const sessions = visibleSessions.filter((session) => session.server === state.endpoint.path);
     if (sessions.length === 0) continue;
     const localRuntime = new Map();
+    const startingRuntime = new Map();
     for (const session of sessions) {
       if (session.inventory_agent === null || typeof session.pane !== "string") continue;
       const previous = runtime.get(session.runtime_key);
+      startingRuntime.set(session.runtime_key, previous);
       const identity = agentIdentity(state.endpoint, session.inventory_agent);
       if (previous?.inventoryOccupantId === identity) localRuntime.set(session.pane, previous);
     }
@@ -727,9 +729,20 @@ export async function collectMachineBoardObservation({
     for (const session of sessions) {
       if (session.inventory_agent === null || typeof session.pane !== "string") continue;
       const value = localRuntime.get(session.pane);
-      if (value !== undefined) runtime.set(session.runtime_key, {
+      if (value === undefined) continue;
+      const identity = agentIdentity(state.endpoint, session.inventory_agent);
+      if (typeof value.occupantId === "string" &&
+          value.occupantId !== messageOccupantId(session.inventory_agent)) continue;
+      const latest = runtime.get(session.runtime_key);
+      if (latest !== startingRuntime.get(session.runtime_key) &&
+          latest?.inventoryOccupantId !== identity) continue;
+      runtime.set(session.runtime_key, {
         ...value,
-        inventoryOccupantId: agentIdentity(state.endpoint, session.inventory_agent),
+        ...(latest?.inventoryOccupantId === identity ? {
+          tripwire: latest.tripwire,
+          observedAt: latest.observedAt,
+        } : {}),
+        inventoryOccupantId: identity,
       });
     }
     for (const message of refreshed.errors) {

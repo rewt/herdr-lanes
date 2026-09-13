@@ -1227,3 +1227,73 @@ test("a late pane read is discarded when only the terminal identity changes", as
   assert.equal(runtime.has("pane-1"), false);
   negativeControl("late pane read cannot cross terminal replacement");
 });
+
+test("a same-occupant match is not lost to a pending pane preview writeback", async () => {
+  const { messageOccupantId, refreshMessagePreviews } = await previewApi();
+  const agent = {
+    agent: "codex", name: "preview-agent", pane_id: "pane-1", workspace_id: "workspace-1",
+    terminal_id: "same-terminal",
+    agent_session: { agent: "codex", kind: "id", source: "herdr:codex", value: "same-session" },
+  };
+  const snapshot = {
+    agents: [agent],
+    workspaces: [{ workspace_id: "workspace-1", label: "workspace-1" }],
+  };
+  const oldMatchAt = "2026-09-13T12:00:00.000Z";
+  const latestMatchAt = "2026-09-13T12:00:01.000Z";
+  const runtime = new Map([["pane-1", {
+    occupantId: messageOccupantId(agent), tripwire: "OLD", observedAt: oldMatchAt,
+  }]]);
+  let finishRead;
+  const readPending = new Promise((resolvePromise) => { finishRead = resolvePromise; });
+  const reading = refreshMessagePreviews({
+    registry: [{ name: agent.name, workspace: agent.workspace_id }],
+    snapshot, runtime, client: { readPane: () => readPending },
+  });
+  runtime.set("pane-1", { ...runtime.get("pane-1"), tripwire: "LATEST", observedAt: latestMatchAt });
+  finishRead({
+    pane_id: "pane-1", source: "recent_unwrapped", format: "text",
+    text: "• New preview\n", revision: 2, truncated: false,
+  });
+  const result = await reading;
+  assert.equal(result.updated, 1);
+  assert.equal(runtime.get("pane-1").messageText, "New preview");
+  assert.equal(runtime.get("pane-1").tripwire, "LATEST");
+  assert.equal(runtime.get("pane-1").observedAt, latestMatchAt);
+  negativeControl("same-occupant match survives direct preview writeback");
+});
+
+test("a failed pane read retains a newer same-occupant match", async () => {
+  const { messageOccupantId, refreshMessagePreviews } = await previewApi();
+  const agent = {
+    agent: "codex", name: "preview-agent", pane_id: "pane-1", workspace_id: "workspace-1",
+    terminal_id: "same-terminal",
+    agent_session: { agent: "codex", kind: "id", source: "herdr:codex", value: "same-session" },
+  };
+  const snapshot = {
+    agents: [agent],
+    workspaces: [{ workspace_id: "workspace-1", label: "workspace-1" }],
+  };
+  const runtime = new Map([["pane-1", {
+    occupantId: messageOccupantId(agent),
+    messageText: "Previous answer", messageSource: "assistant-preview", messageAvailable: true,
+    tripwire: "OLD", observedAt: "2026-09-13T12:00:00.000Z",
+  }]]);
+  let failRead;
+  const readPending = new Promise((resolvePromise, rejectPromise) => { failRead = rejectPromise; });
+  const reading = refreshMessagePreviews({
+    registry: [{ name: agent.name, workspace: agent.workspace_id }],
+    snapshot, runtime, client: { readPane: () => readPending },
+  });
+  const latestMatchAt = "2026-09-13T12:00:01.000Z";
+  runtime.set("pane-1", { ...runtime.get("pane-1"), tripwire: "LATEST", observedAt: latestMatchAt });
+  failRead(new Error("fixture read failed"));
+  const result = await reading;
+  assert.equal(result.updated, 1);
+  assert.equal(result.errors.length, 1);
+  assert.equal(runtime.get("pane-1").messageText, "Previous answer");
+  assert.equal(runtime.get("pane-1").messageStale, true);
+  assert.equal(runtime.get("pane-1").tripwire, "LATEST");
+  assert.equal(runtime.get("pane-1").observedAt, latestMatchAt);
+  negativeControl("same-occupant match survives failed preview writeback");
+});

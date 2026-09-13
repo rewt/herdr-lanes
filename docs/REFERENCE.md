@@ -403,6 +403,11 @@ if its timer fires during a collection, one pending preview refresh drains after
 collection without overlap. This does not establish a freshness bound or change the
 five-second periodic refresh.
 
+If a configured tripwire matches while another pane read is pending, the completed
+collection retains the latest match and its observation time for the same occupant.
+Message-preview writebacks cannot replace that newer match or copy it to a different
+occupant; tripwire state remains memory-only and is never a lifecycle trigger.
+
 One watch invocation owns its endpoint observation and subscription clients. SIGINT,
 SIGTERM, downstream pipe closure, and fatal read-service errors permanently close
 subscriptions, pending snapshot and pane-read requests, reconnect timers, refresh

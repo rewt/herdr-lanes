@@ -51,6 +51,9 @@ registration, a name, a git repository, or a lane branch.
 #### Scenario: Foreground observation continuity and cancellation
 - **WHEN** a matching pane read fails after a successful watch preview, a configured tripwire matches inside a longer line, or the watch is interrupted during endpoint collection
 - **THEN** the matching prior preview is stale rather than erased, the configured substring survives same-occupant refreshes, and active requests close without probing later endpoints.
+#### Scenario: Match during concurrent pane reads
+- **WHEN** a first pane finishes reading, a second pane remains pending, and the first pane then reports a configured tripwire match
+- **THEN** the completed collection retains the latest same-occupant tripwire and match observation time, without transferring them to a replacement occupant or triggering a lifecycle action.
 #### Scenario: Status-only observation event
 - **WHEN** a watched pane changes status without an output-change event
 - **THEN** the status frame is emitted and a coalesced message-preview read is scheduled without a lifecycle action; if that request becomes due during another collection, one pending read drains after it without overlap.

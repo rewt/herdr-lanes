@@ -316,8 +316,11 @@ export async function refreshMessagePreviews({
         const bounded = boundedUtf8Suffix(cleanPaneText(read.text));
         const preview = extractAssistantPreview({ kind: target.kind, text: bounded.text });
         const truncated = read.truncated === true || bounded.truncated;
+        const latest = runtime.get(paneId);
+        if (latest !== previous && latest?.occupantId !== undefined &&
+            latest.occupantId !== target.occupant) continue;
         runtime.set(paneId, {
-          ...(previous ?? {}),
+          ...(latest?.occupantId === target.occupant ? latest : previous ?? {}),
           occupantId: target.occupant,
           messageText: preview.text,
           messageSource: preview.source,
@@ -337,9 +340,13 @@ export async function refreshMessagePreviews({
         errors.push(`${paneId}: ${error.message}`);
         const currentAgent = currentAgentForPane(currentSnapshot(), paneId);
         if (messageOccupantId(currentAgent) !== target.occupant) continue;
-        if (previous?.occupantId === target.occupant) {
+        const latest = runtime.get(paneId);
+        if (latest !== previous && latest?.occupantId !== undefined &&
+            latest.occupantId !== target.occupant) continue;
+        const retained = latest?.occupantId === target.occupant ? latest : previous;
+        if (retained?.occupantId === target.occupant) {
           runtime.set(paneId, {
-            ...previous,
+            ...retained,
             messageStale: true,
             messageLimitation: readFailureLimitation(error, true),
           });

@@ -3578,6 +3578,103 @@ test("machine watch reports only the configured tripwire substring", async () =>
   }
 });
 
+test("machine watch retains a match delivered between two pane read completions", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  let server;
+  let watch;
+  const timers = [];
+  try {
+    const checkout = join(fixture.root, "tripwire-race-checkout");
+    git(fixture.repo, ["worktree", "add", "-b", "lane/tripwire-race", checkout], { stdio: "ignore" });
+    for (const [index, name] of ["first-agent", "second-agent"].entries()) {
+      writeBoardSession(fixture, {
+        session_id: `88888888-8888-4888-8888-88888888888${index}`,
+        topic: "tripwire-race", lane: "lane/tripwire-race", name,
+        pane: `${index + 1}-pane`, agent_session_id: `${index + 1}-session`,
+        terminal_id: `${index + 1}-terminal`,
+        tripwires: index === 0 ? ["LATEST"] : [],
+      });
+    }
+    let subscriptionSocket;
+    let firstReads = 0;
+    let secondReads = 0;
+    let matchSent = false;
+    const readResponse = (request, pane, count) => `${JSON.stringify({ id: request.id, result: {
+      type: "pane_read", read: {
+        pane_id: pane, source: "recent_unwrapped", format: "text",
+        text: `• ${pane} preview ${count}\n`, revision: count, truncated: false,
+      },
+    } })}\n`;
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      if (request.method === "session.snapshot") {
+        const result = boardSnapshotResult({ cwd: checkout });
+        Object.assign(result.snapshot.agents[0], {
+          agent: "codex", name: "first-agent", pane_id: "1-pane", terminal_id: "1-terminal",
+          agent_session: { agent: "codex", kind: "id", source: "herdr:codex", value: "1-session" },
+        });
+        result.snapshot.agents.push({ ...result.snapshot.agents[0],
+          name: "second-agent", pane_id: "2-pane", terminal_id: "2-terminal",
+          agent_session: { agent: "codex", kind: "id", source: "herdr:codex", value: "2-session" },
+        });
+        socket.write(`${JSON.stringify({ id: request.id, result })}\n`);
+      } else if (request.method === "pane.read") {
+        const pane = request.params.pane_id;
+        if (pane === "1-pane") {
+          firstReads += 1;
+          socket.write(readResponse(request, pane, firstReads));
+        } else if (pane === "2-pane") {
+          secondReads += 1;
+          if (secondReads === 2) {
+            timers.push(setTimeout(() => {
+              matchSent = true;
+              subscriptionSocket.write(`${JSON.stringify({ event: "pane.output_matched", data: {
+                pane_id: "1-pane", matched_line: "LATEST", read: { text: "LATEST" },
+              } })}\n`);
+              timers.push(setTimeout(() => socket.write(readResponse(request, pane, secondReads)), 200));
+            }, 50));
+          } else {
+            socket.write(readResponse(request, pane, secondReads));
+          }
+        }
+      } else if (request.method === "events.subscribe") {
+        subscriptionSocket = socket;
+        socket.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
+        socket.write(`${JSON.stringify({ event: "pane.output_changed", data: { pane_id: "1-pane" } })}\n`);
+      }
+    });
+    watch = laneProcess(fixture, ["board", "--watch", "--json"], {
+      env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
+    });
+    try {
+      await waitForCondition(() => matchSent && watch.stdout().trim().split("\n").length >= 3,
+        "match frame and completed two-pane refresh", 4_500);
+    } catch (error) {
+      const frames = watch.stdout().trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+      assert.fail(`${error.message}; reads=${firstReads}/${secondReads}; match=${matchSent}; ` +
+        `frames=${frames.length}; rows=${JSON.stringify(frames[0]?.rows.map((row) => [row.name, row.registered, row.status]))}; ` +
+        `requests=${JSON.stringify(server.requests.map((request) => request.method))}; stderr=${watch.stderr()}`);
+    }
+    await waitForCondition(() => secondReads === 2 &&
+      watch.stdout().trim().split("\n").filter(Boolean).length >= 3,
+    "second pane refresh frame", 1_500);
+    const frames = watch.stdout().trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    const firstRow = (frame) => frame.rows.find((row) => row.name === "first-agent");
+    assert.ok(frames.some((frame) => firstRow(frame)?.tripwire === "LATEST"));
+    assert.equal(firstRow(frames.at(-1)).tripwire, "LATEST");
+    assert.equal(firstReads, 2);
+    assert.equal(secondReads, 2);
+    negativeControl("matched watch frame survives delayed second pane completion");
+  } finally {
+    for (const timer of timers) clearTimeout(timer);
+    if (watch !== undefined) {
+      if (watch.child.exitCode === null && watch.child.signalCode === null) watch.child.kill("SIGTERM");
+      await watch.completed;
+    }
+    if (server !== undefined) await server.close();
+    fixture.cleanup();
+  }
+});
+
 test("machine plain view exposes coverage, colliding repository identities, and active-after-done", async () => {
   const { renderMachineBoardPlain } = await import("../board/view.mjs");
   const document = {
