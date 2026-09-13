@@ -223,6 +223,7 @@ function workspaceFor(session, snapshot) {
 }
 
 function agentFor(session, snapshot) {
+  if (session.inventory_scoped === true) return session.inventory_agent ?? undefined;
   const workspace = workspaceFor(session, snapshot);
   const agent = snapshot?.agents?.find((candidate) => candidate.name === session.name);
   return workspace === undefined || agent?.workspace_id === workspace.workspace_id ? agent : undefined;

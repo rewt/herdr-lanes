@@ -433,6 +433,10 @@ test("machine evidence never crosses repositories with the same lane and report 
     git(first.repo, ["worktree", "add", "-b", "lane/shared", checkout]);
     mkdirSync(join(checkout, "docs", "reports"), { recursive: true });
     writeFileSync(join(checkout, "docs", "reports", "shared.md"), "**PASS**\n");
+    mkdirSync(join(checkout, ".lane"));
+    writeFileSync(join(checkout, ".lane", "gate.json"), `${JSON.stringify({
+      head: git(checkout, ["rev-parse", "HEAD"]), exit_code: 0, signal: null,
+    })}\n`);
     const socket = join(root, "board.sock");
     for (const repository of [first, second]) {
       writeSession(repository, {
@@ -463,9 +467,11 @@ test("machine evidence never crosses repositories with the same lane and report 
     });
     const firstRow = document.rows.find((row) => row.repo_id === first.repoId);
     const secondRow = document.rows.find((row) => row.repo_id === second.repoId);
-    assert.equal(firstRow.gate.state, "missing");
+    assert.equal(firstRow.git.dirty, true);
+    assert.equal(firstRow.gate.state, "pass");
     assert.equal(firstRow.report.verdict, "PASS");
     assert.equal(secondRow.git.available, false);
+    assert.equal(secondRow.git.dirty, null);
     assert.equal(secondRow.gate.state, "missing");
     assert.equal(secondRow.report.path, null);
     negativeControl("cross-repository evidence isolation");

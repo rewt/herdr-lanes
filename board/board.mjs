@@ -32,6 +32,7 @@ export function parseVerdict(text) {
 }
 
 function workspaceFor(session, snapshot) {
+  if (session.inventory_scoped === true) return session.inventory_workspace ?? undefined;
   return snapshot?.workspaces?.find(
     (workspace) =>
       (workspace.workspace_id === session.workspace || workspace.label === session.workspace) &&
@@ -40,6 +41,7 @@ function workspaceFor(session, snapshot) {
 }
 
 function agentFor(session, workspace, snapshot) {
+  if (session.inventory_scoped === true) return session.inventory_agent ?? undefined;
   const candidates = snapshot?.agents?.filter((candidate) =>
     (session.server === undefined || candidate.server_id === undefined || candidate.server_id === session.server) &&
     (session.pane === undefined || candidate.pane_id === session.pane) &&
@@ -54,19 +56,33 @@ function branchForSession(session) {
   return session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`;
 }
 
+function observationKey(session) {
+  return session.inventory_scoped === true
+    ? JSON.stringify([session.repo_id, session.session_id])
+    : session.session_id;
+}
+
+function liveRuntimeFor(session, agent, runtime) {
+  const cached = runtime.get(session.runtime_key) ?? runtime.get(agent?.pane_id) ?? {};
+  if (session.inventory_scoped === true &&
+      cached.inventoryOccupantId !== session.inventory_occupant_id) return {};
+  return cached.occupantId === undefined || cached.occupantId === messageOccupantId(agent)
+    ? cached
+    : {};
+}
+
 function resolveSessionContext(session, state) {
   const workspace = workspaceFor(session, state.snapshot);
   const agent = agentFor(session, workspace, state.snapshot);
-  const cached = state.runtime.get(session.runtime_key) ?? state.runtime.get(agent?.pane_id) ?? {};
-  const live = cached.occupantId === undefined || cached.occupantId === messageOccupantId(agent)
-    ? cached
-    : {};
+  const live = liveRuntimeFor(session, agent, state.runtime);
   return {
     workspace,
     agent,
     live,
-    git: state.gitStates.get(session.session_id) ?? state.gitStates.get(session.lane) ?? {},
-    report: state.reportStates.get(session.session_id) ?? state.reportStates.get(session.report) ?? {},
+    git: state.gitStates.get(observationKey(session)) ??
+      (session.inventory_scoped === true ? undefined : state.gitStates.get(session.lane)) ?? {},
+    report: state.reportStates.get(observationKey(session)) ??
+      (session.inventory_scoped === true ? undefined : state.reportStates.get(session.report)) ?? {},
     branch: branchForSession(session),
   };
 }
@@ -111,6 +127,11 @@ export function buildSubscriptions(registry, snapshot) {
   return subscriptions;
 }
 
+export function matchingTripwire(patterns, event) {
+  const text = `${event.data?.matched_line ?? event.data?.read?.text ?? ""}`;
+  return patterns.find((pattern) => text.includes(pattern));
+}
+
 export function applyHerdrEvent(snapshot, runtime, registry, event) {
   const data = event.data ?? {};
   if (event.event === "pane.agent_status_changed") {
@@ -120,11 +141,8 @@ export function applyHerdrEvent(snapshot, runtime, registry, event) {
   }
   if (event.event !== "pane.output_matched") return;
   const previous = runtime.get(data.pane_id) ?? {};
-  const readText = data.read?.text ?? "";
   const session = registry.find((candidate) => paneIdFor(candidate, snapshot) === data.pane_id);
-  const tripwire = (session?.tripwires ?? []).find(
-    (pattern) => `${data.matched_line ?? readText}`.includes(pattern),
-  ) ?? previous.tripwire;
+  const tripwire = matchingTripwire(session?.tripwires ?? [], event) ?? previous.tripwire;
   runtime.set(data.pane_id, {
     ...previous,
     tripwire,
@@ -258,8 +276,8 @@ export function collectGitStates(repoRoot, main, registry, snapshot) {
       available: head !== undefined,
       ...gateState(checkout, head),
     };
-    if (session.lane !== undefined) states.set(session.lane, state);
-    if (session.session_id !== undefined) states.set(session.session_id, state);
+    if (session.inventory_scoped !== true && session.lane !== undefined) states.set(session.lane, state);
+    if (session.session_id !== undefined) states.set(observationKey(session), state);
   }
   return states;
 }
@@ -287,8 +305,8 @@ export function collectReportStates(repoRoot, registry) {
           path,
           reviewedHead,
         };
-        states.set(session.report, state);
-        if (session.session_id !== undefined) states.set(session.session_id, state);
+        if (session.inventory_scoped !== true) states.set(session.report, state);
+        if (session.session_id !== undefined) states.set(observationKey(session), state);
         break;
       } catch {
         // Try the canonical checkout after the lane; a missing report is normal.
@@ -426,7 +444,7 @@ function messageCoverage(state) {
     .filter(({ agent }) => supportsMessagePreview(agent?.agent) && typeof agent.pane_id === "string");
   if (readable.length === 0) return "unavailable";
   const messages = readable.map(({ session, agent }) => structuredLastMessage(
-    state.runtime.get(session.runtime_key) ?? state.runtime.get(agent.pane_id),
+    liveRuntimeFor(session, agent, state.runtime),
     agent,
   ));
   if ((state.messageErrors ?? []).length > 0 || messages.some((message) => !message.available)) return "partial";

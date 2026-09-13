@@ -135,10 +135,17 @@ function inspectRepository(path) {
         // A prunable worktree cannot establish the canonical checkout.
       }
     }
+    let observedBranch = null;
+    try {
+      observedBranch = gitOutput(checkout, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+    } catch {
+      // Detached HEAD has no checked-out branch.
+    }
     return {
       repo_id: repoId,
       path: canonicalCheckout ?? checkout,
       observed_checkout: checkout,
+      observed_branch: observedBranch,
       repository_label: basename(canonicalCheckout ?? checkout),
     };
   } catch {
@@ -315,7 +322,7 @@ function addDisplaySuffixes(records) {
   }
 }
 
-function registryLiveMatch(session, endpointStates, agentRepositories, repository) {
+function registryLiveMatch(session, endpointStates, agentRepositories, verifiedAgents, repository) {
   const endpointPath = typeof session.server === "string" && isAbsolute(session.server)
     ? canonicalPath(session.server)
     : undefined;
@@ -324,14 +331,16 @@ function registryLiveMatch(session, endpointStates, agentRepositories, repositor
     if (!state.available || (endpointPath !== undefined && state.endpoint.path !== endpointPath)) continue;
     const matchingWorkspaces = state.snapshot.workspaces.filter((workspace) =>
       workspace.workspace_id === session.workspace || workspace.label === session.workspace);
+    if (matchingWorkspaces.length !== 1) continue;
+    const selectedWorkspace = matchingWorkspaces[0];
     for (const agent of state.snapshot.agents) {
       if (agent.name !== session.name) continue;
       if (typeof session.pane === "string" && agent.pane_id !== session.pane) continue;
-      if (matchingWorkspaces.length > 0 && !matchingWorkspaces.some(
-        (workspace) => workspace.workspace_id === agent.workspace_id)) continue;
+      if (selectedWorkspace.workspace_id !== agent.workspace_id) continue;
+      if (!verifiedAgents.has(agentIdentity(state.endpoint, agent))) continue;
       const agentRepository = agentRepositories.get(agentIdentity(state.endpoint, agent));
       if (agentRepository?.repo_id !== repository.repo_id) continue;
-      matches.push({ state, agent });
+      matches.push({ state, agent, workspace: selectedWorkspace });
     }
   }
   return matches.length === 1 ? matches[0] : undefined;
@@ -357,18 +366,34 @@ export async function collectMachineBoardObservation({
     paneReadTimeoutMs: 2_000,
   }),
   listWorktrees = defaultListWorktrees,
+  runtime = new Map(),
+  signal,
   stats = systemStats(),
   now = new Date(),
 } = {}) {
+  const activeClients = new Set();
+  const abort = () => {
+    for (const client of activeClients) client.close();
+  };
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new Error("board observation cancelled");
+  };
+  signal?.addEventListener("abort", abort, { once: true });
+  try {
+  throwIfAborted();
   const inventory = enumerateLocalHerdrEndpoints({ currentSocketPath, listSessions });
   const errors = [...inventory.errors];
   const endpointStates = [];
   for (const endpoint of inventory.endpoints) {
+    throwIfAborted();
     const client = clientFactory(endpoint);
+    activeClients.add(client);
     try {
       const snapshot = await client.snapshot();
+      throwIfAborted();
       endpointStates.push({ endpoint, client, snapshot, available: true });
     } catch (error) {
+      throwIfAborted();
       endpointStates.push({ endpoint, client, snapshot: { agents: [], panes: [], workspaces: [] }, available: false, error: error.message });
       errors.push({ source: "herdr", server_id: endpoint.server_id, message: error.message });
     }
@@ -397,7 +422,9 @@ export async function collectMachineBoardObservation({
 
   const workspaceRepositories = new Map();
   const agentRepositories = new Map();
+  const agentProvenance = new Map();
   for (const state of endpointStates.filter((candidate) => candidate.available)) {
+    throwIfAborted();
     state.snapshot = {
       ...state.snapshot,
       agents: (state.snapshot.agents ?? []).map((agent) => ({ ...agent, server_id: state.endpoint.path })),
@@ -411,14 +438,21 @@ export async function collectMachineBoardObservation({
       }
     }
     for (const agent of state.snapshot.agents) {
-      const repository = inspect(agent.cwd) ??
-        workspaceRepositories.get(`${state.endpoint.server_id}\0${agent.workspace_id}`);
-      if (repository !== undefined) agentRepositories.set(agentIdentity(state.endpoint, agent), repository);
+      const repository = inspect(agent.cwd);
+      if (repository === undefined) continue;
+      const identity = agentIdentity(state.endpoint, agent);
+      agentRepositories.set(identity, repository);
+      agentProvenance.set(identity, {
+        repository,
+        checkout: repository.observed_checkout,
+        branch: repository.observed_branch,
+      });
     }
   }
 
   const branchByWorkspace = new Map();
   for (const state of endpointStates.filter((candidate) => candidate.available)) {
+    throwIfAborted();
     const relevant = new Map();
     for (const workspace of state.snapshot.workspaces) {
       const repository = workspaceRepositories.get(`${state.endpoint.server_id}\0${workspace.workspace_id}`);
@@ -429,8 +463,10 @@ export async function collectMachineBoardObservation({
       if (repository !== undefined) relevant.set(repository.repo_id, repository);
     }
     for (const repository of relevant.values()) {
+      throwIfAborted();
       try {
         const listed = await listWorktrees({ endpoint: state.endpoint, repository });
+        throwIfAborted();
         if (!samePath(listed?.source?.repo_key, repository.repo_id) ||
             !samePath(listed?.source?.repo_root, repository.path) ||
             !samePath(listed?.source?.source_checkout_path, repository.path)) {
@@ -441,6 +477,7 @@ export async function collectMachineBoardObservation({
           branchByWorkspace.set(`${state.endpoint.server_id}\0${worktree.open_workspace_id}`, {
             branch: typeof worktree.branch === "string" ? worktree.branch : null,
             path: worktree.path,
+            repo_id: repository.repo_id,
           });
         }
       } catch (error) {
@@ -451,6 +488,38 @@ export async function collectMachineBoardObservation({
           message: `cannot map Herdr worktrees: ${error.message}`,
         });
       }
+    }
+  }
+
+  const verifiedAgents = new Set();
+  for (const state of endpointStates.filter((candidate) => candidate.available)) {
+    for (const agent of state.snapshot.agents) {
+      const identity = agentIdentity(state.endpoint, agent);
+      const provenance = agentProvenance.get(identity);
+      const workspaces = state.snapshot.workspaces.filter(
+        (workspace) => workspace.workspace_id === agent.workspace_id,
+      );
+      if (provenance === undefined || workspaces.length !== 1) continue;
+      const workspace = workspaces[0];
+      const worktree = workspace.worktree;
+      const mapped = branchByWorkspace.get(`${state.endpoint.server_id}\0${agent.workspace_id}`);
+      const verified = (typeof worktree?.checkout_path !== "string" ||
+          samePath(worktree.checkout_path, provenance.checkout)) &&
+        (typeof worktree?.repo_key !== "string" ||
+          samePath(worktree.repo_key, provenance.repository.repo_id)) &&
+        (typeof worktree?.repo_root !== "string" ||
+          samePath(worktree.repo_root, provenance.repository.path)) &&
+        (mapped === undefined || (
+          mapped.repo_id === provenance.repository.repo_id &&
+          samePath(mapped.path, provenance.checkout) &&
+          mapped.branch === provenance.branch
+        ));
+      if (verified) verifiedAgents.add(identity);
+      else errors.push({
+        source: "repository", server_id: state.endpoint.server_id,
+        repo_id: provenance.repository.repo_id,
+        message: "agent cwd does not match its Herdr workspace checkout mapping",
+      });
     }
   }
 
@@ -471,6 +540,7 @@ export async function collectMachineBoardObservation({
   const claimedAgents = new Set();
   const allSessions = [];
   const visibleSessions = [];
+  const pendingRegistry = [];
   let anyRegistry = false;
   let registryPartial = false;
   for (const context of contexts.values()) {
@@ -498,36 +568,60 @@ export async function collectMachineBoardObservation({
         });
         continue;
       }
-      const match = registryLiveMatch(session, endpointStates, agentRepositories, context);
-      const status = match?.agent.agent_status ?? "offline";
-      const branch = typeof session.lane === "string"
-        ? session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`
-        : null;
-      const activeAfterDone = session.done === true && statusIsActiveAfterDone(status);
-      const endpoint = match?.state.endpoint;
-      const normalized = {
-        ...session,
-        registered: true,
-        repo_id: context.repo_id,
-        root_id: context.root_id,
-        repo: context.path,
-        branch,
-        group: groupFor(branch, true),
-        active_after_done: activeAfterDone,
-        ...(endpoint === undefined ? {} : {
-          reported_server: session.server,
-          server: endpoint.path,
-          pane: match.agent.pane_id,
-          workspace: match.agent.workspace_id,
-          runtime_key: runtimeKey(endpoint, match.agent.pane_id),
-        }),
-        stale: endpoint === undefined && typeof session.server === "string" &&
-          endpointStates.some((state) => state.endpoint.path === canonicalPath(session.server) && !state.available),
-      };
-      allSessions.push(normalized);
-      if (match !== undefined) claimedAgents.add(agentIdentity(match.state.endpoint, match.agent));
-      if (includeHistory || session.done !== true || activeAfterDone) visibleSessions.push(normalized);
+      pendingRegistry.push({ session, context, match: registryLiveMatch(
+        session, endpointStates, agentRepositories, verifiedAgents, context,
+      ) });
     }
+  }
+
+  const claimCounts = new Map();
+  for (const { match } of pendingRegistry) {
+    if (match === undefined) continue;
+    const identity = agentIdentity(match.state.endpoint, match.agent);
+    claimCounts.set(identity, (claimCounts.get(identity) ?? 0) + 1);
+  }
+  for (const { session, context, match: candidate } of pendingRegistry) {
+    const identity = candidate === undefined ? undefined : agentIdentity(candidate.state.endpoint, candidate.agent);
+    const match = identity !== undefined && claimCounts.get(identity) === 1 ? candidate : undefined;
+    if (identity !== undefined && match === undefined) {
+      registryPartial = true;
+      errors.push({
+        source: "registry", repo_id: context.repo_id,
+        message: `ambiguous live occupant claim ignored: ${session.session_id}`,
+      });
+    }
+    const status = match?.agent.agent_status ?? "offline";
+    const branch = typeof session.lane === "string"
+      ? session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`
+      : null;
+    const activeAfterDone = session.done === true && statusIsActiveAfterDone(status);
+    const endpoint = match?.state.endpoint;
+    const normalized = {
+      ...session,
+      inventory_scoped: true,
+      inventory_agent: match?.agent ?? null,
+      inventory_workspace: match?.workspace ?? null,
+      inventory_occupant_id: match === undefined ? null : identity,
+      registered: true,
+      repo_id: context.repo_id,
+      root_id: context.root_id,
+      repo: context.path,
+      branch,
+      group: groupFor(branch, true),
+      active_after_done: activeAfterDone,
+      ...(endpoint === undefined ? {} : {
+        reported_server: session.server,
+        server: endpoint.path,
+        pane: match.agent.pane_id,
+        workspace: match.agent.workspace_id,
+        runtime_key: runtimeKey(endpoint, match.agent.pane_id),
+      }),
+      stale: endpoint === undefined && typeof session.server === "string" &&
+        endpointStates.some((state) => state.endpoint.path === canonicalPath(session.server) && !state.available),
+    };
+    allSessions.push(normalized);
+    if (match !== undefined) claimedAgents.add(identity);
+    if (includeHistory || session.done !== true || activeAfterDone) visibleSessions.push(normalized);
   }
 
   for (const state of endpointStates.filter((candidate) => candidate.available)) {
@@ -537,13 +631,18 @@ export async function collectMachineBoardObservation({
       const repository = agentRepositories.get(identity);
       if (filterRepository !== undefined && repository?.repo_id !== filterRepository.repo_id) continue;
       const context = repository === undefined ? undefined : contexts.get(repository.repo_id);
-      const worktree = branchByWorkspace.get(`${state.endpoint.server_id}\0${agent.workspace_id}`);
-      const branch = worktree?.branch ?? null;
+      const branch = agentProvenance.get(identity)?.branch ?? null;
       const title = typeof agent.terminal_title_stripped === "string" && agent.terminal_title_stripped !== ""
         ? agent.terminal_title_stripped
         : null;
       const session = {
         session_id: liveRowId(state.endpoint, agent),
+        inventory_scoped: true,
+        inventory_agent: agent,
+        inventory_occupant_id: identity,
+        inventory_workspace: state.snapshot.workspaces.find(
+          (workspace) => workspace.workspace_id === agent.workspace_id,
+        ) ?? null,
         registered: false,
         repo_id: context?.repo_id ?? null,
         root_id: context?.root_id ?? null,
@@ -589,23 +688,36 @@ export async function collectMachineBoardObservation({
     panes: endpointStates.flatMap((state) => state.available ? state.snapshot.panes : []),
     workspaces: endpointStates.flatMap((state) => state.available ? state.snapshot.workspaces : []),
   };
-  const runtime = new Map();
   const messageErrors = [];
   const messageErrorDetails = [];
   for (const state of endpointStates.filter((candidate) => candidate.available)) {
+    throwIfAborted();
     const sessions = visibleSessions.filter((session) => session.server === state.endpoint.path);
-    if (sessions.length === 0 || typeof state.client.readPane !== "function") continue;
+    if (sessions.length === 0) continue;
     const localRuntime = new Map();
-    const refreshed = await refreshMessagePreviews({
-      registry: sessions,
-      snapshot: state.snapshot,
-      runtime: localRuntime,
-      client: state.client,
-      now,
-    });
     for (const session of sessions) {
+      if (session.inventory_agent === null || typeof session.pane !== "string") continue;
+      const previous = runtime.get(session.runtime_key);
+      const identity = agentIdentity(state.endpoint, session.inventory_agent);
+      if (previous?.inventoryOccupantId === identity) localRuntime.set(session.pane, previous);
+    }
+    const refreshed = typeof state.client.readPane === "function"
+      ? await refreshMessagePreviews({
+        registry: sessions,
+        snapshot: state.snapshot,
+        runtime: localRuntime,
+        client: state.client,
+        now,
+      })
+      : { errors: [] };
+    throwIfAborted();
+    for (const session of sessions) {
+      if (session.inventory_agent === null || typeof session.pane !== "string") continue;
       const value = localRuntime.get(session.pane);
-      if (value !== undefined) runtime.set(session.runtime_key, value);
+      if (value !== undefined) runtime.set(session.runtime_key, {
+        ...value,
+        inventoryOccupantId: agentIdentity(state.endpoint, session.inventory_agent),
+      });
     }
     for (const message of refreshed.errors) {
       messageErrors.push(message);
@@ -690,8 +802,32 @@ export async function collectMachineBoardObservation({
         candidate.snapshot,
       ),
     }));
-  for (const state of endpointStates) state.client.close();
-  return { document, subscriptions };
+  const occupants = new Map();
+  const tripwires = new Map();
+  const rowsByPane = new Map();
+  for (const session of allSessions) {
+    if (session.inventory_agent === null || typeof session.pane !== "string" ||
+        typeof session.server !== "string") continue;
+    const state = endpointStates.find((item) => item.endpoint.path === session.server);
+    if (state === undefined || !state.available) continue;
+    const key = runtimeKey(state.endpoint, session.pane);
+    const identity = agentIdentity(state.endpoint, session.inventory_agent);
+    occupants.set(key, identity);
+    if (session.registered && (session.tripwires ?? []).length > 0) {
+      tripwires.set(key, { identity, row_id: session.session_id, patterns: session.tripwires });
+    }
+  }
+  for (const session of visibleSessions) {
+    if (session.inventory_agent === null || typeof session.pane !== "string" ||
+        typeof session.server !== "string") continue;
+    const state = endpointStates.find((item) => item.endpoint.path === session.server);
+    if (state?.available) rowsByPane.set(runtimeKey(state.endpoint, session.pane), session.session_id);
+  }
+  return { document, subscriptions, occupants, tripwires, rowsByPane };
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    abort();
+  }
 }
 
 export async function collectMachineBoardDocument(options) {
