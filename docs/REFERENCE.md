@@ -217,6 +217,14 @@ actions, extra operands, missing action row IDs, missing `--repo` values, `--onc
 combined with a JSON mode, and `--watch` without `--json` are rejected before
 observation or action. `--all` is valid only for read modes.
 
+The plain machine read also prints its scope and history setting, discovery coverage,
+available/total endpoint count, each endpoint's public ID and availability, and
+development-root, repository, and facilitator/lane group headings before the existing
+columns. Repository headings include the canonical identity and any collision
+suffix from `display_label`; a metadata-done row that is still active is explicitly
+marked `active after done`. These headings do not add JSON fields or change the
+meaning of existing table columns.
+
 Without `--repo`, the plain, JSON, and JSON-watch interfaces have machine scope and
 may start outside Git. They enumerate the current Herdr socket plus local endpoints
 from `herdr session list --json`, canonicalize and deduplicate socket paths, and try
@@ -303,7 +311,12 @@ it has no registration, name, Git repository, or lane branch. Such rows have
 `registered: false`; their stable opaque row ID derives from the local endpoint and
 Herdr occupant identity, and terminal title supplies `goal` only when labeled by
 `goal_source: "terminal-title"`. A registry row is joined to a live agent only when
-both resolve to the same canonical Git common directory. Workspace labels, repository
+both resolve to the same canonical Git common directory, the recorded workspace
+resolves to exactly one snapshot workspace, and the occupant's workspace and actual
+cwd checkout agree with verified workspace metadata. Multiple records claiming one
+occupant stay unjoined, while the live occupant remains an unregistered row. A
+non-Git cwd does not inherit repository identity from its workspace; a moved
+checkout uses its own Git common directory and checked-out branch. Workspace labels, repository
 basenames, remotes, author names, and agent names never establish repository identity.
 Malformed entries and records naming another repository are isolated and cannot
 contribute Git, gate, dirty, or report state.
@@ -366,8 +379,9 @@ whether it came from Herdr or the local byte bound; when truncated text contains
 confident answer, `limitation` says so without promising recoverable alternate-screen
 history.
 
-Preview state is memory-only and keyed to the pane occupant's Herdr agent-session
-identity, with a conservative agent/name/pane fallback. A late response is discarded
+Preview state is memory-only for the foreground watch and keyed to endpoint and pane
+with the occupant's Herdr agent-session identity and a conservative agent/name/pane
+fallback. A late response is discarded
 when that identity changes. Read errors retain a matching previous preview only with
 `stale: true`; timeout and unsupported-read limitations remain distinct. No output is
 copied into tracked reports. Snapshot requests use a 500 ms budget; pane reads have a
@@ -375,9 +389,10 @@ separate two-second budget and run at most four at once. One-shot modes read eac
 supported pane once. A watch reads on its five-second refresh and after status or
 output changes, coalescing events to no more than one read per pane per second.
 
-One watch invocation owns one observation client. SIGINT, SIGTERM, downstream pipe
-closure, and fatal read-service errors permanently close subscriptions, pending
-requests, reconnect timers, refresh timers, and the foreground process. Late replies
+One watch invocation owns its endpoint observation and subscription clients. SIGINT,
+SIGTERM, downstream pipe closure, and fatal read-service errors permanently close
+subscriptions, pending snapshot and pane-read requests, reconnect timers, refresh
+timers, and the foreground process; cancellation skips later endpoint probes. Late replies
 cannot resubscribe or replay lifecycle actions. Reads never focus an agent or write
 session records/completion markers. Reconnection restores display subscriptions only.
 
@@ -429,6 +444,9 @@ The `GATE` column reads `<lane worktree>/.lane/gate.json` and compares its full
 | `-` | No usable gate file exists |
 
 `lane board --once` prints these values as plain text without color or ANSI escapes.
+A live watch tripwire shows the configured literal substring that matched, not the
+entire output line; matching state survives refreshes only for the same endpoint
+and verified pane occupant.
 A failed prepare step writes no new gate, so the prior gate remains missing, stale,
 or tied to its earlier head.
 

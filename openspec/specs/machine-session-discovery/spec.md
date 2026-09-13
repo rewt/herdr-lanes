@@ -20,6 +20,9 @@ filter, and state which local servers/repositories were actually inspected.
 #### Scenario: Duplicate display labels retain identity
 - **WHEN** two discovered repositories have the same readable root/repository labels
 - **THEN** their canonical identities remain distinct and the read model provides a stable public-safe display suffix for picker disambiguation without treating labels as repository identity.
+#### Scenario: Same-named evidence and plain coverage
+- **WHEN** repositories share a topic and report name but only one has Git or report evidence
+- **THEN** the other cannot display that evidence, and the plain view names inspected endpoints and disambiguated repositories as well as machine/history scope.
 #### Scenario: Outside git or offline
 - **WHEN** the board starts outside git
 - **THEN** machine discovery still works; with no server it shows an explicit unavailable state and --repo can still supply offline repository observations.
@@ -30,6 +33,12 @@ registration, a name, a git repository, or a lane branch.
 #### Scenario: Facilitator, unnamed agent, and foreign metadata
 - **WHEN** snapshots contain a main-checkout facilitator, an unnamed lane agent, a non-git agent, and a mismatched registry entry
 - **THEN** all live agents remain visible, known repo identity is correct, unknown fields stay unknown, and no foreign checkout is used for gate/dirty state.
+#### Scenario: Cwd drift and ambiguous registry claims
+- **WHEN** a live agent leaves Git or moves checkout, or multiple registry records claim the same pane occupant
+- **THEN** provenance comes only from the actual verified cwd, ambiguous records do not claim the occupant, and every unmatched live agent remains visible as unregistered.
+#### Scenario: Foreground observation continuity and cancellation
+- **WHEN** a matching pane read fails after a successful watch preview, a configured tripwire matches inside a longer line, or the watch is interrupted during endpoint collection
+- **THEN** the matching prior preview is stale rather than erased, the configured substring survives same-occupant refreshes, and active requests close without probing later endpoints.
 
 ### Requirement: History filtering is independent of agent status
 The board SHALL hide completed registry history by default, support --all, and

@@ -2,6 +2,67 @@
 
 Date: 2026-09-11
 
+## Correction round 1 — 2026-09-13
+
+The saved Round 1 review remains unchanged. All seven findings are in scope for this
+lane. The untouched correction baseline passed 210/210 tests with zero skips in
+311.657 seconds. The lane rebased only onto `main` at `8d80ffa`; the HANDOFF conflict
+was resolved by retaining both the earlier inventory entry and all newer main
+entries. The review file's Git blob remains `992703ffe8d47594cdbdc416bbff92b2cd248172`.
+
+Seven offline regression groups were added without product changes, each with a
+deliberate negative control. In the supervisor-prioritized clear test window, the
+focused inventory file passed its four existing groups and failed all four new
+groups: cross-repository Git evidence leaked (`true` versus expected `false`), a
+non-Git cwd inherited a repository instead of `null`, ambiguous claims left only
+one instead of three unregistered agents, and the second preview read returned
+`null` instead of retaining the first read's message.
+
+The focused CLI/view selection failed all three new groups. Two socket fixtures
+initially hit sandbox `listen EPERM`, so they were rerun outside the sandbox: signal
+shutdown still probed one later endpoint (expected zero), and watch rendered
+`prefix STOP suffix` instead of the configured `STOP`. The plain group found the
+missing machine plain renderer. No product files had changed when these failures
+were observed; the shared test slot was released after that focused run.
+
+The correction binds per-session Git/report evidence to canonical repository and
+session identity; derives live repository and branch from actual Git cwd; requires a
+unique verified workspace/occupant registry claim; and keeps unmatched agents in
+the live union. The foreground watch retains endpoint/occupant-bound preview and
+tripwire state, closes pending observation clients on cancellation, and skips later
+endpoint probes. Plain output now states scope, history, endpoint coverage, and
+disambiguated repository/group identity with an active-after-done marker. JSON stays
+schema v1 with no added public fields, and the existing five-second refresh and
+one-second output coalescing are unchanged.
+
+The corrected inventory file then passed 8/8 in 1.840 seconds. The three selected
+watch/plain groups passed 3/3 with 142 unrelated name-filter skips in 1.498 seconds
+outside the sandbox. Deliberate controls for the four inventory groups failed 4/4
+at their named controls with four unrelated skips; the three selected watch/plain
+controls likewise failed 3/3 at their named controls with 142 unrelated skips.
+No Herdr executable was needed for these offline protocol/socket fixtures.
+
+The first serialized full run reached 219/220 with zero skips in 312.646 seconds.
+Its one failure exposed an inherited event-frame contract: an unconfigured
+`pane.output_matched` event must still emit an unchanged watch frame. The first
+implementation ignored that event, so the existing three-frame fixture timed out
+and left a board-watch child after its temporary directory was removed. That exact
+fixture child was terminated. The watch now emits the frame without inventing a
+tripwire value; the related tests also clean up children on assertion failure and
+allow a longer fixture-only wait under full-suite load. The four related focused
+watch groups then passed 4/4 with 141 unrelated skips in 6.291 seconds. The second
+serialized full `npm test` passed 220/220 with zero skips in 311.140 seconds,
+including all socket fixtures. Strict OpenSpec validation passed 23/23 with zero
+failures. Verification used Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec
+1.6.0. Every full run followed a clear process probe and ran alone.
+
+This round did not exercise an alternate host, a live multi-endpoint watch, or the
+Ink UI; the socket fixtures are offline protocol stand-ins. It makes no deferred
+sampling responsiveness/freshness claim. No push, promotion, close, lifecycle
+scheduling, remote discovery, `board/app.mjs`, `board/ui/`, or review-record edit
+occurred. The final source-CLI gate remains to be run after the documentation
+commit and will be handed to the supervisor verbatim.
+
 ## Result
 
 The dependency-free board read path now defaults to accessible local-machine Herdr

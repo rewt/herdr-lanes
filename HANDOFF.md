@@ -1732,3 +1732,42 @@ Living log for agents maintaining this repository. Newest entry last.
   full-diff public-safety inspection passed. No push, publication, installed
   snapshot update, live protocol adoption, selected pilot, measured savings, or
   completed console integration is claimed.
+
+## 2026-09-13 — board inventory Round 1 corrections
+
+- Rebasing the clean inventory lane only onto `main` at `8d80ffa` retained its earlier
+  HANDOFF entry and all newer supervisor release/planning entries. The saved Round 1
+  NEEDS-WORK review remains unchanged at Git blob
+  `992703ffe8d47594cdbdc416bbff92b2cd248172`; no review record was edited.
+- `board/board.mjs`, `board/inventory.mjs`, and `board/message-preview.mjs` now keep
+  Git/report evidence within canonical repository/session identity, derive live
+  repository and branch from actual cwd, require unique verified workspace/occupant
+  joins, and retain matching preview/tripwire runtime across watch refreshes. The
+  inventory cancels active snapshot and pane-read clients before further endpoint
+  probes. `lane.mjs` preserves configured-substring tripwire semantics and unchanged
+  event frames. `board/view.mjs` adds plain scope, coverage, endpoint, repository,
+  group, and active-after-done text without changing the JSON schema or table fields.
+- Seven offline test groups were observed failing before product edits: four in the
+  inventory file and three in the watch/plain selection. The two socket witnesses
+  first encountered sandbox `listen EPERM`, then failed on product behavior outside
+  the sandbox. Each group has a deliberate negative control; after correction the
+  four controls failed 4/4 at their named controls and the three selected controls
+  failed 3/3, with unrelated tests skipped by name filters. Corrected focused runs
+  passed 8/8 inventory and 3/3 selected watch/plain tests.
+- The untouched baseline passed 210/210 in 311.657 seconds. The first full
+  correction run reached 219/220 in 312.646 seconds; its one failure exposed an
+  inherited unconfigured match-event frame expectation. A watch child left after
+  that failed temporary fixture was terminated by exact PID, and related fixtures
+  now close children even on assertion failure. The four related focused watch
+  tests passed 4/4 after the frame fix. The final serialized `npm test` passed
+  220/220 with zero skips in 311.140 seconds; strict OpenSpec validation passed
+  23/23. Clear machine process probes preceded every full run. Node.js 20.19.4,
+  npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0 were used.
+- `docs/REFERENCE.md` documents the corrected plain and watch behavior; only the
+  board-inventory delta was synchronized to the current machine-discovery spec.
+  `board/app.mjs`, `board/ui/`, the sampling responsiveness/freshness slice, Git
+  identity, remote discovery, lifecycle actions, promotion, close, and push remain
+  untouched. No alternate host, live multi-endpoint watch, or Ink rendering was
+  exercised; offline protocol/socket fixtures provide those boundary checks.
+  Final whitespace/public-safety checks and the post-documentation source-CLI gate
+  remain to be recorded before handoff to the supervisor.
