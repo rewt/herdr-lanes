@@ -6,6 +6,9 @@ lanes, durable evidence, and the start of console integration.
 
 ## Starting state
 
+The table below is historical starting evidence. The latest checkpoint is the
+Afternoon acceptance section at the end of this report.
+
 The canonical release is `48ee44caa26de9e6b83b99b1f2a037fe99ee2cac`, tagged
 `supervisor/2026.09.13.1`. Its product tree was verified by 209/209 offline tests
 with zero skips in 316.814 seconds; release-focused checks passed 3/3.
@@ -77,3 +80,32 @@ session checkpoints stay under ignored `.lane/`. Committed lane reports and HAND
 entries are durable engineering evidence. No remote publication is part of this
 integration request. The pinned installed core snapshot is separate from repository
 main and does not acquire console code merely because these lanes are integrated.
+
+## Afternoon acceptance — 2026-09-13
+
+Coordinator specification Round 2 passed without findings at
+`6d8e74dfa43437da340f5758d79685363a3dc082`. The inspected public review was the
+only successor change in `e69143a827358e1c9684f8c5d45bc007a164484f`, promoted
+by validated fast-forward from `8d80ffa`. Main baseline passed 209/209 in 328.225
+seconds; the final evidence-commit gate passed 209/209 in 339.648 seconds;
+promotion independently revalidated 209/209 in 324.116 seconds, all zero skips.
+Review remains explicitly tied to its original SHA. No runtime changed.
+
+Reports and both public reviews are committed; private reviews and the final gate
+were preserved in the canonical checkout before cleanup. The merged lane branch
+and worktree are removed, its exact verified Herdr workspace and tabs are absent,
+and all three registered sessions have done markers. No cleanup remains for this
+lane. No push, installed-core update, protocol adoption, or live pilot occurred.
+
+Inventory's corrected `6d63181` passed 226/226 and reported strict OpenSpec 23/23,
+but independent Round 3 returned two moderate and two minor findings. The public
+review is preserved in that lane at `docs/reviews/board-inventory/6d63181-r3.md`
+by evidence commit `c2332c3`. Corrections address busy-refresh demand, terminal
+occupant retention, eligible-join test strength, and absent-goal provenance.
+Acceptance and promotion remain pending; the frame is still at its historical
+delivery and awaits inventory integration, rebase, gate, and independent review.
+
+The updated daily plan records conditional overnight assignments. Sampling waits
+for inventory; coordination read-model waits for inventory plus sampling; UI
+coordination waits for frame/details plus read-model. Pilot targets remain an
+explicit operator choice, and no measured efficiency improvement is claimed.

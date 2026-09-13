@@ -1673,3 +1673,26 @@ Living log for agents maintaining this repository. Newest entry last.
 - Live source parsing/forwarding, report delivery, pilot selection/measurement,
   alternate-host behavior, independent Round 2 review, push, promotion and close
   remain unverified or undone. The historical Round 1 verdict is not acceptance.
+
+## 2026-09-13 — coordinator specification accepted and evening queue bounded
+
+- Accepted independent Round 2 PASS at `6d8e74d`; preserved its public projection
+  as the sole evidence-only successor change in `e69143a`. Refreshed the final
+  gate, then promoted through fresh validation and fast-forward-only integration.
+  Reports and public reviews remain committed, with private review/gate evidence
+  preserved outside the removed worktree. Verified merged branch/worktree removal,
+  retirement of the exact completed Herdr workspace/tabs, and three done markers.
+- Main baseline passed 209/209 in 328.225 seconds; final evidence-commit gate
+  passed 209/209 in 339.648 seconds; promotion validation passed 209/209 in 324.116
+  seconds, each with zero skips and serialized test execution. No behavior change
+  or new product negative control applies to this evidence/planning closeout.
+- Updated the daily plan and console integration report with accepted versus
+  pending work and conditional overnight boundaries. Inventory Round 3 remains
+  NEEDS-WORK with four scoped findings; its review was preserved in the lane and
+  failure-first corrections assigned to the existing engineer. Frame remains
+  queued. Sampling precedes coordination read-model; complete details precedes
+  coordination UI. Exact local assignments and cleanup evidence stay private.
+- Documentation-only checkpoint after validated integration; whitespace and
+  full-diff public-safety inspection passed. No push, publication, installed
+  snapshot update, live protocol adoption, selected pilot, measured savings, or
+  completed console integration is claimed.

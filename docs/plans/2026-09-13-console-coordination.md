@@ -1,6 +1,6 @@
 # Daily goals: console and identity coordination
 
-Date: 2026-09-13, America/Chicago. Status: planned.
+Date: 2026-09-13, America/Chicago. Status: in progress; specification integrated.
 Scope: herdr-lanes integration and protocol design. Existing project acceptance
 checks apply. No remote publication or cross-project rollout is implied.
 
@@ -76,3 +76,36 @@ depends on frame plus complete discovery. Idea CLI/composer remains a later slic
 Record material results and decisions rather than heartbeats. End the day with
 achieved outcomes, review/gate evidence, spend observations, unresolved decisions,
 and the first next action per project.
+
+## Afternoon/evening checkpoint and overnight gates
+
+The coordinator specification passed independent Round 2 review at `6d8e74d`.
+Its evidence-only successor `e69143a` was validated, promoted, and closed with
+reports, reviews, and local gate evidence preserved. Goals 2 and 3 have reviewed
+documentation deliverables; live adoption, project selection, and measurement
+remain pending. This is not a shipped coordination console or savings claim.
+
+Inventory Round 3 at `6d63181` returned NEEDS-WORK despite a 226/226 gate.
+Four corrections remain: retain status-triggered preview demand during busy
+collection; include terminal identity in occupant retention; restore meaningful
+eligible-join regression coverage; preserve null provenance for absent goals.
+The existing engineer owns one bounded correction delivery, followed by a new
+gate and independent review. Frame remains queued behind inventory acceptance.
+
+| Sequence | Deliverable | Start/finish boundary |
+| --- | --- | --- |
+| Inventory corrections | Four failure-first fixes, report, final gate | Independent acceptance before promotion; no self-acceptance |
+| Frame reconciliation | Rebase onto accepted main, compatibility checks, refreshed gate/review | Existing repository-scoped frame only; no new details/composer |
+| Sampling | Bounded asynchronous observation and measured large fixture | Start only after inventory promotes; serialize shared files and tests |
+| Coordination read-model | Opt-in bounded JSON/watch projection | Start only after inventory and sampling are accepted and promoted |
+| Coordination UI | Source forwarding and separate coordination attention | Wait for frame, complete details, and read-model promotion |
+| Manual pilot | Two explicitly selected projects with finite outcomes/budgets | Operator selection required; no console prerequisite |
+
+Before each unattended dispatch, the supervisor supplies a verified baseline SHA,
+exact brief, file ownership, acceptance checks, reporting target, finite delivery
+budget, and review-by cutoff. Stop at READY_FOR_REVIEW or an unresolved scope,
+authority, or resource blocker. No routine model polling, automatic lifecycle
+replay, push, release, unselected project work, or inferred follow-on assignment.
+Tests and promotion stay serialized; detailed evidence stays with the project
+owner. Missing usage measurements remain unknown. Morning handoff distinguishes
+review-ready artifacts from accepted integrations and verified cleanup.
