@@ -157,17 +157,86 @@ export function renderPlainBoard(rows, stats, {
   registryErrors = [],
   messageErrors = [],
   observationErrors = [],
+  preambleLines = [],
+  bodyLines = tableLines(rows),
 } = {}) {
   const registryNotice = missingRegistry === undefined ? [] : [`registry not found: ${missingRegistry}`];
   return [
     `lane board (${connection})`,
+    ...preambleLines,
     ...registryNotice,
     ...registryErrors.map((error) => `registry error: ${error}`),
     ...messageErrors.map((error) => `message notice: ${error}`),
     ...observationErrors.map((error) => `${error.source} error: ${error.message}`),
-    ...tableLines(rows),
+    ...bodyLines,
     footerLine(stats),
   ].join("\n") + "\n";
+}
+
+export function renderMachineBoardPlain(document, { missingRegistry } = {}) {
+  const projected = stateFromBoardDocument(document);
+  const projectedRows = rowsFromBoardDocument(document, { preferTopic: true });
+  const scope = document.scope ?? {};
+  const coverage = document.coverage ?? {};
+  const servers = coverage.servers ?? [];
+  const accessible = servers.filter((server) => server.available).length;
+  const inaccessible = servers.filter((server) => !server.available).map((server) => server.server_id);
+  const repositories = new Map((document.repositories ?? []).map((repo) => [repo.repo_id, repo]));
+  const preambleLines = [
+    `scope ${scope.kind ?? "unknown"}${scope.repo_id ? ` ${scope.repo_id}` : ""} | history ${scope.include_history ? "included" : "excluded"}`,
+    `coverage discovery ${coverage.discovery ?? "unknown"} | endpoints ${accessible}/${servers.length}` +
+      ` | inaccessible ${inaccessible.length > 0 ? inaccessible.join(", ") : "none"}` +
+      ` | repositories ${repositories.size} | registry ${coverage.registry ?? "unknown"}`,
+    ...servers.map((server) => `server ${server.server_id} | ${server.available ? "available" : "inaccessible"}` +
+      ` | ${server.current ? "current" : "other"} | running ${server.running ?? "unknown"}` +
+      ` | labels ${(server.labels ?? []).join(", ")}`),
+    ...[...repositories.values()].map((repo) => `repository record ${repo.display_label ?? repo.repository_label ?? "unknown"}` +
+      ` | ${repo.repo_id} | root ${repo.root_label ?? "unknown"} (${repo.root_id ?? "unknown"})`),
+  ];
+  const bodyLines = [];
+  const rows = document.rows ?? [];
+  let index = 0;
+  let previousRoot;
+  let previousRepo;
+  while (index < rows.length) {
+    const row = rows[index];
+    const repo = repositories.get(row.repo_id);
+    const rootKey = repo?.root_id ?? null;
+    const repoKey = row.repo_id ?? null;
+    if (rootKey !== previousRoot) {
+      bodyLines.push(`development root ${repo?.root_label ?? "unknown"} | ${rootKey ?? "unknown"}`);
+      previousRoot = rootKey;
+    }
+    if (repoKey !== previousRepo) {
+      bodyLines.push(`repository ${repo?.display_label ?? repo?.repository_label ?? "unknown"} | ${repoKey ?? "unknown"}`);
+      previousRepo = repoKey;
+    }
+    const group = row.group?.kind ?? "unknown";
+    const groupKey = row.group?.key ?? "unknown";
+    const groupRows = [];
+    const marked = [];
+    while (index < rows.length && (rows[index].repo_id ?? null) === repoKey &&
+        (rows[index].group?.kind ?? "unknown") === group &&
+        (rows[index].group?.key ?? "unknown") === groupKey) {
+      groupRows.push(projectedRows[index]);
+      if (rows[index].active_after_done) marked.push(rows[index].row_id);
+      index += 1;
+    }
+    bodyLines.push(`group ${group} | ${groupKey}`, ...tableLines(groupRows));
+    for (const rowId of marked) bodyLines.push(`row ${rowId} | active after done`);
+  }
+  if (rows.length === 0) bodyLines.push(...tableLines([]));
+  return renderPlainBoard(projectedRows, projected.stats, {
+    connection: projected.connection,
+    missingRegistry,
+    registryErrors: (document.errors ?? []).filter((error) => error.source === "registry")
+      .map((error) => error.message),
+    messageErrors: (document.errors ?? []).filter((error) => error.source === "message")
+      .map((error) => error.message),
+    observationErrors: (document.errors ?? []).filter((error) => !["registry", "message"].includes(error.source)),
+    preambleLines,
+    bodyLines,
+  });
 }
 
 export function interactiveMessage(state, message) {

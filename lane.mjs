@@ -36,13 +36,14 @@ import {
   buildSubscriptions,
   collectBoardState,
   joinBoardRows,
+  matchingTripwire,
   renderPlainBoard,
 } from "./board/board.mjs";
 import { verifyCanonicalSession, verifyFocusSelection } from "./board/actions.mjs";
 import { HerdrClient, herdrSocketPath } from "./board/herdr-client.mjs";
 import { collectMachineBoardObservation } from "./board/inventory.mjs";
 import { refreshMessagePreviews } from "./board/message-preview.mjs";
-import { rowsFromBoardDocument, stateFromBoardDocument } from "./board/view.mjs";
+import { renderMachineBoardPlain } from "./board/view.mjs";
 
 const IS_REVIEW_COMMAND = process.argv[2] === "review";
 const CALLER_CWD = process.cwd();
@@ -2376,28 +2377,15 @@ function boardInventoryOptions(options) {
 }
 
 function writeMachineBoardPlain(document) {
-  const projected = stateFromBoardDocument(document);
-  const registryErrors = document.errors
-    .filter((error) => error.source === "registry")
-    .map((error) => error.message);
-  const messageErrors = document.errors
-    .filter((error) => error.source === "message")
-    .map((error) => error.message);
-  const observationErrors = document.errors
-    .filter((error) => !["registry", "message"].includes(error.source));
-  process.stdout.write(renderPlainBoard(rowsFromBoardDocument(document, { preferTopic: true }), projected.stats, {
-    connection: projected.connection,
+  process.stdout.write(renderMachineBoardPlain(document, {
     missingRegistry: document.coverage.registry === "missing" && REPO_ROOT !== undefined
       ? registryPathFor(REPO_ROOT, CONFIG)
       : undefined,
-    registryErrors,
-    messageErrors,
-    observationErrors,
   }));
 }
 
-async function readMachineBoard(options) {
-  return collectMachineBoardObservation(boardInventoryOptions(options));
+async function readMachineBoard(options, observationOptions = {}) {
+  return collectMachineBoardObservation({ ...boardInventoryOptions(options), ...observationOptions });
 }
 
 async function watchMachineBoard(options) {
@@ -2406,13 +2394,19 @@ async function watchMachineBoard(options) {
   let refreshTimer;
   let previewTimer;
   let document;
+  let occupants = new Map();
+  let tripwires = new Map();
+  let rowsByPane = new Map();
   let subscriptionSignature = "";
   const clients = new Map();
+  const runtime = new Map();
+  const controller = new AbortController();
   let finish;
   const completed = new Promise((resolvePromise) => { finish = resolvePromise; });
   const stop = () => {
     if (stopped) return;
     stopped = true;
+    controller.abort();
     clearInterval(refreshTimer);
     clearTimeout(previewTimer);
     for (const client of clients.values()) client.close();
@@ -2422,9 +2416,10 @@ async function watchMachineBoard(options) {
   stopBoardObservation = stop;
 
   const installSubscriptions = (subscriptions) => {
-    const signature = JSON.stringify(subscriptions);
+    const signature = JSON.stringify([subscriptions, [...occupants]]);
     if (signature === subscriptionSignature) return;
     subscriptionSignature = signature;
+    const boundOccupants = new Map(occupants);
     for (const client of clients.values()) client.close();
     clients.clear();
     for (const item of subscriptions) {
@@ -2437,6 +2432,11 @@ async function watchMachineBoard(options) {
       client.on("event", (event) => {
         if (stopped || document === undefined) return;
         const paneId = event.data?.pane_id;
+        const key = `${item.endpoint.server_id}\0${paneId}`;
+        if (boundOccupants.get(key) !== occupants.get(key)) {
+          void refresh();
+          return;
+        }
         if (event.event === "pane.output_changed") {
           if (previewTimer === undefined) {
             previewTimer = setTimeout(() => {
@@ -2447,7 +2447,7 @@ async function watchMachineBoard(options) {
           return;
         }
         const row = document.rows.find(
-          (candidate) => candidate.server_id === item.endpoint.path && candidate.pane_id === paneId,
+          (candidate) => candidate.row_id === rowsByPane.get(key),
         );
         if (row === undefined) {
           void refresh();
@@ -2462,7 +2462,18 @@ async function watchMachineBoard(options) {
           }
           process.stdout.write(`${JSON.stringify(document)}\n`);
         } else if (event.event === "pane.output_matched") {
-          row.tripwire = event.data?.matched_line ?? event.data?.read?.text ?? row.tripwire;
+          const binding = tripwires.get(key);
+          if (binding?.row_id !== row.row_id || binding.identity !== occupants.get(key)) return;
+          const tripwire = matchingTripwire(binding.patterns, event);
+          if (tripwire === undefined) return;
+          const previous = runtime.get(key);
+          runtime.set(key, {
+            ...(previous?.inventoryOccupantId === binding.identity ? previous : {}),
+            inventoryOccupantId: binding.identity,
+            tripwire,
+            observedAt: new Date().toISOString(),
+          });
+          row.tripwire = tripwire;
           process.stdout.write(`${JSON.stringify(document)}\n`);
         }
       });
@@ -2478,9 +2489,12 @@ async function watchMachineBoard(options) {
     if (stopped || refreshPending) return;
     refreshPending = true;
     try {
-      const observation = await readMachineBoard(options);
+      const observation = await readMachineBoard(options, { runtime, signal: controller.signal });
       if (stopped) return;
       document = observation.document;
+      occupants = observation.occupants;
+      tripwires = observation.tripwires;
+      rowsByPane = observation.rowsByPane;
       process.stdout.write(`${JSON.stringify(document)}\n`);
       installSubscriptions(observation.subscriptions);
     } catch (error) {
