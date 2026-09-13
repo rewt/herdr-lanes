@@ -12,7 +12,7 @@ with zero skips in 316.814 seconds; release-focused checks passed 3/3.
 
 | Lane | Delivery commit | Saved validation | Independent review |
 | --- | --- | --- | --- |
-| board-inventory | e9e0d2b7ea657d6912443fb88b256d3f8aa729e6 | Matching HEAD, npm test exit 0, 317.176 seconds | Round 1 started; no verdict yet |
+| board-inventory | e9e0d2b7ea657d6912443fb88b256d3f8aa729e6 | Matching HEAD, npm test exit 0, 317.176 seconds | Round 1 NEEDS-WORK |
 | board-frame | 9e8c8f99ed1ffdaf35de6694fbe0a6bfbf33161f | Matching HEAD, npm test exit 1, 309.560 seconds | Not started |
 
 Both worktrees were clean at inspection. Their committed reports are
@@ -28,6 +28,18 @@ conflicting in each lane against the starting release. Actual rebases and
 later integration can still expose other issues; this preview is not validation.
 
 ## Integration order
+
+Round 1 completed with two major and five moderate findings, review ID
+`lr-7451c85a3828a7040dff8d58087b87bd`. Major findings concern cross-repository
+observation fallback and actual-cwd ownership. Moderate findings cover ambiguous
+registry joins, retained preview/tripwire state, cancellation, tripwire compatibility,
+and plain-output coverage. The validated public projection is retained in the
+inventory lane at `docs/reviews/board-inventory/e9e0d2b-r1.md`; it is still
+untracked at this checkpoint. The zero-test review made no fresh execution claim.
+Corrections and renewed acceptance are required before promotion.
+
+Today's broader coordination goals are in
+`docs/plans/2026-09-13-console-coordination.md`.
 
 1. Independently review the fixed inventory delivery using its split OpenSpec
    artifacts, committed report, and inherited gate. Round 1 has a zero-test

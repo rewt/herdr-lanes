@@ -1601,3 +1601,19 @@ Living log for agents maintaining this repository. Newest entry last.
   negative control applies. Whitespace and public-text checks passed. Live console
   integration, downstream sampling/details/composer, installation, and publication
   remain unverified or pending.
+
+## 2026-09-13 — daily console and coordination goals
+
+- Added `docs/plans/2026-09-13-console-coordination.md` with three outcomes:
+  verified console integration, a coordinator/supervisor protocol specification
+  reconciled with console dependencies, and a measurable two-project pilot brief.
+  Refreshed the private daily handoff to point to this authoritative plan.
+- Updated the integration report to inventory Round 1 NEEDS-WORK: two major and
+  five moderate findings at the original delivery SHA. Private evidence and the
+  untracked lane public projection are retained. No correction, promotion, or
+  completed integration is claimed by this planning step.
+- Documentation only; no runtime behavior or dependencies changed. No new tests
+  or behavior negative controls were needed. Prior 209/209 baseline evidence
+  remains applicable to unchanged product code; `git diff --check` passed.
+  Pilot project selection, protocol review, implementation, measured savings,
+  and external rollout remain pending.
