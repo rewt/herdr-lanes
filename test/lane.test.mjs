@@ -3294,6 +3294,118 @@ test("board JSON watch frames event snapshots and stops pending refresh, reconne
   }
 });
 
+test("machine watch cancellation closes an in-flight snapshot and skips later endpoints", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  let first;
+  let second;
+  try {
+    first = await fakeBoardServer(fixture, () => {});
+    const secondPath = join(fixture.root, "second.sock");
+    let secondConnections = 0;
+    second = createServer((socket) => {
+      secondConnections += 1;
+      socket.destroy();
+    });
+    await new Promise((resolvePromise, reject) => {
+      second.once("error", reject);
+      second.listen(secondPath, resolvePromise);
+    });
+    const herdr = join(fixture.bin, "herdr");
+    writeFileSync(herdr, `#!/bin/sh\nif [ "$1 $2 $3" = "session list --json" ]; then\n  printf '%s\\n' '${JSON.stringify({ sessions: [
+      { name: "other", running: true, socket_path: secondPath },
+    ] })}'\n  exit 0\nfi\nexit 1\n`);
+    chmodSync(herdr, 0o755);
+    const watch = laneProcess(fixture, ["board", "--watch", "--json"], {
+      env: { ...fixture.env, HERDR_SOCKET_PATH: first.socketPath },
+    });
+    await waitForCondition(() => first.requests.some((request) => request.method === "session.snapshot"),
+      "in-flight machine snapshot");
+    watch.child.kill("SIGTERM");
+    const result = await watch.completed;
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(secondConnections, 0);
+    await waitForCondition(() => first.sockets.size === 0, "cancelled snapshot socket closure");
+    negativeControl("machine watch cancellation across endpoints");
+  } finally {
+    if (first !== undefined) await first.close();
+    if (second !== undefined) await new Promise((resolvePromise) => second.close(resolvePromise));
+    fixture.cleanup();
+  }
+});
+
+test("machine watch reports only the configured tripwire substring", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  let server;
+  try {
+    mkdirSync(join(fixture.repo, ".lane"));
+    writeFileSync(join(fixture.repo, ".lane", "sessions.json"), `${JSON.stringify([{
+      name: "board-agent", workspace: "workspace-1", lane: "tripwire", role: "engineer",
+      report: "docs/reports/tripwire.md", deadline: null, done: false, tripwires: ["STOP"],
+    }])}\n`);
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      if (request.method === "session.snapshot") {
+        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult({ cwd: fixture.repo }) })}\n`);
+      } else if (request.method === "events.subscribe") {
+        socket.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
+        socket.write(`${JSON.stringify({ event: "pane.output_matched", data: {
+          pane_id: "pane-1", matched_line: "prefix STOP suffix", read: { text: "prefix STOP suffix" },
+        } })}\n`);
+        socket.write(`${JSON.stringify({ event: "pane.output_changed", data: { pane_id: "pane-1" } })}\n`);
+      }
+    });
+    const watch = laneProcess(fixture, ["board", "--watch", "--json"], {
+      env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
+    });
+    await waitForCondition(() => watch.stdout().trim().split("\n").filter(Boolean).length >= 3,
+      "matched tripwire and refreshed frames", 4_000);
+    watch.child.kill("SIGTERM");
+    const result = await watch.completed;
+    assert.equal(result.status, 0, result.stderr);
+    const frames = result.stdout.trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(frames[1].rows[0].tripwire, "STOP");
+    assert.equal(frames.at(-1).rows[0].tripwire, "STOP");
+    negativeControl("configured substring tripwire projection");
+  } finally {
+    if (server !== undefined) await server.close();
+    fixture.cleanup();
+  }
+});
+
+test("machine plain view exposes coverage, colliding repository identities, and active-after-done", async () => {
+  const { renderMachineBoardPlain } = await import("../board/view.mjs");
+  const document = {
+    schema_version: 1,
+    scope: { kind: "machine", repo_id: null, include_history: false },
+    coverage: { discovery: "partial", registry: "available", herdr: "connected", servers: [
+      { server_id: "local-111", labels: ["current"], current: true, running: true, available: true },
+      { server_id: "local-222", labels: ["other"], current: false, running: false, available: false },
+    ] },
+    repositories: [
+      { repo_id: "fixture-repo-one", root_id: "fixture-root-one", root_label: "team",
+        repository_label: "repo", display_label: "repo #11111111", display_suffix: "11111111" },
+      { repo_id: "fixture-repo-two", root_id: "fixture-root-two", root_label: "team",
+        repository_label: "repo", display_label: "repo #22222222", display_suffix: "22222222" },
+    ],
+    rows: [
+      { row_id: "one", repo_id: "fixture-repo-one", name: "worker", status: "working",
+        branch: "lane/shared", topic: "shared", done: true, active_after_done: true,
+        group: { kind: "lane", key: "lane/shared" } },
+      { row_id: "two", repo_id: "fixture-repo-two", name: "worker", status: "working",
+        branch: "lane/shared", topic: "shared", done: false, active_after_done: false,
+        group: { kind: "lane", key: "lane/shared" } },
+    ],
+    host: { load_1m: 0, free_memory_bytes: 1024, workers: {} },
+    errors: [{ source: "herdr", server_id: "local-222", message: "unavailable" }],
+  };
+  const plain = renderMachineBoardPlain(document);
+  assert.match(plain, /scope machine.*history excluded/u);
+  assert.match(plain, /discovery partial.*1\/2.*local-222/u);
+  assert.match(plain, /repo #11111111/u);
+  assert.match(plain, /repo #22222222/u);
+  assert.match(plain, /active after done/u);
+  negativeControl("machine plain identity and coverage");
+});
+
 test("board action arguments reject missing, extra, and unknown operands before observation", () => {
   const fixture = makeFixture();
   try {

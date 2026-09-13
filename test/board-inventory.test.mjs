@@ -423,3 +423,179 @@ test("board starts outside Git and supports repository filtering plus all-histor
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("machine evidence never crosses repositories with the same lane and report names", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-isolation-")));
+  try {
+    const first = makeRepository(root, "first");
+    const second = makeRepository(root, "second");
+    const checkout = join(root, "shared-checkout");
+    git(first.repo, ["worktree", "add", "-b", "lane/shared", checkout]);
+    mkdirSync(join(checkout, "docs", "reports"), { recursive: true });
+    writeFileSync(join(checkout, "docs", "reports", "shared.md"), "**PASS**\n");
+    const socket = join(root, "board.sock");
+    for (const repository of [first, second]) {
+      writeSession(repository, {
+        session_id: repository === first
+          ? "11111111-1111-4111-8111-111111111111"
+          : "22222222-2222-4222-8222-222222222222",
+        topic: "shared", name: `worker-${repository === first ? "first" : "second"}`,
+        workspace: repository === first ? "first-main" : "second-main",
+        pane: repository === first ? "first-pane" : "second-pane", server: socket,
+      });
+    }
+    const { collectMachineBoardDocument } = await import(INVENTORY);
+    const document = await collectMachineBoardDocument({
+      currentSocketPath: socket,
+      listSessions: () => ({ sessions: [] }),
+      clientFactory: () => ({
+        snapshot: async () => snapshot([], [
+          workspace(first, "first-main", first.repo, false),
+          workspace(second, "second-main", second.repo, false),
+        ]),
+        close() {},
+      }),
+      listWorktrees: ({ repository }) => worktreeList(repository, [{
+        branch: "main", open_workspace_id: repository === first ? "first-main" : "second-main",
+        path: repository.repo,
+      }]),
+      stats: { load: 0, freeMemoryBytes: 1024, workers: {} },
+    });
+    const firstRow = document.rows.find((row) => row.repo_id === first.repoId);
+    const secondRow = document.rows.find((row) => row.repo_id === second.repoId);
+    assert.equal(firstRow.gate.state, "missing");
+    assert.equal(firstRow.report.verdict, "PASS");
+    assert.equal(secondRow.git.available, false);
+    assert.equal(secondRow.gate.state, "missing");
+    assert.equal(secondRow.report.path, null);
+    negativeControl("cross-repository evidence isolation");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("live provenance comes from verified cwd rather than a workspace's repository or branch", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-cwd-")));
+  try {
+    const first = makeRepository(root, "first");
+    const second = makeRepository(root, "second");
+    const firstLane = join(root, "first-lane");
+    const otherLane = join(root, "other-lane");
+    git(first.repo, ["worktree", "add", "-b", "lane/first", firstLane]);
+    git(first.repo, ["worktree", "add", "-b", "lane/other", otherLane]);
+    const socket = join(root, "board.sock");
+    const agents = [
+      liveAgent({ name: "outside", cwd: join(root, "outside"), workspace: "lane-workspace", pane: "outside-pane" }),
+      liveAgent({ name: "moved", cwd: otherLane, workspace: "lane-workspace", pane: "moved-pane" }),
+      liveAgent({ name: "foreign", cwd: second.repo, workspace: "lane-workspace", pane: "foreign-pane" }),
+    ];
+    const { collectMachineBoardDocument } = await import(INVENTORY);
+    const document = await collectMachineBoardDocument({
+      currentSocketPath: socket,
+      listSessions: () => ({ sessions: [] }),
+      clientFactory: () => ({ snapshot: async () => snapshot(agents, [
+        workspace(first, "lane-workspace", firstLane, true),
+      ]), close() {} }),
+      listWorktrees: ({ repository }) => worktreeList(repository, [{
+        branch: "lane/first", open_workspace_id: "lane-workspace", path: firstLane,
+      }]),
+      stats: { load: 0, freeMemoryBytes: 1024, workers: {} },
+    });
+    const byName = (name) => document.rows.find((row) => row.name === name);
+    assert.equal(byName("outside").repo_id, null);
+    assert.equal(byName("outside").branch, null);
+    assert.equal(byName("moved").repo_id, first.repoId);
+    assert.equal(byName("moved").branch, "lane/other");
+    assert.equal(byName("foreign").repo_id, second.repoId);
+    assert.equal(byName("foreign").branch, "main");
+    assert.ok(document.errors.some((error) => error.source === "repository" && /workspace/u.test(error.message)));
+    negativeControl("cwd repository and branch provenance");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("registry joins require a verified workspace and a unique occupant claim", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-claims-")));
+  try {
+    const repository = makeRepository(root, "claims");
+    const socket = join(root, "board.sock");
+    const definitions = [
+      ["11111111-1111-4111-8111-111111111111", "missing", "absent-workspace", "missing-pane"],
+      ["22222222-2222-4222-8222-222222222222", "stale", "expected-workspace", "stale-pane"],
+      ["33333333-3333-4333-8333-333333333333", "duplicate", "actual-workspace", "duplicate-pane"],
+      ["44444444-4444-4444-8444-444444444444", "duplicate", "actual-workspace", "duplicate-pane"],
+    ];
+    for (const [session_id, name, selectedWorkspace, pane] of definitions) {
+      writeSession(repository, {
+        session_id, topic: name, name, workspace: selectedWorkspace, pane, server: socket,
+      });
+    }
+    const agents = [
+      liveAgent({ name: "missing", cwd: repository.repo, workspace: "actual-workspace", pane: "missing-pane" }),
+      liveAgent({ name: "stale", cwd: repository.repo, workspace: "actual-workspace", pane: "stale-pane" }),
+      liveAgent({ name: "duplicate", cwd: repository.repo, workspace: "actual-workspace", pane: "duplicate-pane" }),
+    ];
+    const { collectMachineBoardDocument } = await import(INVENTORY);
+    const document = await collectMachineBoardDocument({
+      currentSocketPath: socket,
+      listSessions: () => ({ sessions: [] }),
+      clientFactory: () => ({ snapshot: async () => snapshot(agents, [
+        workspace(repository, "actual-workspace", repository.repo, false),
+        workspace(repository, "expected-workspace", repository.repo, false),
+      ]), close() {} }),
+      listWorktrees: () => worktreeList(repository, [{
+        branch: "main", open_workspace_id: "actual-workspace", path: repository.repo,
+      }]),
+      stats: { load: 0, freeMemoryBytes: 1024, workers: {} },
+    });
+    assert.equal(document.rows.filter((row) => row.registered).length, 4);
+    assert.equal(document.rows.filter((row) => !row.registered).length, 3);
+    assert.ok(document.rows.filter((row) => row.registered).every((row) => row.status === "offline"));
+    assert.deepEqual(document.rows.filter((row) => !row.registered).map((row) => row.name).sort(),
+      ["duplicate", "missing", "stale"]);
+    negativeControl("one-to-one verified registry joins");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("machine preview state survives a matching occupant's later read failure", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-preview-")));
+  try {
+    const repository = makeRepository(root, "preview");
+    const socket = join(root, "board.sock");
+    const agent = liveAgent({ name: "preview", cwd: repository.repo, workspace: "main", pane: "preview-pane" });
+    let reads = 0;
+    const runtime = new Map();
+    const { collectMachineBoardDocument } = await import(INVENTORY);
+    const options = {
+      currentSocketPath: socket,
+      listSessions: () => ({ sessions: [] }),
+      clientFactory: () => ({
+        snapshot: async () => snapshot([agent], [workspace(repository, "main", repository.repo, false)]),
+        readPane: async () => {
+          reads += 1;
+          if (reads > 1) throw new Error("fixture read failed");
+          return { pane_id: "preview-pane", source: "recent_unwrapped", format: "text",
+            text: "• Preview survives\n", revision: 1, truncated: false };
+        },
+        close() {},
+      }),
+      listWorktrees: () => worktreeList(repository, [{
+        branch: "main", open_workspace_id: "main", path: repository.repo,
+      }]),
+      runtime,
+      stats: { load: 0, freeMemoryBytes: 1024, workers: {} },
+    };
+    const first = await collectMachineBoardDocument(options);
+    assert.equal(first.rows[0].last_message.text, "Preview survives");
+    const second = await collectMachineBoardDocument(options);
+    assert.equal(second.rows[0].last_message.text, "Preview survives");
+    assert.equal(second.rows[0].last_message.stale, true);
+    assert.match(second.rows[0].last_message.limitation, /retaining the previous preview/u);
+    negativeControl("watch-lifetime preview retention");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
