@@ -728,7 +728,17 @@ shared files: lane/api-change × lane/docs-change: src/client.js
 6. Refuses if main moved during validation.
 7. Fast-forwards local main without merging or pushing remotely.
 
-Run only one promotion at a time. For unattended callers:
+Run only one promotion at a time.
+
+Independent review and promotion authority remain the caller's responsibility;
+`promote` runs fresh validation and does not enforce a saved review verdict or
+consume a board gate as approval. A supervisor following the
+[closeout protocol](../config/supervisor/2026.09.13.1/CLOSEOUT.md) owns promotion
+and close after the operator delegates those actions and the project's checks pass.
+Run from the canonical checkout on the configured integration branch, even when
+the supervisor itself works in a coordination worktree.
+
+For serialized unattended invocation:
 
 ```sh
 /path/to/herdr-lanes/contrib/promote-safely.sh /path/to/repo api-change /tmp/api-promote.log
@@ -741,6 +751,15 @@ exit status.
 
 `lane close <topic>` requires a clean lane worktree. A merged branch is deleted. An
 unmerged branch is tagged as `archive/lane/<topic>` before deletion.
+
+Close first attempts Herdr-native worktree removal so its workspace retires too.
+If Herdr is unavailable or removal fails, it falls back to Git removal; a successful
+Git close can therefore leave a visible workspace. Verify the exact workspace and
+tab identities after close. `lane board done` only changes display metadata and
+does not terminate an agent or close its tab. Preserve required ignored artifacts
+outside the lane before removal; neither a commit nor an archive tag saves them.
+Supervisor closeout retains `promoted-cleanup-pending` until session retirement is
+verified, and never reruns promotion to repair incomplete UI or marker cleanup.
 
 Only after those Git operations succeed, close writes done markers for every known
 session matching the canonical repository and exact topic. Dirty refusal or archive

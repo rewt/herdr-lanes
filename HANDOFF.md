@@ -1526,3 +1526,60 @@ Living log for agents maintaining this repository. Newest entry last.
   session, live engineer report delivery, and measured token savings remain
   unverified. Existing agents were not retargeted or restarted. No push,
   financial action, publication, or console review occurred.
+
+## 2026-09-12 — native remote Codex working-root correction
+
+- A live supervisor exposed a launch-recipe defect: Herdr's pane and TUI
+  process had the intended project worktree cwd, but the native remote Codex
+  status bar showed the shared app-server daemon's unrelated cwd. The previous
+  `--remote unix://` example omitted Codex `-C`. A no-prompt Herdr startup
+  with `-C` displayed the intended project worktree. The affected supervisor
+  was interrupted and a freshly rooted session took its name; affected lane
+  results require independent revalidation before acceptance.
+- Added versioned supervisor pack `2026.09.12.4`. Its native remote launch
+  example passes `-C "$supervisor_worktree"` after Herdr's `--`; its guide and
+  starter require checking Codex's startup `directory:` before prompting each
+  remote supervisor, engineer, or reviewer. Updated the README's pack pointer
+  and added an offline contract test in `test/supervisor-pack.test.mjs`.
+- Negative control: the focused new test failed against the previous pack's
+  missing `-C`, then passed against `2026.09.12.4`. The pre-change `npm test`
+  baseline passed 206/206. The final sandbox run passed 201/207; its six board
+  Unix-socket tests were refused with `listen EPERM`, while the new test passed.
+  The host-permitted final run passed 207/207 in 310.963 seconds, with no skips.
+  `git diff --check` passed.
+  Node.js 20.19.4, npm 10.8.2, Git 2.54.0, Codex CLI 0.154.0.
+- Installed the new pack under three local identity roots, advanced each
+  `current` pointer, and verified seven source/installed hashes per identity.
+  The earlier pack remains available for rollback. This is a launch and
+  documentation correction; the core CLI, board, and route defaults did not
+  change. Native phone pairing and visibility remain unverified. No push,
+  publication, wallet, chain, or prover action occurred as part of this fix.
+
+## 2026-09-13 — supervisor-owned lane closeout protocol 2026.09.13.1
+
+- Added `config/supervisor/2026.09.13.1/` with a supervisor-owned closeout
+  sequence and synchronized starter, engineer handoff, project locator, daily
+  checkpoint, manifest, and release digests. After the operator delegates
+  promotion and close, the supervisor verifies the final gate and independent
+  review, preserves required evidence, promotes once from the canonical
+  checkout, closes the lane, and verifies the exact Herdr sessions retired.
+- The protocol distinguishes `promoted-cleanup-pending` from `closed`, retains
+  lanes after failed promotion, refuses cleanup with ambiguous or replaced
+  occupants, and does not replay promotion or lifecycle commands to repair a
+  leftover workspace or display marker. Engineers stop changing the lane after
+  READY_FOR_REVIEW and leave promotion, worktree removal, and session retirement
+  to the supervisor. README and REFERENCE now link and describe this boundary.
+- Before the pack existed, the focused contract test failed 0/2: the latest
+  manifest omitted `CLOSEOUT.md` and the closeout document was absent. The
+  explicit post-change negative-control run also produced zero passes and two
+  deliberate failures. Focused final tests passed 3/3, including the inherited
+  native-remote working-directory contract and all release digest checks.
+- The initial sandbox baseline passed 201/207; its six failures were the known
+  Unix-socket `listen EPERM` board fixtures. The resumed final `npm test` passed
+  209/209 with zero skips in 316.814 seconds, including all socket fixtures.
+  `git diff --check` passed. Verification used Node.js 20.19.4, npm 10.8.2,
+  and Git 2.54.0.
+- No CLI runtime behavior changed. The new pack was not installed into identity
+  roots or sent to a running supervisor, and no live accepted-lane promotion,
+  Herdr retirement, fallback cleanup, alternate host, push, or publication was
+  performed.
