@@ -172,7 +172,10 @@ includes metadata-completed history. Coverage and discovery errors say which loc
 endpoints were actually observed. The interactive entrypoint remains repository-
 anchored until its separate frame update consumes the machine document. Plain and
 JSON reads use only Node.js built-ins and do not require the optional board package
-installation. When Herdr can read a registered Codex or Claude pane, every
+installation. Live registry joins require recorded agent-session identity and the
+verified lane branch; older records remain offline history while current occupants
+stay visible separately. A terminal-title goal never becomes a brief excerpt.
+When Herdr can read a registered Codex or Claude pane, every
 mode uses the same conservative visible-text adapter to show the last confidently
 bounded assistant response. Recognized terminal footer and tool chrome are excluded;
 unsupported or incomplete output is labeled unavailable. JSON keeps any bounded raw

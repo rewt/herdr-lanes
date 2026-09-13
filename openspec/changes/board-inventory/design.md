@@ -29,6 +29,14 @@ are unambiguous. Preserve every snapshot agent when metadata is absent, malforme
 ambiguous, or foreign. Unregistered rows use the actual cwd's verified repository or
 unknown repository, live status and pane. Title may supply an explicitly labeled
 goal; brief, role, report, and gate remain unknown unless independently verifiable.
+Dispatch records optional agent-session and terminal IDs only when the same occupant
+is seen around delivery. A live join requires the recorded agent-session ID, checks
+the terminal ID when present, and requires the recorded lane to equal the verified
+live branch. A switched or detached checkout and a same-name replacement remain
+separate from historical metadata. Older records without immutable evidence still
+load for display but never claim a current occupant. A terminal-title goal does not
+become a brief excerpt. Status-only watch events retain their immediate status frame
+and schedule the existing coalesced preview refresh.
 Facilitators attach to canonical-checkout rows outside lane subgroups. Non-Git agents
 remain visible under unknown identity/repository.
 

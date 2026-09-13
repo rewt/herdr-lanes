@@ -63,6 +63,55 @@ scheduling, remote discovery, `board/app.mjs`, `board/ui/`, or review-record edi
 occurred. The final source-CLI gate remains to be run after the documentation
 commit and will be handed to the supervisor verbatim.
 
+## Correction round 2 — 2026-09-13
+
+The fixed-commit Round 2 NEEDS-WORK review at
+`docs/reviews/board-inventory/f243562-r2.md` was preserved byte-for-byte (Git blob
+`99c93a64d595f3780621e8ccb668d7cace29895a`). Its four findings are addressed
+without changing the Ink entrypoint, UI, lifecycle actions, or JSON schema.
+The untouched baseline passed 220/220 with zero skips in 311.606 seconds.
+
+Before product edits, the three new inventory groups all failed: a switched branch
+left one joined row instead of separate historical/live rows; a same-name, same-pane
+replacement with a new agent-session ID inherited a done record and disappeared;
+and a title-only unregistered row exposed its title as `brief.excerpt`. Two CLI groups
+also failed: dispatch omitted the asserted immutable record fields, and a status-only
+watch event did not trigger a pane read before the periodic refresh. All five groups
+retained deliberate `negativeControl` calls. An additional post-prompt replacement
+fixture was added to pin the dispatch guard. The focused failure-first slot was
+released before implementation.
+
+Dispatch previously recorded only mutable name, workspace, and pane handles. The
+installed Herdr agent-list response was inspected for field names only and exposes
+`agent_session` plus `terminal_id`. Dispatch now compares the same occupant before
+and after delivery, writes optional `agent_session_id` and `terminal_id` into the
+immutable, gitignored session record, and refuses a detected post-prompt replacement
+as partial success without replaying the brief. This metadata is display-only. A
+registry join now requires a recorded agent-session ID, matching terminal ID when
+present, the canonical repository, and agreement between recorded `lane` and the
+verified live branch. Detached or switched checkouts and replacement occupants stay
+separate; older records lacking immutable evidence still load as offline history.
+The live occupant remains unregistered and visible. Unregistered title goals keep
+their labeled `goal`, while `brief.path` and `brief.excerpt` remain null. Status events
+emit the status frame first and schedule the existing coalesced preview refresh.
+
+After correction, the full inventory file passed 11/11 and the three selected
+dispatch/watch cases passed 3/3. Two older board fixtures initially failed because
+they modeled a registry lane against the main checkout without immutable evidence;
+they were updated to represent a real lane checkout and agent-session identity, then
+passed. The six selected deliberate controls failed at their named controls with
+zero passes. Final serialized `npm test` passed 226/226 with zero skips in 316.863
+seconds, including fake-socket behavior. Strict OpenSpec validation passed 23/23;
+the change delta and current machine-session-discovery spec are synchronized.
+Node.js 20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0 were used.
+
+No live dispatch, real multi-endpoint watch, alternate-host, Ink render, or
+minimum-version check was performed. Responsiveness and freshness guarantees remain
+in board-sampling (2c-ii); the existing five-second periodic refresh and one-second
+event coalescing remain. Final whitespace/public-safety checks and a source-CLI gate
+against the clean final commit follow this report; the gate line stays outside tracked
+files.
+
 ## Result
 
 The dependency-free board read path now defaults to accessible local-machine Herdr

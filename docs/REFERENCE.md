@@ -310,11 +310,18 @@ never reported as clean or passing. Every live snapshot agent remains a row even
 it has no registration, name, Git repository, or lane branch. Such rows have
 `registered: false`; their stable opaque row ID derives from the local endpoint and
 Herdr occupant identity, and terminal title supplies `goal` only when labeled by
-`goal_source: "terminal-title"`. A registry row is joined to a live agent only when
-both resolve to the same canonical Git common directory, the recorded workspace
-resolves to exactly one snapshot workspace, and the occupant's workspace and actual
-cwd checkout agree with verified workspace metadata. Multiple records claiming one
-occupant stay unjoined, while the live occupant remains an unregistered row. A
+`goal_source: "terminal-title"`; this never supplies `brief.excerpt`, which stays null
+with `brief.path`. A registry row is joined to a live agent only when
+both resolve to the same canonical Git common directory, the recorded `lane` equals
+the live checkout's verified branch (a detached checkout cannot match), the recorded
+workspace resolves to exactly one snapshot workspace, and the occupant's workspace
+and actual cwd checkout agree with verified workspace metadata. The record must also
+carry an immutable `agent_session_id` equal to the snapshot agent-session value;
+when present, its `terminal_id` must also agree. Names, panes, and workspace labels
+alone never verify a live claim. Older records without agent-session evidence remain
+usable as offline history, while any current occupant remains a separate unregistered
+row. Multiple records claiming one
+occupant also stay unjoined, while the live occupant remains an unregistered row. A
 non-Git cwd does not inherit repository identity from its workspace; a moved
 checkout uses its own Git common directory and checked-out branch. Workspace labels, repository
 basenames, remotes, author names, and agent names never establish repository identity.
@@ -387,7 +394,9 @@ when that identity changes. Read errors retain a matching previous preview only 
 copied into tracked reports. Snapshot requests use a 500 ms budget; pane reads have a
 separate two-second budget and run at most four at once. One-shot modes read each
 supported pane once. A watch reads on its five-second refresh and after status or
-output changes, coalescing events to no more than one read per pane per second.
+output changes, coalescing events to no more than one read per pane per second. A
+status event emits its status frame first, then schedules that coalesced preview read;
+status-only transitions do not wait for the periodic refresh.
 
 One watch invocation owns its endpoint observation and subscription clients. SIGINT,
 SIGTERM, downstream pipe closure, and fatal read-service errors permanently close
@@ -419,7 +428,13 @@ New records contain `session_id`, canonical `repo_id`, development `root_id`,
 canonical `repo`, `topic`, actual Herdr `name`, opaque `workspace` and `pane`, local
 `server` endpoint, full `lane` branch, selected route `role` (or `agent`), absolute
 source `brief` path or null, bounded `goal`, conventional `report`, null `deadline`,
-false `done`, and UTC `created_at`. The conventional report is
+false `done`, and UTC `created_at`. Dispatch also records optional immutable
+`agent_session_id` and `terminal_id` strings when the same occupant is verified
+before and after prompt delivery. A detected replacement during delivery yields partial
+success without a session record or prompt replay. Older records lacking these
+fields still load for display but cannot assert a live join. These are gitignored,
+display-only metadata, not authorization or lifecycle state; the JSON board document
+adds no occupant-identity field. The conventional report is
 `docs/reports/<topic>.md`; the board looks in the lane checkout first and the
 canonical checkout after promotion or close. A missing report has no implied verdict.
 

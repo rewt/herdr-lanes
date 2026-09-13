@@ -1771,3 +1771,33 @@ Living log for agents maintaining this repository. Newest entry last.
   exercised; offline protocol/socket fixtures provide those boundary checks.
   Final whitespace/public-safety checks and the post-documentation source-CLI gate
   remain to be recorded before handoff to the supervisor.
+
+## 2026-09-13 — board inventory Round 2 corrections
+
+- Addressed all four findings in the preserved Round 2 NEEDS-WORK review (unchanged
+  blob `99c93a64d595f3780621e8ccb668d7cace29895a`). Registered live joins now
+  require the recorded lane to equal the verified Git branch and a matching immutable
+  agent-session ID; a stored terminal ID is also checked. Switched, detached,
+  replaced, and unverifiable older records stay separate from visible live occupants.
+- Dispatch now records optional, display-only agent-session and terminal IDs after
+  verifying the same occupant before and after delivery. A detected replacement
+  yields partial success without another prompt or false record. Title-only
+  unregistered goals no longer create a brief excerpt. Status-only watch events
+  emit the status frame and schedule the existing coalesced preview read. The board
+  JSON schema remains v1 with no new fields; the record metadata, reference,
+  inventory change/current spec, and delivery report are synchronized.
+- The untouched baseline passed 220/220 in 311.606 seconds. Five focused groups
+  failed before product edits at the branch, replacement, title, missing dispatch
+  metadata, and status-only preview behaviors. Corrected inventory passed 11/11;
+  three selected dispatch/watch checks passed 3/3. Six selected deliberate controls
+  failed at their named controls. Two older fixtures were updated to model actual
+  lane branches and immutable identities after the new safety rule exposed their
+  previous main-checkout mismatch.
+- Final serialized `npm test` passed 226/226, zero skips, in 316.863 seconds; strict
+  OpenSpec validation passed 23/23. Syntax and whitespace checks passed. Node.js
+  20.19.4, npm 10.8.2, Git 2.54.0, and OpenSpec 1.6.0 were used. The final clean-
+  commit source-CLI gate is conversation-only evidence, not stored here.
+- No live dispatch, alternate host, multi-endpoint watch, Ink rendering, minimum-
+  version run, sampling freshness guarantee, lifecycle action, push, promotion,
+  close, or review-record edit was performed. `board/app.mjs` and `board/ui/` remain
+  untouched.
