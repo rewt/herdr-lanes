@@ -1617,3 +1617,31 @@ Living log for agents maintaining this repository. Newest entry last.
   remains applicable to unchanged product code; `git diff --check` passed.
   Pilot project selection, protocol review, implementation, measured savings,
   and external rollout remain pending.
+
+## 2026-09-13 — identity coordinator protocol and pilot specification
+
+- Added `openspec/changes/identity-coordinator/` proposal, design, manual and
+  read-only observation deltas, and three independently deliverable future briefs.
+  Added `docs/identity-coordinator-pilot.md`, its measurement template, and
+  `docs/reports/identity-coordinator-spec.md`. No product runtime, dependency,
+  current capability spec, supervisor release, in-flight inventory/frame slice, or
+  review record changed.
+- The proposed manual protocol fixes one integration owner per canonical project,
+  explicit daily outcome/budget allocation, optional supervisor as acceptance owner,
+  direct coordinator-to-engineer ownership for small work, stable assignment and
+  delta-report identities, explicit reassignment and evidence-based resumption.
+  The later console projection is opt-in/read-only after bounded discovery; it is
+  not a work queue, lease, authorization, or lifecycle trigger.
+- Read-only `git show` audited inventory `1fdd8f9` and frame `9e8c8f9` JSON/spec
+  surfaces. Existing goal, lane report and technical attention were separated from
+  proposed assignment owner, latest coordination delta, and decision attention.
+  Pilot selection remains pending: one identity and two explicit canonical projects.
+- Baseline `npm test` passed 209/209, zero skips, in 309.880 seconds after a clear
+  process probe. No behavior change warranted a failing product test or negative
+  control. Focused strict OpenSpec validation passed; repository-wide strict
+  validation passed 21/21 at concurrency one. Node.js 20.19.4, Git 2.54.0,
+  OpenSpec 1.6.0. Final diff checks and post-commit gate are conversation evidence.
+- Initial baseline waited for another suite's test slot; this lane ran no test
+  during inventory's later reserved focused slot. No live pilot, selected identity
+  or projects, protocol adoption, supervisor notification result, console extension,
+  independent review, alternate-host check, push, promotion, or close is claimed.
