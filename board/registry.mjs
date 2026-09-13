@@ -53,6 +53,11 @@ function validateCommon(session, label) {
   if ((session.tripwires ?? []).some((pattern) => typeof pattern !== "string" || pattern === "")) {
     throw new Error(`${label} tripwires must contain non-empty strings`);
   }
+  for (const key of ["agent_session_id", "terminal_id"]) {
+    if (session[key] !== undefined && (typeof session[key] !== "string" || session[key] === "")) {
+      throw new Error(`${label} ${key} must be a non-empty string when present`);
+    }
+  }
 }
 
 function validateNew(session, label) {

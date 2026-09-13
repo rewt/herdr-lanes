@@ -71,7 +71,11 @@ function writeSession(repository, session, registry = ".lane/sessions.json") {
     workspace: session.workspace,
     pane: session.pane,
     server: session.server,
-    lane: `lane/${session.topic}`,
+    lane: session.lane ?? `lane/${session.topic}`,
+    ...(session.omitOccupantEvidence ? {} : {
+      agent_session_id: session.agent_session_id ?? `${session.pane}-session`,
+      terminal_id: session.terminal_id ?? `${session.pane}-terminal`,
+    }),
     role: "engineer",
     brief: null,
     goal: session.goal ?? session.topic,
@@ -323,12 +327,18 @@ test("history filtering distinguishes metadata completion from live Herdr done",
       ["cccccccc-cccc-4ccc-8ccc-cccccccccccc", "idle-done", "idle-pane", true],
       ["dddddddd-dddd-4ddd-8ddd-dddddddddddd", "herdr-done", "herdr-done-pane", false],
     ];
+    const checkouts = new Map();
     for (const [sessionId, topic, pane, done] of definitions) {
+      if (topic !== "offline-done") {
+        const checkout = join(root, `${topic}-checkout`);
+        git(repository.repo, ["worktree", "add", "-b", `lane/${topic}`, checkout]);
+        checkouts.set(topic, checkout);
+      }
       writeSession(repository, {
         session_id: sessionId,
         topic,
         name: topic,
-        workspace: "history-main",
+        workspace: `${topic}-workspace`,
         pane,
         server: socket,
         done,
@@ -336,21 +346,22 @@ test("history filtering distinguishes metadata completion from live Herdr done",
     }
     writeFileSync(join(repository.repo, ".lane", "sessions.json.d", "malformed.json"), "{\n");
     const agents = [
-      liveAgent({ name: "working-after-done", status: "working", cwd: repository.repo, workspace: "history-main", pane: "working-pane" }),
-      liveAgent({ name: "idle-done", status: "idle", cwd: repository.repo, workspace: "history-main", pane: "idle-pane" }),
-      liveAgent({ name: "herdr-done", status: "done", cwd: repository.repo, workspace: "history-main", pane: "herdr-done-pane" }),
+      liveAgent({ name: "working-after-done", status: "working", cwd: checkouts.get("working-after-done"), workspace: "working-after-done-workspace", pane: "working-pane" }),
+      liveAgent({ name: "idle-done", status: "idle", cwd: checkouts.get("idle-done"), workspace: "idle-done-workspace", pane: "idle-pane" }),
+      liveAgent({ name: "herdr-done", status: "done", cwd: checkouts.get("herdr-done"), workspace: "herdr-done-workspace", pane: "herdr-done-pane" }),
     ];
-    const liveSnapshot = snapshot(agents, [workspace(repository, "history-main", repository.repo, false)]);
+    const liveSnapshot = snapshot(agents, [...checkouts].map(([topic, checkout]) =>
+      workspace(repository, `${topic}-workspace`, checkout, true)));
     const { collectMachineBoardDocument } = await import(INVENTORY);
     const options = {
       anchor: { path: repository.repo },
       currentSocketPath: socket,
       listSessions: () => ({ sessions: [] }),
       clientFactory: () => ({ snapshot: async () => liveSnapshot, close() {} }),
-      listWorktrees: () => worktreeList(repository, [{
-        branch: "main", is_bare: false, is_detached: false, is_linked_worktree: false,
-        is_prunable: false, label: "repo", open_workspace_id: "history-main", path: repository.repo,
-      }]),
+      listWorktrees: () => worktreeList(repository, [...checkouts].map(([topic, checkout]) => ({
+        branch: `lane/${topic}`, is_bare: false, is_detached: false, is_linked_worktree: true,
+        is_prunable: false, label: topic, open_workspace_id: `${topic}-workspace`, path: checkout,
+      }))),
       stats: { load: 0, freeMemoryBytes: 1024, workers: {} },
     };
     const current = await collectMachineBoardDocument(options);
@@ -601,6 +612,146 @@ test("machine preview state survives a matching occupant's later read failure", 
     assert.equal(second.rows[0].last_message.stale, true);
     assert.match(second.rows[0].last_message.limitation, /retaining the previous preview/u);
     negativeControl("watch-lifetime preview retention");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a recorded lane never claims a switched branch or detached live checkout", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-branch-drift-")));
+  try {
+    const repository = makeRepository(root, "branch-drift");
+    const checkout = join(root, "lane-checkout");
+    git(repository.repo, ["worktree", "add", "-b", "lane/original", checkout]);
+    const socket = join(root, "board.sock");
+    const sessionId = "77777777-7777-4777-8777-777777777777";
+    writeSession(repository, {
+      session_id: sessionId, topic: "original", name: "worker",
+      workspace: "lane-workspace", pane: "lane-pane", server: socket,
+      goal: "Original task brief",
+    });
+    const agent = liveAgent({ name: "worker", cwd: checkout, workspace: "lane-workspace", pane: "lane-pane" });
+    const { collectMachineBoardDocument } = await import(INVENTORY);
+    const read = () => collectMachineBoardDocument({
+      currentSocketPath: socket,
+      listSessions: () => ({ sessions: [] }),
+      clientFactory: () => ({ snapshot: async () => snapshot([agent], [
+        workspace(repository, "lane-workspace", checkout, true),
+      ]), close() {} }),
+      listWorktrees: () => worktreeList(repository, [{
+        branch: (() => {
+          try { return git(checkout, ["symbolic-ref", "--quiet", "--short", "HEAD"]); }
+          catch { return null; }
+        })(),
+        open_workspace_id: "lane-workspace", path: checkout,
+      }]),
+      stats: { load: 0, freeMemoryBytes: 1024, workers: {} },
+    });
+    const original = await read();
+    assert.equal(original.rows.length, 1);
+    assert.equal(original.rows[0].row_id, sessionId);
+    assert.equal(original.rows[0].status, "working");
+
+    git(checkout, ["switch", "-c", "lane/replacement"]);
+    const switched = await read();
+    assert.equal(switched.rows.length, 2);
+    assert.equal(switched.rows.find((row) => row.registered).status, "offline");
+    assert.equal(switched.rows.find((row) => !row.registered).branch, "lane/replacement");
+    assert.equal(switched.rows.find((row) => !row.registered).goal_source, "terminal-title");
+
+    git(checkout, ["switch", "--detach"]);
+    const detached = await read();
+    assert.equal(detached.rows.length, 2);
+    assert.equal(detached.rows.find((row) => row.registered).status, "offline");
+    assert.equal(detached.rows.find((row) => !row.registered).branch, null);
+    assert.equal(detached.rows.find((row) => !row.registered).git.available, false);
+    negativeControl("recorded lane versus live branch and detached HEAD");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("replacement occupants cannot inherit a registry claim or its done history", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-replacement-")));
+  try {
+    const repository = makeRepository(root, "replacement");
+    const checkout = join(root, "lane-checkout");
+    git(repository.repo, ["worktree", "add", "-b", "lane/replacement", checkout]);
+    const socket = join(root, "board.sock");
+    const sessionId = "88888888-8888-4888-8888-888888888888";
+    writeSession(repository, {
+      session_id: sessionId, topic: "replacement", name: "same-name",
+      workspace: "lane-workspace", pane: "lane-pane", server: socket,
+      goal: "Retired task", done: true, agent_session_id: "former-session",
+    });
+    const replacement = liveAgent({
+      name: "same-name", status: "idle", cwd: checkout,
+      workspace: "lane-workspace", pane: "lane-pane",
+      session: "new-session", terminal: "lane-pane-terminal", title: "New occupant title",
+    });
+    const { collectMachineBoardDocument } = await import(INVENTORY);
+    const options = {
+      currentSocketPath: socket,
+      listSessions: () => ({ sessions: [] }),
+      clientFactory: () => ({ snapshot: async () => snapshot([replacement], [
+        workspace(repository, "lane-workspace", checkout, true),
+      ]), close() {} }),
+      listWorktrees: () => worktreeList(repository, [{
+        branch: "lane/replacement", open_workspace_id: "lane-workspace", path: checkout,
+      }]),
+      stats: { load: 0, freeMemoryBytes: 1024, workers: {} },
+    };
+    const current = await collectMachineBoardDocument(options);
+    assert.equal(current.rows.length, 1);
+    assert.equal(current.rows[0].registered, false);
+    assert.equal(current.rows[0].goal, "New occupant title");
+    assert.equal(current.rows[0].done, false);
+    const history = await collectMachineBoardDocument({ ...options, includeHistory: true });
+    assert.equal(history.rows.length, 2);
+    assert.equal(history.rows.find((row) => row.registered).status, "offline");
+    assert.equal(history.rows.find((row) => !row.registered).role, null);
+
+    writeSession(repository, {
+      session_id: "99999999-9999-4999-8999-999999999999", topic: "replacement",
+      name: "same-name", workspace: "lane-workspace", pane: "lane-pane", server: socket,
+      omitOccupantEvidence: true,
+    });
+    const oldFormat = await collectMachineBoardDocument({ ...options, includeHistory: true });
+    assert.equal(oldFormat.rows.filter((row) => row.registered).length, 2);
+    assert.equal(oldFormat.rows.filter((row) => !row.registered).length, 1);
+    negativeControl("same-name same-pane replacement and unverifiable legacy record");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a title-only unregistered goal never fabricates a brief excerpt", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-title-")));
+  try {
+    const repository = makeRepository(root, "title");
+    const socket = join(root, "board.sock");
+    const agent = liveAgent({
+      name: "manual-agent", cwd: repository.repo, workspace: "main-workspace",
+      pane: "manual-pane", title: "Manual terminal title",
+    });
+    const { collectMachineBoardDocument } = await import(INVENTORY);
+    const document = await collectMachineBoardDocument({
+      currentSocketPath: socket,
+      listSessions: () => ({ sessions: [] }),
+      clientFactory: () => ({ snapshot: async () => snapshot([agent], [
+        workspace(repository, "main-workspace", repository.repo, false),
+      ]), close() {} }),
+      listWorktrees: () => worktreeList(repository, [{
+        branch: "main", open_workspace_id: "main-workspace", path: repository.repo,
+      }]),
+      stats: { load: 0, freeMemoryBytes: 1024, workers: {} },
+    });
+    assert.equal(document.rows.length, 1);
+    assert.equal(document.rows[0].registered, false);
+    assert.equal(document.rows[0].goal, "Manual terminal title");
+    assert.equal(document.rows[0].goal_source, "terminal-title");
+    assert.deepEqual(document.rows[0].brief, { path: null, excerpt: null });
+    negativeControl("unregistered title is not a brief excerpt");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

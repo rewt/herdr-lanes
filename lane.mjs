@@ -928,8 +928,8 @@ function sleepMs(ms) {
 // the agent's cwd as the lane worktree.
 function verifyAgentCwd(agentName, path, deadline) {
   const record = agentRecord(agentName, deadline);
-  if (record === undefined) return { ok: false, cwd: undefined };
-  return { ok: samePath(record.cwd, path), cwd: record.cwd };
+  if (record === undefined) return { ok: false, cwd: undefined, record: undefined };
+  return { ok: samePath(record.cwd, path), cwd: record.cwd, record };
 }
 
 // Dry-run a rebase of `branch` onto `against` with merge-tree (no worktree
@@ -1257,6 +1257,25 @@ function dispatch(topic, promptText, options = {}) {
     created_at: new Date().toISOString(),
   };
   try {
+    const liveAfterDelivery = agentRecord(agentName, options.deadline);
+    if (liveAfterDelivery === undefined || liveAfterDelivery.pane_id !== pane ||
+        liveAfterDelivery.workspace_id !== workspaceId || !samePath(liveAfterDelivery.cwd, path)) {
+      throw new Error("the delivered agent no longer occupies its verified lane pane");
+    }
+    const beforeSessionId = cwdCheck.record?.agent_session?.value;
+    const afterSessionId = liveAfterDelivery.agent_session?.value;
+    const beforeTerminalId = cwdCheck.record?.terminal_id;
+    const afterTerminalId = liveAfterDelivery.terminal_id;
+    if ((typeof beforeSessionId === "string" && beforeSessionId !== afterSessionId) ||
+        (typeof beforeTerminalId === "string" && beforeTerminalId !== afterTerminalId)) {
+      throw new Error("the delivered agent's immutable occupant identity changed");
+    }
+    if (typeof beforeSessionId === "string" && beforeSessionId !== "") {
+      record.agent_session_id = beforeSessionId;
+    }
+    if (typeof beforeTerminalId === "string" && beforeTerminalId !== "") {
+      record.terminal_id = beforeTerminalId;
+    }
     registryPath = preflightRegistryAutomation();
     writeSessionRecord(registryPath, record);
   } catch (error) {
@@ -2415,6 +2434,14 @@ async function watchMachineBoard(options) {
   };
   stopBoardObservation = stop;
 
+  const schedulePreviewRefresh = () => {
+    if (previewTimer !== undefined) return;
+    previewTimer = setTimeout(() => {
+      previewTimer = undefined;
+      void refresh();
+    }, 1_000);
+  };
+
   const installSubscriptions = (subscriptions) => {
     const signature = JSON.stringify([subscriptions, [...occupants]]);
     if (signature === subscriptionSignature) return;
@@ -2438,12 +2465,7 @@ async function watchMachineBoard(options) {
           return;
         }
         if (event.event === "pane.output_changed") {
-          if (previewTimer === undefined) {
-            previewTimer = setTimeout(() => {
-              previewTimer = undefined;
-              void refresh();
-            }, 1_000);
-          }
+          schedulePreviewRefresh();
           return;
         }
         const row = document.rows.find(
@@ -2461,6 +2483,7 @@ async function watchMachineBoard(options) {
             row.active_after_done = row.done && ["working", "blocked", "unknown"].includes(row.status);
           }
           process.stdout.write(`${JSON.stringify(document)}\n`);
+          schedulePreviewRefresh();
         } else if (event.event === "pane.output_matched") {
           const binding = tripwires.get(key);
           if (binding?.row_id === row.row_id && binding.identity === occupants.get(key)) {

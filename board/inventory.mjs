@@ -322,7 +322,13 @@ function addDisplaySuffixes(records) {
   }
 }
 
-function registryLiveMatch(session, endpointStates, agentRepositories, verifiedAgents, repository) {
+function registryLiveMatch(session, endpointStates, agentRepositories, agentProvenance, verifiedAgents, repository) {
+  const recordedBranch = typeof session.lane === "string"
+    ? session.lane.startsWith("lane/") ? session.lane : `lane/${session.lane}`
+    : null;
+  // Names, pane IDs, and workspace labels can be reused by a later occupant.
+  if (typeof session.agent_session_id !== "string" || session.agent_session_id === "" ||
+      recordedBranch === null) return undefined;
   const endpointPath = typeof session.server === "string" && isAbsolute(session.server)
     ? canonicalPath(session.server)
     : undefined;
@@ -335,10 +341,13 @@ function registryLiveMatch(session, endpointStates, agentRepositories, verifiedA
     const selectedWorkspace = matchingWorkspaces[0];
     for (const agent of state.snapshot.agents) {
       if (agent.name !== session.name) continue;
+      if (agent.agent_session?.value !== session.agent_session_id) continue;
+      if (session.terminal_id !== undefined && agent.terminal_id !== session.terminal_id) continue;
       if (typeof session.pane === "string" && agent.pane_id !== session.pane) continue;
       if (selectedWorkspace.workspace_id !== agent.workspace_id) continue;
-      if (!verifiedAgents.has(agentIdentity(state.endpoint, agent))) continue;
-      const agentRepository = agentRepositories.get(agentIdentity(state.endpoint, agent));
+      const identity = agentIdentity(state.endpoint, agent);
+      if (!verifiedAgents.has(identity) || agentProvenance.get(identity)?.branch !== recordedBranch) continue;
+      const agentRepository = agentRepositories.get(identity);
       if (agentRepository?.repo_id !== repository.repo_id) continue;
       matches.push({ state, agent, workspace: selectedWorkspace });
     }
@@ -569,7 +578,7 @@ export async function collectMachineBoardObservation({
         continue;
       }
       pendingRegistry.push({ session, context, match: registryLiveMatch(
-        session, endpointStates, agentRepositories, verifiedAgents, context,
+        session, endpointStates, agentRepositories, agentProvenance, verifiedAgents, context,
       ) });
     }
   }

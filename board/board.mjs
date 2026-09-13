@@ -488,7 +488,7 @@ export function boardSnapshotDocument({
       goal_source: session.goal_source ?? (session.goal === undefined ? null : "registry"),
       brief: {
         path: session.brief ?? null,
-        excerpt: session.goal ?? null,
+        excerpt: session.goal_source === "terminal-title" ? null : session.goal ?? null,
       },
       status: agent?.agent_status ?? "offline",
       done: session.done === true,

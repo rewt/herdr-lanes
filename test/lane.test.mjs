@@ -252,11 +252,13 @@ function boardSnapshotResult({ status = "working", cwd = "/ignored/live/path" } 
       protocol: 20,
       version: "test",
       agents: [{
+        agent_session: { agent: "codex", kind: "id", source: "herdr:codex", value: "fixture-board-session" },
         name: "board-agent",
         workspace_id: "workspace-1",
         pane_id: "pane-1",
         cwd,
         agent_status: status,
+        terminal_id: "fixture-board-terminal",
       }],
       panes: [],
       workspaces: [{ workspace_id: "workspace-1", label: "workspace-1" }],
@@ -451,7 +453,8 @@ if (args[0] === "workspace" && args[1] === "list") {
 } else if (args[0] === "agent" && args[1] === "list") {
   result("cli:agent:list", { type: "agent_list", agents: state.agent ? [{
     agent_status: "idle", cwd: process.env.FAKE_HERDR_AGENT_CWD || process.env.FAKE_HERDR_LANE_PATH, name: state.agent,
-    pane_id: "w-lane:p2", workspace_id: "w-lane",
+    pane_id: "w-lane:p2", workspace_id: "w-lane", terminal_id: "fixture-terminal-1",
+    agent_session: { agent: "codex", kind: "id", source: "herdr:codex", value: state.agentSession || "fixture-session-1" },
   }] : [] });
 } else if (args[0] === "agent" && args[1] === "read") {
   process.stdout.write("");
@@ -473,6 +476,10 @@ if (args[0] === "workspace" && args[1] === "list") {
   result("cli:agent:focus", { type: "agent_focus", target: args[2] });
 } else if (args[0] === "agent" && args[1] === "prompt") {
   if (process.env.FAKE_HERDR_PROMPT_FAIL === "1") process.exit(4);
+  if (process.env.FAKE_HERDR_REPLACE_AFTER_PROMPT === "1") {
+    state.agentSession = "replacement-session";
+    save();
+  }
   if (process.env.FAKE_REVIEW_VERDICT) {
     const prompt = args[3];
     const payload = JSON.parse(process.env.FAKE_REVIEW_PAYLOAD || "{}");
@@ -1826,6 +1833,48 @@ test("dispatch records canonical session metadata with fenced-heading, prose, in
   }
 });
 
+test("dispatch persists immutable occupant evidence as display-only optional metadata", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  try {
+    ignoreLaneState(fixture);
+    const path = openLane(fixture, "occupant-evidence");
+    writeFakeHerdr(fixture, {
+      lanePath: path, branch: "lane/occupant-evidence", initiallyOpened: true,
+    });
+    const dispatched = lane(fixture, ["dispatch", "occupant-evidence", "Brief text"], { cwd: path });
+    assert.equal(dispatched.status, 0, dispatched.stderr);
+    const { loadRegistry } = await registryApi();
+    const [session] = loadRegistry(fixture.repo, { registry: ".lane/sessions.json" }).sessions;
+    assert.equal(session.agent_session_id, "fixture-session-1");
+    assert.equal(session.terminal_id, "fixture-terminal-1");
+    assert.equal(session.lane, "lane/occupant-evidence");
+    negativeControl("dispatch immutable display-only occupant metadata");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("dispatch does not write a claim when the prompted occupant is replaced", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  try {
+    ignoreLaneState(fixture);
+    const path = openLane(fixture, "post-prompt-replacement");
+    const fake = writeFakeHerdr(fixture, {
+      lanePath: path, branch: "lane/post-prompt-replacement", initiallyOpened: true,
+    });
+    fixture.env.FAKE_HERDR_REPLACE_AFTER_PROMPT = "1";
+    const dispatched = lane(fixture, ["dispatch", "post-prompt-replacement", "Brief text"], { cwd: path });
+    assert.equal(dispatched.status, 1);
+    assert.match(dispatched.stderr, /partial success.*immutable occupant identity changed/u);
+    assert.equal(fake.calls().filter((args) => args[0] === "agent" && args[1] === "prompt").length, 1);
+    const { loadRegistry } = await registryApi();
+    assert.deepEqual(loadRegistry(fixture.repo, { registry: ".lane/sessions.json" }).sessions, []);
+    negativeControl("post-prompt replacement cannot gain a dispatch record");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("one exported Herdr socket-path helper supplies the board client and dispatch records", async () => {
   const { HerdrClient, herdrSocketPath } = await import(HERDR_CLIENT);
   assert.equal(typeof herdrSocketPath, "function");
@@ -2705,6 +2754,8 @@ test("board JSON snapshots expose schema v1 from canonical --repo config without
       workspace: "workspace-1",
       pane: "pane-1",
       server: "local",
+      agent_session_id: "fixture-board-session",
+      terminal_id: "fixture-board-terminal",
       lane: "lane/board-json",
       role: "engineer",
       brief: "/source/board-json.md",
@@ -2720,7 +2771,7 @@ test("board JSON snapshots expose schema v1 from canonical --repo config without
 
     server = await fakeBoardServer(fixture, ({ socket, request }) => {
       if (request.method === "session.snapshot") {
-        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult({ cwd: fixture.repo }) })}\n`);
+        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult({ cwd: lanePath }) })}\n`);
       }
     });
     const env = discoveredEnv(fixture, { HERDR_SOCKET_PATH: server.socketPath });
@@ -2963,6 +3014,60 @@ test("board one-shot and watch reads share bounded substantive message previews"
       1,
     );
     negativeControl("bounded one-shot and watch message parity");
+  } finally {
+    if (watch !== undefined) {
+      if (watch.child.exitCode === null && watch.child.signalCode === null) watch.child.kill("SIGTERM");
+      await watch.completed;
+    }
+    if (server !== undefined) await server.close();
+    fixture.cleanup();
+  }
+});
+
+test("machine watch status-only events emit status then coalesce a preview read", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  let server;
+  let watch;
+  try {
+    let reads = 0;
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      if (request.method === "session.snapshot") {
+        const result = boardSnapshotResult({ cwd: fixture.repo });
+        Object.assign(result.snapshot.agents[0], {
+          agent: "codex",
+          agent_session: { agent: "codex", kind: "id", source: "herdr:codex", value: "status-session" },
+          terminal_id: "status-terminal",
+        });
+        socket.write(`${JSON.stringify({ id: request.id, result })}\n`);
+      } else if (request.method === "pane.read") {
+        reads += 1;
+        socket.write(`${JSON.stringify({ id: request.id, result: { type: "pane_read", read: {
+          pane_id: "pane-1", source: "recent_unwrapped", format: "text",
+          text: reads === 1 ? "• Before the status change\n" : "• After the status change\n",
+          revision: reads, truncated: false,
+        } } })}\n`);
+      } else if (request.method === "events.subscribe") {
+        socket.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
+        for (const status of ["idle", "done"]) {
+          socket.write(`${JSON.stringify({ event: "pane.agent_status_changed", data: {
+            pane_id: "pane-1", agent_status: status,
+          } })}\n`);
+        }
+      }
+    });
+    watch = laneProcess(fixture, ["board", "--watch", "--json"], {
+      env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
+    });
+    await waitForCondition(() => reads >= 2, "status-triggered pane read", 4_500);
+    await waitForCondition(() => watch.stdout().includes("After the status change"),
+      "refreshed preview after status frame", 4_500);
+    const frames = watch.stdout().trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    assert.equal(frames[0].rows[0].last_message.text, "Before the status change");
+    assert.ok(frames.some((frame) => frame.rows[0].status === "done" &&
+      frame.rows[0].last_message.text === "Before the status change"));
+    assert.equal(frames.at(-1).rows[0].last_message.text, "After the status change");
+    assert.equal(reads, 2);
+    negativeControl("status-only coalesced pane preview read");
   } finally {
     if (watch !== undefined) {
       if (watch.child.exitCode === null && watch.child.signalCode === null) watch.child.kill("SIGTERM");
@@ -3358,14 +3463,17 @@ test("machine watch reports only the configured tripwire substring", async () =>
   let server;
   let watch;
   try {
+    const lanePath = join(fixture.root, "tripwire-checkout");
+    git(fixture.repo, ["worktree", "add", "-b", "lane/tripwire", lanePath], { stdio: "ignore" });
     mkdirSync(join(fixture.repo, ".lane"));
     writeFileSync(join(fixture.repo, ".lane", "sessions.json"), `${JSON.stringify([{
       name: "board-agent", workspace: "workspace-1", lane: "tripwire", role: "engineer",
+      agent_session_id: "fixture-board-session", terminal_id: "fixture-board-terminal",
       report: "docs/reports/tripwire.md", deadline: null, done: false, tripwires: ["STOP"],
     }])}\n`);
     server = await fakeBoardServer(fixture, ({ socket, request }) => {
       if (request.method === "session.snapshot") {
-        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult({ cwd: fixture.repo }) })}\n`);
+        socket.write(`${JSON.stringify({ id: request.id, result: boardSnapshotResult({ cwd: lanePath }) })}\n`);
       } else if (request.method === "events.subscribe") {
         socket.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
         socket.write(`${JSON.stringify({ event: "pane.output_matched", data: {
