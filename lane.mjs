@@ -2463,17 +2463,19 @@ async function watchMachineBoard(options) {
           process.stdout.write(`${JSON.stringify(document)}\n`);
         } else if (event.event === "pane.output_matched") {
           const binding = tripwires.get(key);
-          if (binding?.row_id !== row.row_id || binding.identity !== occupants.get(key)) return;
-          const tripwire = matchingTripwire(binding.patterns, event);
-          if (tripwire === undefined) return;
-          const previous = runtime.get(key);
-          runtime.set(key, {
-            ...(previous?.inventoryOccupantId === binding.identity ? previous : {}),
-            inventoryOccupantId: binding.identity,
-            tripwire,
-            observedAt: new Date().toISOString(),
-          });
-          row.tripwire = tripwire;
+          if (binding?.row_id === row.row_id && binding.identity === occupants.get(key)) {
+            const tripwire = matchingTripwire(binding.patterns, event);
+            if (tripwire !== undefined) {
+              const previous = runtime.get(key);
+              runtime.set(key, {
+                ...(previous?.inventoryOccupantId === binding.identity ? previous : {}),
+                inventoryOccupantId: binding.identity,
+                tripwire,
+                observedAt: new Date().toISOString(),
+              });
+              row.tripwire = tripwire;
+            }
+          }
           process.stdout.write(`${JSON.stringify(document)}\n`);
         }
       });

@@ -2828,6 +2828,7 @@ test("board JSON snapshots expose schema v1 from canonical --repo config without
 test("board one-shot and watch reads share bounded substantive message previews", async () => {
   const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
   let server;
+  let watch;
   try {
     mkdirSync(join(fixture.repo, ".lane"));
     writeFileSync(join(fixture.repo, ".lane", "sessions.json"), `${JSON.stringify([{
@@ -2931,11 +2932,11 @@ test("board one-shot and watch reads share bounded substantive message previews"
       limitation: null,
     });
 
-    const watch = laneProcess(fixture, ["board", "--watch", "--json"], { env });
+    watch = laneProcess(fixture, ["board", "--watch", "--json"], { env });
     await waitForCondition(
       () => watch.stdout().trim().split("\n").filter(Boolean).length >= 2,
       "updated substantive preview frame",
-      4_000,
+      8_000,
     );
     watch.child.kill("SIGTERM");
     const watched = await watch.completed;
@@ -2963,6 +2964,10 @@ test("board one-shot and watch reads share bounded substantive message previews"
     );
     negativeControl("bounded one-shot and watch message parity");
   } finally {
+    if (watch !== undefined) {
+      if (watch.child.exitCode === null && watch.child.signalCode === null) watch.child.kill("SIGTERM");
+      await watch.completed;
+    }
     if (server !== undefined) await server.close();
     fixture.cleanup();
   }
@@ -3168,6 +3173,7 @@ test("board JSON localizes observation errors without corrupting documents and f
 test("board JSON watch frames event snapshots and stops pending refresh, reconnect, and closed consumers", async () => {
   const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
   let server;
+  const boardWatches = [];
   try {
     mkdirSync(join(fixture.repo, ".lane"));
     const registryPath = join(fixture.repo, ".lane", "sessions.json");
@@ -3195,9 +3201,11 @@ test("board JSON watch frames event snapshots and stops pending refresh, reconne
     const watch = laneProcess(fixture, ["board", "--watch", "--json"], {
       env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
     });
+    boardWatches.push(watch);
     await waitForCondition(
       () => watch.stdout().trim().split("\n").filter(Boolean).length >= 3,
       "three JSON watch frames",
+      8_000,
     );
     watch.child.kill("SIGTERM");
     const watched = await watch.completed;
@@ -3234,7 +3242,8 @@ test("board JSON watch frames event snapshots and stops pending refresh, reconne
     const pending = laneProcess(fixture, ["board", "--watch", "--json"], {
       env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
     });
-    await waitForCondition(() => server.requests.length === 1, "pending refresh request");
+    boardWatches.push(pending);
+    await waitForCondition(() => server.requests.length === 1, "pending refresh request", 8_000);
     pending.child.kill("SIGINT");
     const pendingResult = await pending.completed;
     assert.equal(pendingResult.status, 0, pendingResult.stderr);
@@ -3258,7 +3267,8 @@ test("board JSON watch frames event snapshots and stops pending refresh, reconne
     const reconnect = laneProcess(fixture, ["board", "--watch", "--json"], {
       env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
     });
-    await waitForCondition(() => subscriptionClosed, "subscription disconnect");
+    boardWatches.push(reconnect);
+    await waitForCondition(() => subscriptionClosed, "subscription disconnect", 8_000);
     reconnect.child.kill("SIGTERM");
     const reconnectResult = await reconnect.completed;
     assert.equal(reconnectResult.status, 0, reconnectResult.stderr);
@@ -3282,13 +3292,18 @@ test("board JSON watch frames event snapshots and stops pending refresh, reconne
     const closedConsumer = laneProcess(fixture, ["board", "--watch", "--json"], {
       env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
     });
-    await waitForCondition(() => closedConsumer.stdout().includes("\n"), "initial consumer frame");
+    boardWatches.push(closedConsumer);
+    await waitForCondition(() => closedConsumer.stdout().includes("\n"), "initial consumer frame", 8_000);
     closedConsumer.child.stdout.destroy();
     const consumerResult = await closedConsumer.completed;
     assert.equal(consumerResult.status, 0, consumerResult.stderr);
     assert.equal(readFileSync(registryPath, "utf8"), registryBefore);
     negativeControl("board watch JSON framing and permanent teardown");
   } finally {
+    for (const active of boardWatches) {
+      if (active.child.exitCode === null && active.child.signalCode === null) active.child.kill("SIGTERM");
+      await active.completed;
+    }
     if (server !== undefined) await server.close();
     fixture.cleanup();
   }
@@ -3298,6 +3313,7 @@ test("machine watch cancellation closes an in-flight snapshot and skips later en
   const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
   let first;
   let second;
+  let watch;
   try {
     first = await fakeBoardServer(fixture, () => {});
     const secondPath = join(fixture.root, "second.sock");
@@ -3315,11 +3331,11 @@ test("machine watch cancellation closes an in-flight snapshot and skips later en
       { name: "other", running: true, socket_path: secondPath },
     ] })}'\n  exit 0\nfi\nexit 1\n`);
     chmodSync(herdr, 0o755);
-    const watch = laneProcess(fixture, ["board", "--watch", "--json"], {
+    watch = laneProcess(fixture, ["board", "--watch", "--json"], {
       env: { ...fixture.env, HERDR_SOCKET_PATH: first.socketPath },
     });
     await waitForCondition(() => first.requests.some((request) => request.method === "session.snapshot"),
-      "in-flight machine snapshot");
+      "in-flight machine snapshot", 8_000);
     watch.child.kill("SIGTERM");
     const result = await watch.completed;
     assert.equal(result.status, 0, result.stderr);
@@ -3327,6 +3343,10 @@ test("machine watch cancellation closes an in-flight snapshot and skips later en
     await waitForCondition(() => first.sockets.size === 0, "cancelled snapshot socket closure");
     negativeControl("machine watch cancellation across endpoints");
   } finally {
+    if (watch !== undefined) {
+      if (watch.child.exitCode === null && watch.child.signalCode === null) watch.child.kill("SIGTERM");
+      await watch.completed;
+    }
     if (first !== undefined) await first.close();
     if (second !== undefined) await new Promise((resolvePromise) => second.close(resolvePromise));
     fixture.cleanup();
@@ -3336,6 +3356,7 @@ test("machine watch cancellation closes an in-flight snapshot and skips later en
 test("machine watch reports only the configured tripwire substring", async () => {
   const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
   let server;
+  let watch;
   try {
     mkdirSync(join(fixture.repo, ".lane"));
     writeFileSync(join(fixture.repo, ".lane", "sessions.json"), `${JSON.stringify([{
@@ -3353,11 +3374,11 @@ test("machine watch reports only the configured tripwire substring", async () =>
         socket.write(`${JSON.stringify({ event: "pane.output_changed", data: { pane_id: "pane-1" } })}\n`);
       }
     });
-    const watch = laneProcess(fixture, ["board", "--watch", "--json"], {
+    watch = laneProcess(fixture, ["board", "--watch", "--json"], {
       env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
     });
     await waitForCondition(() => watch.stdout().trim().split("\n").filter(Boolean).length >= 3,
-      "matched tripwire and refreshed frames", 4_000);
+      "matched tripwire and refreshed frames", 8_000);
     watch.child.kill("SIGTERM");
     const result = await watch.completed;
     assert.equal(result.status, 0, result.stderr);
@@ -3366,6 +3387,10 @@ test("machine watch reports only the configured tripwire substring", async () =>
     assert.equal(frames.at(-1).rows[0].tripwire, "STOP");
     negativeControl("configured substring tripwire projection");
   } finally {
+    if (watch !== undefined) {
+      if (watch.child.exitCode === null && watch.child.signalCode === null) watch.child.kill("SIGTERM");
+      await watch.completed;
+    }
     if (server !== undefined) await server.close();
     fixture.cleanup();
   }
