@@ -146,8 +146,11 @@ Round 2 `99c93a64d595f3780621e8ccb668d7cace29895a`, and Round 3
 `2de4e8575ab78962162e97170ce4ba4dd44258ea`.
 
 The serialized post-rebase `npm test` passed 230/230 with zero failures/skips in
-339.090 seconds, including local socket fixtures. Each full run followed a clear
-process probe and held the sole test slot. The focused tests are offline and use
+339.090 seconds, including local socket fixtures. Post-rebase strict OpenSpec
+validation passed 24/24, including the coordinator change now on main; the five
+selected deliberate controls again failed 5/5 at their named controls. Each full
+run followed a clear process probe and held the sole test slot. The focused tests
+are offline and use
 cleaned system-temp fixtures; no live Herdr replacement, alternate-host test,
 multi-endpoint watch, or Ink rendering was performed. Node.js 20.19.4 and Git
 2.54.0 were used. The final source-CLI gate is run only after this report and

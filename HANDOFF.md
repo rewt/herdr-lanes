@@ -1824,7 +1824,9 @@ Living log for agents maintaining this repository. Newest entry last.
   validation passed 23/23. The correction was committed, then rebased only onto
   confirmed main `ee529a3`; the HANDOFF conflict retained both coordinator and
   inventory histories. Post-rebase serialized `npm test` passed 230/230, zero
-  skips, in 339.090 seconds. Clear process probes preceded full runs.
+  skips, in 339.090 seconds. Post-rebase strict OpenSpec passed 24/24, including
+  the coordinator change on main; five selected controls failed 5/5 at their
+  named controls. Clear process probes preceded full runs.
 - The final clean-commit source-CLI gate is conversation-only evidence after this
   documentation commit. Offline system-temp fixtures were cleaned. No live
   terminal replacement, alternate-host or multi-endpoint watch, Ink rendering,
