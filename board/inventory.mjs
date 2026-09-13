@@ -13,7 +13,7 @@ import {
   systemStats,
 } from "./board.mjs";
 import { HerdrClient, herdrSocketPath } from "./herdr-client.mjs";
-import { refreshMessagePreviews } from "./message-preview.mjs";
+import { messageOccupantId, refreshMessagePreviews } from "./message-preview.mjs";
 import { loadRegistry } from "./registry.mjs";
 
 function canonicalPath(path) {
@@ -249,8 +249,12 @@ function defaultListWorktrees({ endpoint, repository }) {
 }
 
 function agentIdentity(endpoint, agent) {
-  const occupant = agent.agent_session?.value ?? agent.terminal_id ??
-    `${agent.workspace_id ?? "?"}\0${agent.pane_id ?? "?"}\0${agent.name ?? "?"}`;
+  const occupant = messageOccupantId(agent) ?? JSON.stringify([
+    agent.workspace_id ?? null,
+    agent.pane_id ?? null,
+    agent.name ?? null,
+    agent.terminal_id ?? null,
+  ]);
   return `${endpoint.path}\0${occupant}`;
 }
 

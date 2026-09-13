@@ -1194,3 +1194,36 @@ test("a late pane read is discarded after the agent occupant changes", async () 
   assert.equal(runtime.has("pane-1"), false);
   negativeControl("replaced pane occupant discard");
 });
+
+test("a late pane read is discarded when only the terminal identity changes", async () => {
+  const { refreshMessagePreviews } = await previewApi();
+  let finishRead;
+  const readPending = new Promise((resolve) => { finishRead = resolve; });
+  const session = { name: "preview-agent", workspace: "workspace-1" };
+  const agent = {
+    agent: "codex",
+    agent_session: { agent: "codex", kind: "id", source: "herdr:codex", value: "shared-session" },
+    name: "preview-agent",
+    pane_id: "pane-1",
+    terminal_id: "old-terminal",
+    workspace_id: "workspace-1",
+  };
+  const snapshot = {
+    agents: [agent],
+    workspaces: [{ workspace_id: "workspace-1", label: "workspace-1" }],
+  };
+  const runtime = new Map();
+  const reading = refreshMessagePreviews({
+    registry: [session], snapshot, runtime,
+    client: { readPane: () => readPending },
+  });
+  agent.terminal_id = "new-terminal";
+  finishRead({
+    pane_id: "pane-1", source: "recent_unwrapped", format: "text",
+    text: "• Old terminal answer.", revision: 42, truncated: false,
+  });
+  const result = await reading;
+  assert.deepEqual(result.errors, []);
+  assert.equal(runtime.has("pane-1"), false);
+  negativeControl("late pane read cannot cross terminal replacement");
+});

@@ -485,7 +485,8 @@ export function boardSnapshotDocument({
       branch,
       role: session.role ?? null,
       goal: session.goal ?? null,
-      goal_source: session.goal_source ?? (session.goal === undefined ? null : "registry"),
+      goal_source: session.goal_source !== undefined ? session.goal_source
+        : session.registered === false || session.goal == null ? null : "registry",
       brief: {
         path: session.brief ?? null,
         excerpt: session.goal_source === "terminal-title" ? null : session.goal ?? null,

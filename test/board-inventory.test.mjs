@@ -537,41 +537,66 @@ test("registry joins require a verified workspace and a unique occupant claim", 
   try {
     const repository = makeRepository(root, "claims");
     const socket = join(root, "board.sock");
-    const definitions = [
-      ["11111111-1111-4111-8111-111111111111", "missing", "absent-workspace", "missing-pane"],
-      ["22222222-2222-4222-8222-222222222222", "stale", "expected-workspace", "stale-pane"],
-      ["33333333-3333-4333-8333-333333333333", "duplicate", "actual-workspace", "duplicate-pane"],
-      ["44444444-4444-4444-8444-444444444444", "duplicate", "actual-workspace", "duplicate-pane"],
-    ];
-    for (const [session_id, name, selectedWorkspace, pane] of definitions) {
-      writeSession(repository, {
-        session_id, topic: name, name, workspace: selectedWorkspace, pane, server: socket,
-      });
+    const checkouts = new Map();
+    for (const name of ["valid", "missing", "stale", "duplicate"]) {
+      const checkout = join(root, `${name}-checkout`);
+      git(repository.repo, ["worktree", "add", "-b", `lane/${name}`, checkout]);
+      checkouts.set(name, checkout);
     }
-    const agents = [
-      liveAgent({ name: "missing", cwd: repository.repo, workspace: "actual-workspace", pane: "missing-pane" }),
-      liveAgent({ name: "stale", cwd: repository.repo, workspace: "actual-workspace", pane: "stale-pane" }),
-      liveAgent({ name: "duplicate", cwd: repository.repo, workspace: "actual-workspace", pane: "duplicate-pane" }),
-    ];
+    const agentFor = (name) => liveAgent({
+      name, cwd: checkouts.get(name), workspace: `${name}-workspace`, pane: `${name}-pane`,
+    });
+    let agents = [agentFor("valid")];
+    let workspaces = [workspace(repository, "valid-workspace", checkouts.get("valid"), true)];
+    const worktrees = worktreeList(repository, [...checkouts].map(([name, checkout]) => ({
+      branch: `lane/${name}`, open_workspace_id: `${name}-workspace`, path: checkout,
+    })));
     const { collectMachineBoardDocument } = await import(INVENTORY);
-    const document = await collectMachineBoardDocument({
+    const options = {
       currentSocketPath: socket,
       listSessions: () => ({ sessions: [] }),
-      clientFactory: () => ({ snapshot: async () => snapshot(agents, [
-        workspace(repository, "actual-workspace", repository.repo, false),
-        workspace(repository, "expected-workspace", repository.repo, false),
-      ]), close() {} }),
-      listWorktrees: () => worktreeList(repository, [{
-        branch: "main", open_workspace_id: "actual-workspace", path: repository.repo,
-      }]),
+      clientFactory: () => ({ snapshot: async () => snapshot(agents, workspaces), close() {} }),
+      listWorktrees: () => worktrees,
       stats: { load: 0, freeMemoryBytes: 1024, workers: {} },
+    };
+    const validId = "11111111-1111-4111-8111-111111111111";
+    writeSession(repository, {
+      session_id: validId, topic: "valid", name: "valid",
+      workspace: "valid-workspace", pane: "valid-pane", server: socket,
     });
-    assert.equal(document.rows.filter((row) => row.registered).length, 4);
+    const baseline = await collectMachineBoardDocument(options);
+    assert.equal(baseline.rows.length, 1);
+    assert.equal(baseline.rows[0].row_id, validId);
+    assert.equal(baseline.rows[0].registered, true);
+    assert.equal(baseline.rows[0].status, "working");
+    assert.equal(baseline.rows[0].branch, "lane/valid");
+
+    for (const [session_id, name, selectedWorkspace] of [
+      ["22222222-2222-4222-8222-222222222222", "missing", "absent-workspace"],
+      ["33333333-3333-4333-8333-333333333333", "stale", "expected-workspace"],
+      ["44444444-4444-4444-8444-444444444444", "duplicate", "duplicate-workspace"],
+      ["55555555-5555-4555-8555-555555555555", "duplicate", "duplicate-workspace"],
+    ]) {
+      writeSession(repository, {
+        session_id, topic: name, name, workspace: selectedWorkspace,
+        pane: `${name}-pane`, server: socket,
+      });
+    }
+    agents = ["valid", "missing", "stale", "duplicate"].map(agentFor);
+    workspaces = [
+      ...["valid", "missing", "stale", "duplicate"].map((name) =>
+        workspace(repository, `${name}-workspace`, checkouts.get(name), true)),
+      workspace(repository, "expected-workspace", checkouts.get("stale"), true),
+    ];
+    const document = await collectMachineBoardDocument(options);
+    assert.equal(document.rows.filter((row) => row.registered).length, 5);
     assert.equal(document.rows.filter((row) => !row.registered).length, 3);
-    assert.ok(document.rows.filter((row) => row.registered).every((row) => row.status === "offline"));
+    assert.equal(document.rows.find((row) => row.row_id === validId).status, "working");
+    assert.ok(document.rows.filter((row) => row.registered && row.row_id !== validId)
+      .every((row) => row.status === "offline"));
     assert.deepEqual(document.rows.filter((row) => !row.registered).map((row) => row.name).sort(),
       ["duplicate", "missing", "stale"]);
-    negativeControl("one-to-one verified registry joins");
+    negativeControl("eligible join before missing stale and duplicate claims");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -612,6 +637,77 @@ test("machine preview state survives a matching occupant's later read failure", 
     assert.equal(second.rows[0].last_message.stale, true);
     assert.match(second.rows[0].last_message.limitation, /retaining the previous preview/u);
     negativeControl("watch-lifetime preview retention");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a new terminal with the same agent-session value cannot inherit preview or tripwire", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-terminal-swap-")));
+  try {
+    const repository = makeRepository(root, "terminal-swap");
+    const checkout = join(root, "lane-checkout");
+    git(repository.repo, ["worktree", "add", "-b", "lane/terminal-swap", checkout]);
+    const socket = join(root, "board.sock");
+    let agent = liveAgent({
+      name: "same-name", cwd: checkout, workspace: "lane-workspace", pane: "lane-pane",
+      terminal: "old-terminal", session: "shared-session", title: "Old terminal",
+    });
+    let replaced = false;
+    const runtime = new Map();
+    const { collectMachineBoardDocument } = await import(INVENTORY);
+    const options = {
+      currentSocketPath: socket,
+      listSessions: () => ({ sessions: [] }),
+      clientFactory: () => ({
+        snapshot: async () => snapshot([agent], [workspace(repository, "lane-workspace", checkout, true)]),
+        readPane: async () => {
+          if (replaced) throw new Error("replacement read unavailable");
+          return { pane_id: "lane-pane", source: "recent_unwrapped", format: "text",
+            text: "• Answer from old terminal\n", revision: 1, truncated: false };
+        },
+        close() {},
+      }),
+      listWorktrees: () => worktreeList(repository, [{
+        branch: "lane/terminal-swap", open_workspace_id: "lane-workspace", path: checkout,
+      }]),
+      runtime,
+      stats: { load: 0, freeMemoryBytes: 1024, workers: {} },
+    };
+    const initial = await collectMachineBoardDocument(options);
+    assert.equal(initial.rows.length, 1);
+    assert.equal(initial.rows[0].registered, false);
+    assert.equal(initial.rows[0].last_message.text, "Answer from old terminal");
+    const oldLiveId = initial.rows[0].row_id;
+    const [[runtimeKey, previous]] = [...runtime.entries()];
+    runtime.set(runtimeKey, { ...previous, tripwire: "OLD", observedAt: "2026-09-13T12:00:00.000Z" });
+
+    writeSession(repository, {
+      session_id: "66666666-6666-4666-8666-666666666666", topic: "terminal-swap",
+      name: "same-name", workspace: "lane-workspace", pane: "lane-pane", server: socket,
+      agent_session_id: "shared-session", terminal_id: "old-terminal",
+    });
+    const registered = await collectMachineBoardDocument(options);
+    assert.equal(registered.rows.length, 1);
+    assert.equal(registered.rows[0].registered, true);
+    assert.equal(registered.rows[0].last_message.text, "Answer from old terminal");
+    assert.equal(registered.rows[0].tripwire, "OLD");
+
+    replaced = true;
+    agent = liveAgent({
+      name: "same-name", cwd: checkout, workspace: "lane-workspace", pane: "lane-pane",
+      terminal: "new-terminal", session: "shared-session", title: "New terminal",
+    });
+    const changed = await collectMachineBoardDocument(options);
+    assert.equal(changed.rows.length, 2);
+    assert.equal(changed.rows.find((row) => row.registered).status, "offline");
+    const live = changed.rows.find((row) => !row.registered);
+    assert.equal(live.goal, "New terminal");
+    assert.equal(live.last_message.text, null);
+    assert.equal(live.last_message.available, false);
+    assert.equal(live.tripwire, null);
+    assert.notEqual(live.row_id, oldLiveId);
+    negativeControl("same-session terminal replacement drops runtime evidence");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -752,6 +848,38 @@ test("a title-only unregistered goal never fabricates a brief excerpt", async ()
     assert.equal(document.rows[0].goal_source, "terminal-title");
     assert.deepEqual(document.rows[0].brief, { path: null, excerpt: null });
     negativeControl("unregistered title is not a brief excerpt");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unregistered agent without a title has no goal provenance", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-board-no-title-")));
+  try {
+    const repository = makeRepository(root, "no-title");
+    const socket = join(root, "board.sock");
+    const agent = liveAgent({
+      name: "manual-agent", cwd: repository.repo, workspace: "main-workspace",
+      pane: "manual-pane", title: "",
+    });
+    const { collectMachineBoardDocument } = await import(INVENTORY);
+    const document = await collectMachineBoardDocument({
+      currentSocketPath: socket,
+      listSessions: () => ({ sessions: [] }),
+      clientFactory: () => ({ snapshot: async () => snapshot([agent], [
+        workspace(repository, "main-workspace", repository.repo, false),
+      ]), close() {} }),
+      listWorktrees: () => worktreeList(repository, [{
+        branch: "main", open_workspace_id: "main-workspace", path: repository.repo,
+      }]),
+      stats: { load: 0, freeMemoryBytes: 1024, workers: {} },
+    });
+    assert.equal(document.rows.length, 1);
+    assert.equal(document.rows[0].registered, false);
+    assert.equal(document.rows[0].goal, null);
+    assert.equal(document.rows[0].goal_source, null);
+    assert.deepEqual(document.rows[0].brief, { path: null, excerpt: null });
+    negativeControl("no-title unregistered goal provenance stays null");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

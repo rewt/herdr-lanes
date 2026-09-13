@@ -3078,6 +3078,80 @@ test("machine watch status-only events emit status then coalesce a preview read"
   }
 });
 
+test("machine watch drains a coalesced status preview after a delayed collection", async () => {
+  const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
+  let server;
+  let watch;
+  let delayedTimer;
+  try {
+    let reads = 0;
+    let delayedReadPending = false;
+    let overlappingCollections = 0;
+    let statusSent = false;
+    let currentStatus = "working";
+    let subscriptionSocket;
+    const paneReadResponse = (request, text) => `${JSON.stringify({ id: request.id, result: {
+      type: "pane_read", read: {
+        pane_id: "pane-1", source: "recent_unwrapped", format: "text",
+        text: `• ${text}\n`, revision: reads, truncated: false,
+      },
+    } })}\n`;
+    server = await fakeBoardServer(fixture, ({ socket, request }) => {
+      if (request.method === "session.snapshot") {
+        if (delayedReadPending) overlappingCollections += 1;
+        const result = boardSnapshotResult({ status: currentStatus, cwd: fixture.repo });
+        Object.assign(result.snapshot.agents[0], {
+          agent: "codex",
+          agent_session: { agent: "codex", kind: "id", source: "herdr:codex", value: "delayed-session" },
+          terminal_id: "delayed-terminal",
+        });
+        socket.write(`${JSON.stringify({ id: request.id, result })}\n`);
+      } else if (request.method === "pane.read") {
+        reads += 1;
+        if (reads === 2) {
+          delayedReadPending = true;
+          statusSent = true;
+          currentStatus = "done";
+          subscriptionSocket.write(`${JSON.stringify({ event: "pane.agent_status_changed", data: {
+            pane_id: "pane-1", agent_status: "done",
+          } })}\n`);
+          delayedTimer = setTimeout(() => {
+            delayedReadPending = false;
+            socket.write(paneReadResponse(request, "Old answer"));
+          }, 1_600);
+        } else {
+          socket.write(paneReadResponse(request, reads >= 3 ? "New answer" : "Old answer"));
+        }
+      } else if (request.method === "events.subscribe") {
+        subscriptionSocket = socket;
+        socket.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
+        socket.write(`${JSON.stringify({ event: "pane.output_changed", data: { pane_id: "pane-1" } })}\n`);
+      }
+    });
+    watch = laneProcess(fixture, ["board", "--watch", "--json"], {
+      env: { ...fixture.env, HERDR_SOCKET_PATH: server.socketPath },
+    });
+    await waitForCondition(() => statusSent, "status event during a delayed collection", 4_000);
+    await waitForCondition(() => reads >= 3 && watch.stdout().includes("New answer"),
+      "drained status preview before the periodic refresh", 3_300);
+    const frames = watch.stdout().trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    assert.ok(frames.some((frame) => frame.rows[0].status === "done" &&
+      frame.rows[0].last_message.text === "Old answer"));
+    assert.equal(frames.at(-1).rows[0].last_message.text, "New answer");
+    assert.equal(reads, 3);
+    assert.equal(overlappingCollections, 0);
+    negativeControl("status preview demand drains after delayed collection without overlap");
+  } finally {
+    if (delayedTimer !== undefined) clearTimeout(delayedTimer);
+    if (watch !== undefined) {
+      if (watch.child.exitCode === null && watch.child.signalCode === null) watch.child.kill("SIGTERM");
+      await watch.completed;
+    }
+    if (server !== undefined) await server.close();
+    fixture.cleanup();
+  }
+});
+
 test("plain board output reports localized message read notices", async () => {
   const fixture = makeFixture({ main: "main", validate: "true", registry: ".lane/sessions.json" });
   let server;

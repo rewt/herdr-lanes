@@ -231,12 +231,14 @@ function agentFor(session, snapshot) {
 
 export function messageOccupantId(agent) {
   const session = agent?.agent_session;
+  const terminal = typeof agent?.terminal_id === "string" && agent.terminal_id !== ""
+    ? agent.terminal_id : null;
   if (typeof session?.agent === "string" && typeof session.kind === "string"
       && typeof session.source === "string" && typeof session.value === "string") {
-    return JSON.stringify([session.agent, session.kind, session.source, session.value]);
+    return JSON.stringify([session.agent, session.kind, session.source, session.value, terminal]);
   }
   if (typeof agent?.name === "string" && typeof agent?.agent === "string") {
-    return JSON.stringify([agent.agent, agent.name, agent.pane_id]);
+    return JSON.stringify([agent.agent, agent.name, agent.pane_id, terminal]);
   }
   return null;
 }

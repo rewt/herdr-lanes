@@ -2412,6 +2412,7 @@ async function watchMachineBoard(options) {
   let refreshPending = false;
   let refreshTimer;
   let previewTimer;
+  let previewRefreshDue = false;
   let document;
   let occupants = new Map();
   let tripwires = new Map();
@@ -2435,9 +2436,13 @@ async function watchMachineBoard(options) {
   stopBoardObservation = stop;
 
   const schedulePreviewRefresh = () => {
-    if (previewTimer !== undefined) return;
+    if (previewTimer !== undefined || previewRefreshDue) return;
     previewTimer = setTimeout(() => {
       previewTimer = undefined;
+      if (refreshPending) {
+        previewRefreshDue = true;
+        return;
+      }
       void refresh();
     }, 1_000);
   };
@@ -2530,6 +2535,10 @@ async function watchMachineBoard(options) {
       }
     } finally {
       refreshPending = false;
+      if (!stopped && previewRefreshDue) {
+        previewRefreshDue = false;
+        void refresh();
+      }
     }
   };
 

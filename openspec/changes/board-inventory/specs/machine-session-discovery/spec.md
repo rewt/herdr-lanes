@@ -39,15 +39,21 @@ registration, a name, a git repository, or a lane branch.
 #### Scenario: Branch drift and replacement occupant
 - **WHEN** a recorded lane's live checkout switches branch or detaches, or a new agent reuses its name, pane, and workspace
 - **THEN** the recorded session stays separate from that live occupant, whose repository and branch come from verified Git; an immutable recorded agent-session identity is required for a live join, and older records without it remain displayable history.
+#### Scenario: Verified claim baseline and terminal replacement
+- **WHEN** a record and live occupant agree on the verified lane checkout, unique workspace, agent-session identity, and recorded terminal identity
+- **THEN** the record joins that occupant; missing, stale, or duplicate claims do not, and a new terminal reporting the same agent-session value cannot inherit the old occupant's preview or tripwire.
 #### Scenario: Title-only unregistered goal
 - **WHEN** an unregistered agent has only a terminal title as goal evidence
 - **THEN** the goal is labeled as terminal-title and its brief path and excerpt remain null.
+#### Scenario: Untitled unregistered goal
+- **WHEN** an unregistered agent has no terminal title or other goal evidence
+- **THEN** its goal and goal source remain null rather than implying a registry goal.
 #### Scenario: Foreground observation continuity and cancellation
 - **WHEN** a matching pane read fails after a successful watch preview, a configured tripwire matches inside a longer line, or the watch is interrupted during endpoint collection
 - **THEN** the matching prior preview is stale rather than erased, the configured substring survives same-occupant refreshes, and active requests close without probing later endpoints.
 #### Scenario: Status-only observation event
 - **WHEN** a watched pane changes status without an output-change event
-- **THEN** the status frame is emitted and a coalesced message-preview read is scheduled without a lifecycle action.
+- **THEN** the status frame is emitted and a coalesced message-preview read is scheduled without a lifecycle action; if that request becomes due during another collection, one pending read drains after it without overlap.
 
 ### Requirement: History filtering is independent of agent status
 The board SHALL hide completed registry history by default, support --all, and

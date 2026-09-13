@@ -311,7 +311,9 @@ it has no registration, name, Git repository, or lane branch. Such rows have
 `registered: false`; their stable opaque row ID derives from the local endpoint and
 Herdr occupant identity, and terminal title supplies `goal` only when labeled by
 `goal_source: "terminal-title"`; this never supplies `brief.excerpt`, which stays null
-with `brief.path`. A registry row is joined to a live agent only when
+with `brief.path`. With no title, both `goal` and `goal_source` are null; a
+missing source is inferred as `registry` only for an actual registered goal.
+A registry row is joined to a live agent only when
 both resolve to the same canonical Git common directory, the recorded `lane` equals
 the live checkout's verified branch (a detached checkout cannot match), the recorded
 workspace resolves to exactly one snapshot workspace, and the occupant's workspace
@@ -387,16 +389,19 @@ confident answer, `limitation` says so without promising recoverable alternate-s
 history.
 
 Preview state is memory-only for the foreground watch and keyed to endpoint and pane
-with the occupant's Herdr agent-session identity and a conservative agent/name/pane
-fallback. A late response is discarded
-when that identity changes. Read errors retain a matching previous preview only with
+with the occupant's Herdr agent-session identity and terminal ID when available,
+or a conservative agent/name/pane/terminal fallback. A late response is discarded
+when that identity changes, including a replacement terminal that reports the same
+agent-session value. Read errors retain a matching previous preview only with
 `stale: true`; timeout and unsupported-read limitations remain distinct. No output is
 copied into tracked reports. Snapshot requests use a 500 ms budget; pane reads have a
 separate two-second budget and run at most four at once. One-shot modes read each
 supported pane once. A watch reads on its five-second refresh and after status or
 output changes, coalescing events to no more than one read per pane per second. A
 status event emits its status frame first, then schedules that coalesced preview read;
-status-only transitions do not wait for the periodic refresh.
+if its timer fires during a collection, one pending preview refresh drains after that
+collection without overlap. This does not establish a freshness bound or change the
+five-second periodic refresh.
 
 One watch invocation owns its endpoint observation and subscription clients. SIGINT,
 SIGTERM, downstream pipe closure, and fatal read-service errors permanently close
