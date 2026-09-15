@@ -109,3 +109,25 @@ The updated daily plan records conditional overnight assignments. Sampling waits
 for inventory; coordination read-model waits for inventory plus sampling; UI
 coordination waits for frame/details plus read-model. Pilot targets remain an
 explicit operator choice, and no measured efficiency improvement is claimed.
+
+## Inventory integration and closeout — 2026-09-15
+
+Round 4 returned NEEDS-WORK with one moderate finding: an in-flight message
+collection could overwrite a newer same-occupant tripwire or match timestamp. The
+correction at `204b6eadcd46cf536291bf4f47f6a5b89f764498` passed independent
+Round 5 without findings; that zero-test review relies on the matching 234/234
+gate as inherited evidence. The public record is the sole change in evidence-only
+commit `205b619ddacda74583523dc25e08709166c3b6be`.
+
+The refreshed gate at `205b619` passed 234/234 with zero skips in 326.873 seconds.
+Promotion revalidated 234/234 in 323.327 seconds and fast-forwarded main from
+`ee529a3` without a rebase, so the review applies unchanged. Private reviews and the
+final gate bytes were preserved before cleanup. The merged branch and worktree are
+removed, the lane's Herdr workspace and tabs are closed, and six done markers exist.
+
+Board-frame was not integrated. It was closed unmerged as
+`archive/lane/board-frame` at `9e8c8f9` with no review and a failed saved gate; its
+gate bytes were preserved. Console integration is therefore partial: inventory is
+on main and the frame awaits reconciliation. The remaining slices, dependencies,
+frame compatibility gaps, and operator decisions are recorded in
+`docs/plans/2026-09-15-carry-forward.md`. No push occurred.

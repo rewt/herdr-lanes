@@ -1,6 +1,8 @@
 # Daily goals: console and identity coordination
 
-Date: 2026-09-13, America/Chicago. Status: in progress; specification integrated.
+Date: 2026-09-13, America/Chicago. Status: closed 2026-09-15; specification and
+board-inventory integrated, board-frame parked. Open items continue in
+`docs/plans/2026-09-15-carry-forward.md`.
 Scope: herdr-lanes integration and protocol design. Existing project acceptance
 checks apply. No remote publication or cross-project rollout is implied.
 

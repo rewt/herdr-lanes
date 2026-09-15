@@ -1861,3 +1861,26 @@ Living log for agents maintaining this repository. Newest entry last.
   unverified. The final source-CLI gate is run after the documentation commit
   and reported in the conversation. No push, promotion, close, or review edit
   was performed.
+
+## 2026-09-15 — board-inventory integrated and open lanes closed
+
+- Accepted independent Round 5 PASS (no findings) for board-inventory at
+  `204b6ea`, which corrects the Round 4 tripwire/match-timestamp overwrite. The
+  public review is the sole change in evidence-only commit `205b619`. Refreshed its
+  gate, promoted by fast-forward from `ee529a3` without a rebase, and closed the
+  lane: merged branch and worktree removed, Herdr workspace retired, six registered
+  sessions marked done. Private reviews and final gate bytes were preserved first.
+- Closed board-frame unmerged at the operator's request to retire all open work
+  trees. It is recoverable from `archive/lane/board-frame` at `9e8c8f9`; it was never
+  reviewed and its saved gate failed. Its gate bytes were preserved.
+- Added `docs/plans/2026-09-15-carry-forward.md` with every unresolved slice,
+  prerequisite, operator decision, frame compatibility gap, and verification gap.
+  Marked the 2026-09-13 plan closed and appended the integration report.
+- Gate at `205b619`: `npm test` 234/234, zero skips, 326.873 seconds. Promotion
+  validation: 234/234, zero skips, 323.327 seconds. Both ran serialized after clear
+  process probes with Node.js 20.19.4, npm 10.8.2, and Git 2.54.0. No separate main
+  baseline was run; promotion validated main plus the lane, a superset of it.
+- This follow-up is documentation only, so no failing test or negative control
+  applies; `git diff --check` and a public-safety scan of the diff were run before
+  commit. Frame reconciliation, sampling, details, coordination, composer, release,
+  pilot, and publication remain open as listed. No push occurred.
