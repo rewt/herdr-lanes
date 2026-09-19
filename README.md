@@ -1,3 +1,7 @@
+> **Archived 2026-09-19.** herdr-lanes is no longer maintained. The `lane` script
+> now lives inside the herdr-brain project (`lanes/`), which is not published.
+> The code and history here stay available read-only.
+
 # herdr-lanes
 
 Open one isolated git worktree per task, run an agent in each Herdr workspace, and
